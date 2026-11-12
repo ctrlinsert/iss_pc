@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Native startup render dimensions, CUSA00223 01.07 only.
+ * Native startup render dimensions, 1.07 only: CUSA00223 (US) or CUSA00004 (EU), which carry the
+ * same 1.07 executable (docs/CUSA00004_CAMERA.md); every site's bytes are still verified.
  * Game mechanisms researched by axylpup/shadPS4: 55fdf965, 5afba802,
  * 160de347, 63692218. Independently checked against the US executable.
  * No game files, camera speed, controller input or progression are changed.
@@ -182,12 +183,17 @@ static inline void iss_native_changes(const IssNativePlan *p,IssNativeSite sites
         }
     }
 }
+/* The titles whose 1.07 executable is the verified one. The serial only narrows the request: the
+ * byte signatures below decide, so an EU dump with other code is still refused. */
+static inline int iss_native_title(const char *serial,const char *version){
+    return serial && version && (!strcmp(serial,"CUSA00223") || !strcmp(serial,"CUSA00004")) && !strcmp(version,"01.07");
+}
 /* Atomic preflight: a single incompatible byte, short image, wrong region or
  * other render patch refuses ALL writes, including lighting capacity. */
 static inline int iss_native_apply(unsigned char *image,uint64_t size,const char *serial,
                                    const char *version,IssNativeConfig config) {
     IssNativePlan plan;
-    if(!image || strcmp(serial,"CUSA00223") || strcmp(version,"01.07") || !iss_native_plan(config,&plan))return 0;
+    if(!image || !iss_native_title(serial,version) || !iss_native_plan(config,&plan))return 0;
     const uint32_t exposure_entries=iss_native_exposure_entries(plan.width,plan.height);
     if(!exposure_entries || (exposure_entries>ISS_EXPOSURE_ORIGINAL_ENTRIES&&!iss_native_exposure_guard(image,size)))return 0;
     if(size<0x58030cu+sizeof(iss_native_projection) ||

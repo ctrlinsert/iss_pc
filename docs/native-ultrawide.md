@@ -2,7 +2,7 @@
 
 Status: **experimental Windows Renderer v2 candidate**, not installed over the normal launcher.
 Target source: HayatoG/iss_pc `developer`, pinned at `c8915d95f48421cf489708a35fa4e58e7f93c7f1`.
-Target game: **CUSA00223 / APP_VER 01.07**. Other regions are refused even if some offsets match.
+Target game: **APP_VER 01.07 of CUSA00223 (US) or CUSA00004 (EU)**, whose 1.07 executables are identical (unwrapped ELF SHA-256 below; see [CUSA00004_CAMERA.md](CUSA00004_CAMERA.md)). Other titles and versions are refused, and every patched instruction is still byte-verified, so an EU dump with different code is refused too.
 Local ELF SHA-256: `b3afd173a379f83e1e408e71fdef22b78f93092d332b79decd48a18a08bfc605`.
 
 ## Source research, rather than release-note assumptions

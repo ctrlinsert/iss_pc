@@ -105,7 +105,10 @@ int main(int argc,char** argv){
         assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{3,100,1}));assert(image==before);guards++;
     }
     image=original;
-    assert(!iss_native_apply(image.data(),image.size(),"CUSA00004","01.07",{3,100,1}));assert(image==original);
+    assert(!iss_native_apply(image.data(),image.size(),"CUSA00263","01.07",{3,100,1}));assert(image==original);
+    assert(!iss_native_apply(image.data(),image.size(),"CUSA00004","01.00",{3,100,1}));assert(image==original);
+    {auto eu=original;assert(iss_native_apply(eu.data(),eu.size(),"CUSA00004","01.07",{5,100,1})); /* EU 1.07 = same executable */
+     assert(read32(eu.data()+0x1eff4a)==5120 && read32(eu.data()+0x1eff51)==1440);}
     assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.00",{3,100,1}));assert(image==original);
     assert(!iss_native_apply(image.data(),100,"CUSA00223","01.07",{3,100,1}));assert(image==original);
     assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,200,1}));assert(image==original);
