@@ -25,13 +25,15 @@
 #endif
 /* sceKernelGetDirectMemorySize on retail PS4: 5056 MiB. TLG_DMEM_MB raises it (the resolution
  * patches above 1080p need about 4 GiB more; run.sh sets it). */
+static uint64_t pool_size;
 static uint64_t pool_size_bytes(void) {
-    static uint64_t size;
+    uint64_t size=pool_size;
     if (!size) {
         const char *env = getenv("TLG_DMEM_MB");
         uint64_t mb = env ? strtoull(env, NULL, 10) : 0;
         if (mb < 5056 || mb > 16384) mb = 5056;
         size = mb * 1024 * 1024;
+        pool_size = size;
     }
     return size;
 }
@@ -953,3 +955,12 @@ void runtime_memory_report(void) {
            flexible_maps, flexible_bytes, protects, queries, vma_count);
 }
 
+
+/* Before the pool exists (patch install time), raise direct memory to at least `mb` MiB. A larger
+ * TLG_DMEM_MB wins. Returns the size now in effect, in MiB, or 0 when the pool already exists. */
+uint64_t runtime_memory_raise_pool_mb(uint64_t mb) {
+    if (backing_base) return 0;
+    if (mb > 16384) mb = 16384;
+    if (pool_size_bytes() < mb * 1024 * 1024) pool_size = mb * 1024 * 1024;
+    return pool_size >> 20;
+}

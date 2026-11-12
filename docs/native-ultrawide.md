@@ -237,3 +237,7 @@ cache-disabled startup is not proof of a cache cause or a general crash fix.
 Normal installation and public ZIP still contain the previous map/menu version;
 this HUD candidate has not been installed, packaged or uploaded. GitHub work is
 stopped by user instruction.
+
+## Direct memory at large sizes
+
+The game sizes its heaps from `sceKernelGetDirectMemorySize`, which defaults to the retail 5056 MiB. Above about 5120x2160 that runs out: at 7680x2160 the light-list allocation returned NULL and the game crashed in `memset`. With a native plan larger than 3840x2160, the runtime now raises direct memory before the pool is created, by 160 bytes per scene pixel beyond 4K, rounded up to 256 MiB (6400 MiB at 7680x2160, 9216 MiB at 7680x4320). A larger `TLG_DMEM_MB` still wins. On Windows this memory is committed, so the page file must be able to back it.

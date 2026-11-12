@@ -166,6 +166,13 @@ int main(int argc,char** argv){
     f=tmpfile();assert(f);fputs("iss_native_ui_16_9=3\n",f);rewind(f);assert(!iss_native_config(f,&c));fclose(f);
     // Optional local-only executable validation: parse PT_LOAD segments instead
     // of assuming file offsets equal virtual addresses. No executable is shipped.
+    /* Direct memory: retail up to 4K, more past it (7680x2160 crashed at 5056, ran at 6144). */
+    assert(iss_native_direct_memory_mb(1920,1080)==ISS_NATIVE_DMEM_RETAIL_MB);
+    assert(iss_native_direct_memory_mb(3840,2160)==ISS_NATIVE_DMEM_RETAIL_MB);
+    assert(iss_native_direct_memory_mb(7680,2160)>=6144 && iss_native_direct_memory_mb(7680,2160)%256==0);
+    assert(iss_native_direct_memory_mb(5120,2160)>ISS_NATIVE_DMEM_RETAIL_MB);
+    assert(iss_native_direct_memory_mb(7680,4320)<=16384 && iss_native_direct_memory_mb(7680,4320)>iss_native_direct_memory_mb(7680,2160));
+    assert(iss_native_direct_memory_mb(65535,65535)==16384);
     if(argc>1){
         std::ifstream stream(argv[1],std::ios::binary);assert(stream);
         std::vector<unsigned char> elf((std::istreambuf_iterator<char>(stream)),{});
