@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *nid) { (void)table; (void)count; (void)nid; return 0; }
+uint64_t runtime_wait_now_ms(void) { return 1000; }
 
 static unsigned char frame_buffer[1<<16];
 static int pictures, first_luma_sum, seen;
@@ -81,6 +82,7 @@ int main(int argc, char **argv) {
 
     assert(videodec_delete(&ctrl)==0 && !ctrl.handle);
     assert(videodec_delete(&ctrl)==ERR_HANDLE);
+    assert(!runtime_movie_playing()); /* 64x48 is not a full-screen movie */
     puts("videodec test: ok");
     return 0;
 }
