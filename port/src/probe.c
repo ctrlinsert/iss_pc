@@ -1,6 +1,7 @@
 /* Minimal x86-64 native loader experiment. Not a PS4 emulator or game port. */
 #define _GNU_SOURCE
 #include <stdint.h>
+#include "iss_title.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -785,8 +786,8 @@ static void install_iss_temporal(const char *app0, Segment *segments, uint64_t c
     snprintf(path, sizeof(path), "%s/sce_sys/param.sfo", app0 ? app0 : ".");
     sfo_value(path, "TITLE_ID", serial, sizeof(serial), NULL);
     sfo_value(path, "APP_VER", version, sizeof(version), NULL);
-    if (strcmp(serial, "CUSA00223") || strcmp(version, "01.07")) {
-        printf("Temporal upscaling: unavailable (title '%s', version '%s'; needs CUSA00223 01.07)\n", serial, version);
+    if (!iss_title_107(serial, version)) {
+        printf("Temporal upscaling: unavailable (title '%s', version '%s'; needs CUSA00223 or CUSA00004 01.07)\n", serial, version);
         return;
     }
     if (!mapped(segments, count, ISS_TEMPORAL_JITTER_SITE, ISS_TEMPORAL_JITTER_LENGTH) ||
@@ -832,7 +833,7 @@ static void install_iss_hud_corners(const char *app0,Segment *segments,uint64_t 
     int executable=0;
     for(uint64_t i=0;i<count;i++)if((segments[i].flags&1) && ISS_HUD_TRACE_SITE>=segments[i].address &&
         ISS_HUD_CORNER_SITE+sizeof(iss_hud_corner_tail)<=segments[i].address+segments[i].size)executable=1;
-    int valid=!strcmp(serial,"CUSA00223")&&!strcmp(version,"01.07")&&executable&&iss_hud_trace_signature(image,size);
+    int valid=iss_title_107(serial,version)&&executable&&iss_hud_trace_signature(image,size);
     if(valid)valid=!memcmp(image+ISS_HUD_CORNER_SITE,iss_hud_corner_tail,sizeof(iss_hud_corner_tail));
     const uint32_t vtables[]={0xd74668,0xd795d0,0xcdb7d0};
     const uint32_t methods[]={0x563710,0x5a7d50,0x2009e0};
@@ -861,7 +862,7 @@ static void install_iss_hud_trace(const char *app0,Segment *segments,uint64_t co
     int executable=0;
     for(uint64_t i=0;i<count;i++)if((segments[i].flags&1) && ISS_HUD_TRACE_SITE>=segments[i].address &&
         ISS_HUD_TRACE_SITE+0x4b4u<=segments[i].address+segments[i].size)executable=1;
-    if(strcmp(serial,"CUSA00223") || strcmp(version,"01.07") || !executable || !iss_hud_trace_signature(image,size)){
+    if(!iss_title_107(serial,version) || !executable || !iss_hud_trace_signature(image,size)){
         puts("HUD layout observer: refused incompatible title/code; no writes");return;
     }
     unsigned char *bridge=allocate(page_size);
@@ -985,8 +986,8 @@ static void install_iss_karma(const char *app0,Segment *segments,uint64_t count,
     char path[4096],serial[32]="",version[32]="";
     snprintf(path,sizeof(path),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
     sfo_value(path,"TITLE_ID",serial,sizeof(serial),NULL);sfo_value(path,"APP_VER",version,sizeof(version),NULL);
-    if(strcmp(serial,"CUSA00223")){
-        runtime_karma_compatibility_failure(1);printf("Karma switcher: unavailable: TITLE_ID='%s', expected CUSA00223\n",serial);return;
+    if(!iss_title_serial(serial)){
+        runtime_karma_compatibility_failure(1);printf("Karma switcher: unavailable: TITLE_ID='%s', expected CUSA00223 or CUSA00004\n",serial);return;
     }
     if(strcmp(version,"01.07")){
         runtime_karma_compatibility_failure(2);printf("Karma switcher: unavailable: APP_VER='%s', expected 01.07\n",version);return;
@@ -1021,7 +1022,7 @@ static void install_iss_karma(const char *app0,Segment *segments,uint64_t count,
     memset(image+ISS_KARMA_SITE,0x90,ISS_KARMA_STOLEN);
     iss_karma_jump(image+ISS_KARMA_SITE,(uintptr_t)bridge);runtime_karma_attach(image);
     runtime_power_wheel_attach(image,size);
-    puts("Karma switcher: supported CUSA00223 01.07 (normal game functions, game-thread queue)");
+    puts("Karma switcher: supported 1.07 (normal game functions, game-thread queue)");
 }
 
 /* Opt-in, build/signature-guarded inFAMOUS camera angular-speed limits.
@@ -1093,7 +1094,7 @@ static void install_iss_mouse_aim(const char *app0,Segment *segments,uint64_t co
         if((segments[i].flags&2) && segments[i].address<=0xe16c40u &&
             0xe16c40u<segments[i].address+segments[i].size)writable=1;
     }
-    if(strcmp(serial,"CUSA00223") || strcmp(version,"01.07") || !executable || !writable ||
+    if(!iss_title_107(serial,version) || !executable || !writable ||
         !iss_mouse_signature(image,size)){
         puts("Direct mouse: incompatible title/code/mapping; mouse camera disabled; controller unchanged");return;
     }

@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include "iss_title.h"
 enum { ISS_TROPHY_QUERY_SITE=0x55b610 };
 enum { ISS_TROPHY_RESET_SITE=0x1dcf30,ISS_TROPHY_RESET_CALLEE=0x1e7e70,ISS_TROPHY_PROGRESS_OBJECT=0xefad20 };
 static const unsigned char iss_trophy_reset_signature[]={
@@ -26,7 +27,7 @@ static const unsigned char iss_trophy_query_signature[]={
  0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x48,0x83,0xec,
  0x18,0x4c,0x8b,0x2d,0xd8,0x27,0x84,0x00,0x4c,0x8d,0x25,0xe1,0xdc,0xa1,0x07,0x41};
 static inline int iss_trophy_query_valid(const unsigned char *image,size_t size,const char *title,const char *version){
- return image&&title&&version&&!strcmp(title,"CUSA00223")&&!strcmp(version,"01.07")&&
+ return image&&title&&version&&iss_title_107(title,version)&&
   size>=ISS_TROPHY_QUERY_SITE+sizeof(iss_trophy_query_signature)&&
   !memcmp(image+ISS_TROPHY_QUERY_SITE,iss_trophy_query_signature,sizeof(iss_trophy_query_signature));
 }
