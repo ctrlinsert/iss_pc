@@ -339,6 +339,8 @@ The game asks for the motion sensor and the touchpad in many scenes: graffiti, a
 - While it is on, the simulated tilt replaces the real gyro.
 - **Keyboard and mouse:** press **T** or **G** once to turn the controller sideways (one side or the other) and keep it there: the **mouse aims the spray can** for the whole graffiti (the arrow keys too), **F** or the left button sprays, and **Y**, a quick side-to-side wiggle of the mouse or spinning the wheel shakes it (a wiggle while spraying does not shake, so tracing keeps moving the cursor). Press the same key again to put the controller upright. `ISS_SENSOR_KEYS=hold` brings back the old behaviour (only while T or G is held).
 
+**Aim assist follows the device you use:** the game's aim assist (it has no menu option) is **off while you play with keyboard and mouse** and turns **on by itself as soon as a controller is used** (a button, a trigger or a stick), then off again at the next key or mouse input. `TLG_AIM_ASSIST=on` keeps the original assist always on; `TLG_AIM_ASSIST=off` keeps it always off.
+
 **Touchpad on a controller without one:**
 - **View/Select/Back** is the touchpad click (right side; with L1 held, the left side). Holding the button holds the touchpad.
 - **Hold View/Select and move the right stick** to swipe a finger from the middle of the touchpad. A quick tap without moving still clicks.
@@ -728,6 +730,8 @@ O jogo pede o sensor de movimento e o touchpad em várias cenas: grafite, absorv
 - Com o modo ligado, o controle fica **de lado**, como uma lata de spray (o que o grafite pede), **X/A sacode** e o **analógico esquerdo mira**, girando a lata para os lados e para cima/baixo (é o que move o cursor do grafite; ele fica onde você soltou; pouco inclinado vai devagar, para contornar o desenho; o direito também serve). R2 continua pintando. O analógico e o X/A ficam escondidos do jogo, então o Delsin não anda, não pula e a câmera não gira: **desligue o modo depois da cena**. O L3+R3 juntos também não chega ao jogo.
 - Com o modo ligado, a inclinação simulada substitui o giroscópio real.
 - **Teclado e mouse:** aperte **T** ou **G** uma vez para virar o controle de lado (um lado ou o outro) e deixá-lo assim: o **mouse mira a lata de spray** durante todo o grafite (as setas também), **F** ou o botão esquerdo pinta, e **Y**, balançar o mouse rápido para os lados ou girar a rodinha sacode (balançar enquanto pinta não sacode, então contornar o desenho continua movendo o cursor). Aperte a mesma tecla de novo para pôr o controle em pé. `ISS_SENSOR_KEYS=hold` volta ao jeito antigo (só enquanto T ou G está seguro).
+
+**A mira assistida segue o aparelho em uso:** a mira assistida do jogo (que não tem opção no menu) fica **desligada enquanto você joga com teclado e mouse** e **liga sozinha assim que um controle é usado** (um botão, um gatilho ou um analógico), desligando de novo na próxima tecla ou movimento do mouse. `TLG_AIM_ASSIST=on` deixa a mira assistida original sempre ligada; `TLG_AIM_ASSIST=off`, sempre desligada.
 
 **Touchpad em controle sem touchpad:**
 - **View/Select/Back** é o clique do touchpad (lado direito; com L1 segurado, o lado esquerdo). Segurar o botão é segurar o touchpad.

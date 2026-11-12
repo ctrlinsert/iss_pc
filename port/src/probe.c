@@ -17,6 +17,7 @@
 #include "iss_temporal_hook.h"
 #include "iss_camera_hook.h"
 #include "iss_mouse_aim.h"
+#include "iss_aim_assist.h"
 #include "iss_trophies.h"
 #include "trophy_query_hook.h"
 #include "iss_camera_pitch_hook.h"
@@ -1107,6 +1108,30 @@ static void install_iss_mouse_aim(const char *app0,Segment *segments,uint64_t co
     puts("Direct mouse: guarded US 1.07 angle input enabled; Controls sensitivity/invert apply; controller unchanged");
 }
 
+/* Aim assist follows the input device (iss_aim_assist.h). Off when TLG_AIM_ASSIST=on: the game's
+ * own assist then runs untouched. */
+static void install_iss_aim_assist(const char *app0,Segment *segments,uint64_t count,uint64_t size){
+    if(iss_aim_assist_mode(getenv("TLG_AIM_ASSIST"))==ISS_AIM_ASSIST_ON)return;
+    char path[4096],serial[32]="",version[32]="";
+    snprintf(path,sizeof(path),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
+    sfo_value(path,"TITLE_ID",serial,sizeof(serial),NULL);sfo_value(path,"APP_VER",version,sizeof(version),NULL);
+    int executable=0;
+    for(uint64_t i=0;i<count;i++)
+        if((segments[i].flags&1) && segments[i].address<=ISS_AIM_ASSIST_FUNCTION &&
+            ISS_AIM_ASSIST_RESUME<=segments[i].address+segments[i].size)executable=1;
+    const int title=serial[0] && version[0] && (!strcmp(serial,"CUSA00223")||!strcmp(serial,"CUSA00004")) && !strcmp(version,"01.07");
+    if(!title || !executable || !iss_aim_assist_signature(image,size)){
+        puts("Aim assist: incompatible title/code; the game's aim assist stays as it is");return;
+    }
+    unsigned char *stub=allocate(page_size);
+    unsigned n=iss_aim_assist_build_stub(stub,(uintptr_t)image+ISS_AIM_ASSIST_FUNCTION,
+        (uintptr_t)&runtime_aim_assist_disabled,(uintptr_t)image+ISS_AIM_ASSIST_RESUME);
+    if(n>ISS_AIM_ASSIST_MAX_STUB || n>page_size)fail("Aim assist stub overflow");
+    protect(stub,page_size,5);
+    iss_aim_assist_build_jump(image+ISS_AIM_ASSIST_SITE,(uintptr_t)stub);
+    puts("Aim assist: guarded 1.07 hook active; off with keyboard/mouse, on with a controller (TLG_AIM_ASSIST)");
+}
+
 static void report_iss_pitch(void) {
     printf("Camera pitch safeguard: calls=%" PRIu64 " changes=%" PRIu64
            " last input=%.4g,%.4g pitch=%.4g zoom=%.4g cap=%.4g->%.4g\n",
@@ -1722,6 +1747,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_iss_camera_speed(app0, segments, ns, size);
     if (gpu_enabled) install_iss_pitch_safeguard(app0, segments, ns, size);
     if (gpu_enabled) install_iss_mouse_aim(app0, segments, ns, size);
+    if (gpu_enabled) install_iss_aim_assist(app0, segments, ns, size);
     if (gpu_enabled) install_iss_trophies(app0, segments, ns, size);
     if (gpu_enabled) install_iss_karma(app0, segments, ns, size, karma_before_runtime_rewrites);
     protect(traps, round_page((import_count + 1) * 32), 5);

@@ -27,6 +27,7 @@
 #include "interact_gesture.h"
 #include "rumble_gate.h"
 #include "mouse_shake.h"
+#include "iss_aim_assist.h"
 #include <sys/stat.h>
 
 #define ERR_INVALID_ARG ((int32_t)0x80920001)
@@ -194,6 +195,29 @@ static int gamepad_active(SDL_Gamepad *g) {
     for (int b=0;b<SDL_GAMEPAD_BUTTON_COUNT;++b) if (SDL_GetGamepadButton(g,(SDL_GamepadButton)b)) return 1;
     for (int a=0;a<SDL_GAMEPAD_AXIS_COUNT;++a) if (abs(SDL_GetGamepadAxis(g,(SDL_GamepadAxis)a))>16000) return 1;
     return 0;
+}
+/* Aim assist (iss_aim_assist.h): a controller counts as in use from a button, a trigger past a
+ * quarter, or a stick past about a third, lower than gamepad_active so a camera nudge counts. */
+static int gamepad_input(SDL_Gamepad *g) {
+    for (int b=0;b<SDL_GAMEPAD_BUTTON_COUNT;++b) if (SDL_GetGamepadButton(g,(SDL_GamepadButton)b)) return 1;
+    for (int a=0;a<SDL_GAMEPAD_AXIS_COUNT;++a) if (abs(SDL_GetGamepadAxis(g,(SDL_GamepadAxis)a))>10000) return 1;
+    return 0;
+}
+volatile int32_t runtime_aim_assist_disabled=1; /* until a controller is used (auto mode) */
+static void update_aim_assist(int pad_input, int kbm_input) {
+    static int mode=-1, source=ISS_INPUT_KBM;
+    if (mode<0) {
+        const char *e=getenv("TLG_AIM_ASSIST");
+        mode=iss_aim_assist_mode(e && *e ? e : getenv("ISS_AIM_ASSIST"));
+        runtime_aim_assist_disabled=iss_aim_assist_off(mode,source);
+        printf("Aim assist: %s\n",mode==ISS_AIM_ASSIST_ON ? "always on (TLG_AIM_ASSIST=on)" :
+               mode==ISS_AIM_ASSIST_OFF ? "always off (TLG_AIM_ASSIST=off)" : "off with keyboard/mouse, on with a controller");
+    }
+    const int before=source;
+    iss_input_source(&source,pad_input,kbm_input);
+    runtime_aim_assist_disabled=iss_aim_assist_off(mode,source);
+    if (source!=before && mode==ISS_AIM_ASSIST_AUTO)
+        printf("Aim assist: %s\n",source==ISS_INPUT_PAD ? "on (controller in use)" : "off (keyboard/mouse in use)");
 }
 static SDL_Gamepad *current_gamepad(void) {
     static uint64_t last_scan;
@@ -1011,6 +1035,7 @@ static void sample_host(PadData *d) {
         static SDL_Gamepad *told;
         if (pads>1 && told!=g) { told=g; printf("Runtime: %s: its 2 trackpads are the halves of the PS4 touchpad\n",SDL_GetGamepadName(g)); }
     }
+    const int pad_input=g && gamepad_input(g);
     if (g && pad_only(g)) k=NULL;
     /* Host actions bound to mouse buttons are read after sample_mouse; the motion sensor, sampled
      * first, sees the mouse buttons of the previous sample. */
@@ -1020,6 +1045,7 @@ static void sample_host(PadData *d) {
     /* The keyboard works with or without a gamepad: its buttons add to the pad's, and a stick
      * follows the keys only while one of them is held. */
     if (!k) {
+        update_aim_assist(pad_input,0);
         apply_interact(d,g,0);
         d->buttons&=~(uint32_t)ACT_ALL;
         return;
@@ -1027,6 +1053,7 @@ static void sample_host(PadData *d) {
     const uint32_t mouse=sample_mouse(d,can_aiming(early),k,early); /* adds to the right stick */
     last_mouse=mouse;
     const uint32_t keys=map_keys(k,mouse), acts=keys & ACT_ALL;
+    update_aim_assist(pad_input,keys!=0 || mouse!=0 || power_mouse_dx!=0 || power_mouse_dy!=0);
     d->buttons|=keys & ~(uint32_t)ACT_ALL;
     if (d->buttons & BTN_L2) d->l2=255;
     if (d->buttons & BTN_R2) d->r2=255;
