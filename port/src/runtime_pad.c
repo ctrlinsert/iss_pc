@@ -28,6 +28,7 @@
 #include "rumble_gate.h"
 #include "mouse_shake.h"
 #include "iss_aim_assist.h"
+#include "iss_menu_mouse.h"
 #include <sys/stat.h>
 
 #define ERR_INVALID_ARG ((int32_t)0x80920001)
@@ -1058,9 +1059,17 @@ static void sample_host(PadData *d) {
         d->buttons&=~(uint32_t)ACT_ALL;
         return;
     }
-    const uint32_t mouse=sample_mouse(d,can_aiming(early),k,early); /* adds to the right stick */
+    uint32_t mouse=sample_mouse(d,can_aiming(early),k,early); /* adds to the right stick */
     last_mouse=mouse;
-    const uint32_t keys=map_keys(k,mouse), acts=keys & ACT_ALL;
+    uint32_t menu_buttons=0;
+    {
+        static int menu_mouse=-1;
+        if (menu_mouse<0) { const char *e=getenv("TLG_MENU_MOUSE"); menu_mouse=!(e && *e=='0'); }
+        if (menu_mouse && !mouse_pad.active && iss_menu_mouse_scene(runtime_menu_scene()))
+            menu_buttons=iss_menu_mouse_buttons(&mouse,MOUSE_LEFT-MOUSE_SOURCE,MOUSE_RIGHT-MOUSE_SOURCE,
+                WHEEL_UP-MOUSE_SOURCE,WHEEL_DOWN-MOUSE_SOURCE,BTN_CROSS,BTN_CIRCLE,BTN_UP,BTN_DOWN);
+    }
+    const uint32_t keys=map_keys(k,mouse)|menu_buttons, acts=keys & ACT_ALL;
     update_aim_assist(pad_input,keys!=0 || mouse!=0 || power_mouse_dx!=0 || power_mouse_dy!=0);
     d->buttons|=keys & ~(uint32_t)ACT_ALL;
     if (d->buttons & BTN_L2) d->l2=255;

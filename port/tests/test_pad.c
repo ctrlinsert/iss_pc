@@ -6,6 +6,7 @@
 int runtime_mouse_aim_installed(void) { return 0; }
 int runtime_power_wheel_gameplay(void) { return 1; }
 void runtime_power_wheel_status(IssPowerWheelStatus *out){memset(out,0,sizeof(*out));}
+int runtime_menu_scene(void){return ISS_MENU_SCENE_GAMEPLAY;}
 void runtime_power_wheel_request(int index){(void)index;}
 void runtime_power_wheel_visual(int open,int choice){(void)open;(void)choice;}
 void tlggpu_power_wheel_settings(int *enabled,int keys[4],int *instant){*enabled=0;*instant=0;memset(keys,0,4*sizeof(*keys));}
