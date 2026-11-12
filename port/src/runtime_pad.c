@@ -1069,7 +1069,14 @@ static void sample_host(PadData *d) {
             menu_buttons=iss_menu_mouse_buttons(&mouse,MOUSE_LEFT-MOUSE_SOURCE,MOUSE_RIGHT-MOUSE_SOURCE,
                 WHEEL_UP-MOUSE_SOURCE,WHEEL_DOWN-MOUSE_SOURCE,BTN_CROSS,BTN_CIRCLE,BTN_UP,BTN_DOWN);
     }
-    const uint32_t keys=map_keys(k,mouse)|menu_buttons, acts=keys & ACT_ALL;
+    /* The interact key held with the right mouse button: two fingers pressing both ends of the
+     * touchpad (lifting the car off Reggie), as Tab + Backspace do (play_two_finger). */
+    uint32_t two_fingers=0;
+    if ((map_keys(k,mouse) & ACT_INTERACT) && (mouse>>(MOUSE_RIGHT-MOUSE_SOURCE) & 1)) {
+        mouse&=~(1u<<(MOUSE_RIGHT-MOUSE_SOURCE));
+        two_fingers=CLICK_LEFT|CLICK_RIGHT;
+    }
+    const uint32_t keys=map_keys(k,mouse)|menu_buttons|two_fingers, acts=keys & ACT_ALL;
     update_aim_assist(pad_input,keys!=0 || mouse!=0 || power_mouse_dx!=0 || power_mouse_dy!=0);
     d->buttons|=keys & ~(uint32_t)ACT_ALL;
     if (d->buttons & BTN_L2) d->l2=255;
