@@ -196,6 +196,17 @@ static int gamepad_active(SDL_Gamepad *g) {
     for (int a=0;a<SDL_GAMEPAD_AXIS_COUNT;++a) if (abs(SDL_GetGamepadAxis(g,(SDL_GamepadAxis)a))>16000) return 1;
     return 0;
 }
+/* On-screen notices: Portuguese when TLG_UI_LANG, else LC_MESSAGES or LANG, starts with "pt"; English
+ * otherwise (the in-game menu's rule, tlg_overlay.cpp UiPortuguese). */
+static int ui_portuguese(void) {
+    static int pt=-1;
+    if (pt<0) {
+        static const char *const names[]={"TLG_UI_LANG","LC_MESSAGES","LANG"};
+        pt=0;
+        for (int i=0;i<3;++i) { const char *v=getenv(names[i]); if (v && *v) { pt=v[0]=='p' && v[1]=='t'; break; } }
+    }
+    return pt;
+}
 /* Aim assist (iss_aim_assist.h): a controller counts as in use from a button, a trigger past a
  * quarter, or a stick past about a third, lower than gamepad_active so a camera nudge counts. */
 static int gamepad_input(SDL_Gamepad *g) {
@@ -436,8 +447,7 @@ static int key_tilt_side(uint32_t acts) {
     const int side=(pressed & ACT_TILT_RIGHT) ? 1 : (pressed & ACT_TILT_LEFT) ? -1 : 0;
     if (side) {
         motion.key_side=motion.key_side==side ? 0 : side;
-        const char *lang=getenv("TLG_UI_LANG");
-        const int pt=!(lang && !strncmp(lang,"en",2));
+        const int pt=ui_portuguese();
         tlggpu_overlay_notice(motion.key_side ? (pt ? "Modo sensor LIGADO: o mouse mira a lata, F/esquerdo pinta, Y ou balançar o mouse sacode; T/G de novo desliga"
                                                     : "Sensor mode ON: the mouse aims the can, F/left button sprays, Y or a mouse wiggle shakes; T/G again turns it off")
                                               : (pt ? "Modo sensor desligado" : "Sensor mode off"), 3.0f);
@@ -536,8 +546,7 @@ static void sample_motion(PadData *d, SDL_Gamepad *g, uint32_t acts) {
         const int toggle=sticks || (motion_button()>=0 && SDL_GetGamepadButton(g,(SDL_GamepadButton)motion_button()));
         if (toggle && !motion.toggle_held) {
             motion.mode=!motion.mode;
-            const char *lang=getenv("TLG_UI_LANG");
-            const int pt=!(lang && !strncmp(lang,"en",2));
+            const int pt=ui_portuguese();
             tlggpu_overlay_notice(motion.mode ? (pt ? "Modo sensor LIGADO (lata de spray): X sacode, R2 pinta, analógico esquerdo mira"
                                                     : "Sensor mode ON (spray can): cross shakes, R2 sprays, left stick aims")
                                               : (pt ? "Modo sensor desligado" : "Sensor mode off"), 3.0f);
@@ -780,8 +789,7 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
         if (pad_mode_cfg.toggle) {
             if (key_down && !key_was_down) {
                 toggled=!toggled;
-                const char *lang=getenv("TLG_UI_LANG");
-                const int pt=!(lang && !strncmp(lang,"en",2));
+                const int pt=ui_portuguese();
                 tlggpu_overlay_notice(toggled ? (pt ? "Mouse: modo touchpad LIGADO (esquerdo toca, arrastar desliza, direito = dois dedos)"
                                                     : "Mouse: touchpad mode ON (left touches, drag swipes, right = two fingers)")
                                               : (pt ? "Mouse: câmera" : "Mouse: camera"), 2.5f);
