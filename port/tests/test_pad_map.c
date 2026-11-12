@@ -17,6 +17,8 @@ void tlggpu_input_settings(TlgGpuInputSettings *settings) { memset(settings,0,si
 uint64_t tlggpu_total_draws(void) { return 0; }
 void tlggpu_frame_counters(TlgGpuFrameCounters *out) { memset(out,0,sizeof(*out)); }
 int tlggpu_overlay_captures_input(void) { return 0; }
+/* Button prompt icons (gpu/shim/tlg_prompt_icons.cpp, not linked here). */
+void iss_prompt_icons_device(int style) { (void)style; }
 void tlggpu_overlay_notice(const char *text, float seconds) { (void)text; (void)seconds; }
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
     (void)table; (void)count; (void)name;

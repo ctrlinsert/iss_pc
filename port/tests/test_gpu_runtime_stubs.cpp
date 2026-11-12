@@ -44,5 +44,7 @@ void runtime_trophy_save_open(int,int,uint64_t) { std::abort(); }
 void runtime_trophy_save_part(int,const void*,int64_t,int64_t,int) { std::abort(); }
 void runtime_trophy_save_close(int) { std::abort(); }
 int runtime_trophy_save_mode_ready() { return 0; }
+// Button prompt icons (gpu/shim/tlg_prompt_icons.cpp) ask the pad for key labels.
+const char* runtime_pad_key_label(uint32_t) { return nullptr; }
 }
 

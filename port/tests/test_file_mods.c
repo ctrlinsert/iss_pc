@@ -16,6 +16,10 @@ void runtime_karma_observe_save_read(void) {}
 void iss_karma_save_open(int fd, int writing, uint64_t length) { (void)fd; (void)writing; (void)length; }
 void iss_karma_save_part(int fd, const void *bytes, int64_t offset, int64_t size, int writing) { (void)fd; (void)bytes; (void)offset; (void)size; (void)writing; }
 void iss_karma_save_close(int fd) { (void)fd; }
+/* Button prompt icons (libtlggpu); the test never opens a language text package. */
+void iss_prompt_icons_open(int fd, const char *host_path) { (void)fd; (void)host_path; }
+void iss_prompt_icons_part(int fd, void *buffer, int64_t offset, int64_t size) { (void)fd; (void)buffer; (void)offset; (void)size; }
+void iss_prompt_icons_close(int fd) { (void)fd; }
 uintptr_t runtime_lookup(const RuntimeExport *table,size_t n,const char *name) {
     for (size_t i=0;i<n;++i) if (!strcmp(table[i].name,name)) return (uintptr_t)table[i].function;
     return 0;
