@@ -20,7 +20,7 @@ void runtime_karma_observe_save_read(void){atomic_fetch_add(&save_read_generatio
 void runtime_karma_compatibility_failure(int code){atomic_store(&compatibility_failure,code);}
 const char *runtime_karma_compatibility_reason(void){
     switch(atomic_load(&compatibility_failure)){
-    case 1:return "Game title ID differs from CUSA00223. See the run log.";
+    case 1:return "Game title ID is neither CUSA00223 nor CUSA00004. See the run log.";
     case 2:return "Game metadata version differs from 01.07. See the run log.";
     case 3:return "The required hook is outside executable game memory. See the run log.";
     case 4:return "Game code differs from the verified build, despite its version label. See the run log.";

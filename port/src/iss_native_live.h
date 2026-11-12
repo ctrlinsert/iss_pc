@@ -15,7 +15,7 @@ static const unsigned char iss_native_target_signature[]={0x55,0x48,0x89,0xe5,0x
 static const unsigned char iss_native_safe_signature[]={0x4d,0x89,0xa5,0xa0,0xdc,1,0,0x41,0xc6,0x85,4,0x0f,0xdf,0,0};
 static const unsigned char iss_native_dim_signature[]={0x41,0x89,0x5d,0,0x41,0x89,0x4d,4,0x41,0x89,0x45,0x0c,0x41,0x89,0x55,0x10};
 static inline int iss_native_live_signature(const unsigned char *image,size_t size,const char *title,const char *version){
- return image&&title&&version&&(!strcmp(title,"CUSA00223")||!strcmp(title,"CUSA00004"))&&!strcmp(version,"01.07")&& /* US or EU 1.07: same executable */
+ return image&&title&&version&&iss_title_107(title,version)&& /* US or EU 1.07: same executable */
   size>=ISS_NATIVE_FRAME_SITE+sizeof(iss_native_frame_signature)&&size>=ISS_NATIVE_TARGET_SITE+sizeof(iss_native_target_signature)&&
   size>=ISS_NATIVE_SAFE_SITE+sizeof(iss_native_safe_signature)&&
   size>=ISS_NATIVE_DIM_SITE+sizeof(iss_native_dim_signature)&&

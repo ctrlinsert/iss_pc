@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include "iss_native_exposure.h"
+#include "iss_title.h"
 
 enum { ISS_NATIVE_PRESETS = 6, ISS_NATIVE_SITE_COUNT = 18 };
 static const uint32_t iss_native_widths[] = {0,1920,2560,3440,3840,5120};
@@ -186,7 +187,7 @@ static inline void iss_native_changes(const IssNativePlan *p,IssNativeSite sites
 /* The titles whose 1.07 executable is the verified one. The serial only narrows the request: the
  * byte signatures below decide, so an EU dump with other code is still refused. */
 static inline int iss_native_title(const char *serial,const char *version){
-    return serial && version && (!strcmp(serial,"CUSA00223") || !strcmp(serial,"CUSA00004")) && !strcmp(version,"01.07");
+    return iss_title_107(serial,version);
 }
 /* Atomic preflight: a single incompatible byte, short image, wrong region or
  * other render patch refuses ALL writes, including lighting capacity. */
