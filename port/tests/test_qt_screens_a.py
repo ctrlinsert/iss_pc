@@ -530,8 +530,8 @@ class ControllerTests(unittest.TestCase):
             self.assertIn('iss_native_percent=67', self.ini_text())
             self.assertIn('Not exact', self.graphics.model.get('n:internal')['note'])
             self.graphics.setValue('n:output', '5')
-            self.graphics.setValue('n:internal', '2160')         # over the pixel budget: refused, unchanged
-            self.assertEqual(50, native_resolution.read(logic.tlg_run.read_ini(self.ini))[1])
+            self.graphics.setValue('n:internal', '2160')         # 5120x1440 at 150% fits the 8K budget
+            self.assertEqual(150, native_resolution.read(logic.tlg_run.read_ini(self.ini))[1])
 
     def test_a_row_changed_on_the_fixes_screen_shows_here(self):
         self.backend.setFix('TLG_STALE_READBACK', '1')
