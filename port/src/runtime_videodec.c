@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
 
@@ -52,6 +53,13 @@ _Static_assert(sizeof(ConfigInfo)==40 && sizeof(ResourceInfo)==56 && sizeof(Ctrl
 
 typedef struct { AVCodecContext *codec; AVPacket *packet; AVFrame *frame, *nv12; struct SwsContext *sws; } Decoder;
 
+/* When a full-screen movie last produced a picture (runtime_wait_now_ms), for the 16:9 menu
+ * presentation: the game draws its movies across the 1920x1080 UI canvas. 0 = never. */
+static _Atomic uint64_t movie_picture_ms;
+int runtime_movie_playing(void) {
+    const uint64_t at=movie_picture_ms;
+    return at && runtime_wait_now_ms()-at<500;
+}
 static uint32_t align(uint32_t value, uint32_t to) { return (value+to-1)&~(to-1); }
 
 static ABI int32_t videodec_query(const ConfigInfo *config, ResourceInfo *out) {
@@ -103,6 +111,7 @@ static int32_t picture(Decoder *d, FrameBuffer *buffer, PictureInfo *info) {
         f=d->nv12;
     }
     uint32_t width=(uint32_t)f->width, height=(uint32_t)f->height;
+    if (width>=1280 && height>=720) movie_picture_ms=runtime_wait_now_ms();
     uint32_t pitch=align(width,64), rows=align(height,16);
     if ((uint64_t)pitch*rows*3/2>buffer->frame_buffer_size) return ERR_FRAME_BUFFER_SIZE;
     unsigned char *luma=buffer->frame_buffer, *chroma=luma+(size_t)pitch*rows;

@@ -27,7 +27,7 @@ int main(){
  assert(!iss_menu_pause_gate(&seen,1,1,1));assert(iss_menu_pause_gate(&seen,1,1,0));
  // Scenes: 16:9 menus everywhere but gameplay; an unverified executable never fits.
  assert(!iss_menu_scene_fit(ISS_MENU_SCENE_UNSUPPORTED)&&!iss_menu_scene_fit(ISS_MENU_SCENE_GAMEPLAY));
- assert(iss_menu_scene_fit(ISS_MENU_SCENE_STARTING)&&iss_menu_scene_fit(ISS_MENU_SCENE_NO_HERO)&&iss_menu_scene_fit(ISS_MENU_SCENE_PAUSED));
+ assert(iss_menu_scene_fit(ISS_MENU_SCENE_STARTING)&&iss_menu_scene_fit(ISS_MENU_SCENE_NO_HERO)&&iss_menu_scene_fit(ISS_MENU_SCENE_PAUSED)&&iss_menu_scene_fit(ISS_MENU_SCENE_MOVIE));
  assert(iss_menu_presentation_fit(7680,2160,iss_menu_scene_fit(ISS_MENU_SCENE_NO_HERO)));
  assert(!iss_menu_presentation_fit(3840,2160,iss_menu_scene_fit(ISS_MENU_SCENE_PAUSED)));
  nodes[0]={0xcdfc10,0,1870,1020,0};nodes[1]={0xd74668,1,0,0,0};nodes[2]={0xd795d0,2,0,0,0};

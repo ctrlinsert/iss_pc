@@ -3,6 +3,7 @@
 #include "power_wheel_signatures.h"
 #include "power_wheel_gameplay.h"
 #include "iss_menu_aspect.h"
+#include "runtime.h"
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -126,6 +127,7 @@ static void pw_tick_impl(void){
 }
 int runtime_menu_scene(void){
     if(!ui_image)return ISS_MENU_SCENE_UNSUPPORTED;
+    if(runtime_movie_playing())return ISS_MENU_SCENE_MOVIE;
     int scene=atomic_load(&ui_scene);
     if(scene==0)return ISS_MENU_SCENE_STARTING;
     if(scene==1)return ISS_MENU_SCENE_NO_HERO;
