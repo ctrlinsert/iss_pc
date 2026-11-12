@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / 'launcher'))
 import native_resolution as n  # noqa: E402
 
 HEADER = (ROOT / 'src' / 'iss_native_resolution.h').read_text(encoding='utf-8')
+EXPOSURE = (ROOT / 'src' / 'iss_native_exposure.h').read_text(encoding='utf-8')
 CASES = (Path(__file__).resolve().parent / 'native_resolution_cases.txt').read_text(encoding='utf-8')
 
 
@@ -29,8 +30,12 @@ class SharedTables(unittest.TestCase):
         self.assertEqual(n.OUTPUTS, tuple(zip(widths, heights)))
         self.assertEqual(n.STEPS, header_list('iss_native_step_heights'))
         self.assertEqual(len(n.OUTPUT_LABELS), len(n.OUTPUTS))
-        self.assertEqual(n.PIXEL_BUDGET, 3840 * 2160)
-        self.assertIn('3840u*2160u', HEADER)
+        self.assertEqual(n.PIXEL_BUDGET, 7680 * 4320)
+        self.assertIn('ISS_NATIVE_MAX_PIXELS (7680u*4320u)', EXPOSURE)
+        self.assertEqual(n.CUSTOM, int(re.search(r'ISS_NATIVE_CUSTOM\s*=\s*(\d+)', HEADER).group(1)))
+        limits = {k: int(v) for k, v in re.findall(r'ISS_NATIVE_CUSTOM_(MIN_W|MIN_H|MAX_W|MAX_H)\s*=\s*(\d+)', HEADER)}
+        self.assertEqual((n.CUSTOM_MIN, n.CUSTOM_MAX),
+                         ((limits['MIN_W'], limits['MIN_H']), (limits['MAX_W'], limits['MAX_H'])))
 
     def test_shared_cases(self):
         count = 0
@@ -69,15 +74,34 @@ class Behaviour(unittest.TestCase):
         self.assertIn('1440p · 2560×1440 50%', text)       # where 720p is exact
 
     def test_budget_is_refused(self):
-        self.assertEqual(n.pick(4, 2160)[0], n.PICK_OK)           # 4K at 100% is exactly the budget
-        self.assertEqual(n.pick(5, 2160)[0], n.PICK_BUDGET)
-        text, tone = n.summary(t, 4, 150)
+        self.assertEqual(n.pick(4, 4320)[0], n.PICK_OK)           # 8K is exactly the budget
+        self.assertEqual(n.pick(6, 2160)[0], n.PICK_OK)           # 7680x2160 at 100%
+        self.assertEqual(n.pick(6, 4320)[0], n.PICK_BUDGET)
+        text, tone = n.summary(t, 6, 150)
         self.assertEqual(tone, 'bad')
-        self.assertIn('4K pixel limit', text)
-        options = {v: (label, ok) for v, label, ok in n.internal_options(t, 5, 100)}
-        self.assertFalse(options['2160'][1])
-        self.assertIn('over the 4K limit', options['2160'][0])
-        self.assertTrue(options['1440'][1])
+        self.assertIn('8K pixel limit', text)
+        options = {v: (label, ok) for v, label, ok in n.internal_options(t, 6, 100)}
+        self.assertTrue(options['2160'][1])
+
+    def test_custom_output(self):
+        try:
+            n.set_custom(0, 0)
+            self.assertIsNone(n.plan(n.CUSTOM, 100))                 # no size set: refused
+            self.assertEqual(n.pick(n.CUSTOM, 1080)[0], n.PICK_OUTPUT)
+            n.set_custom(5120, 2160)                                  # 5K2K
+            self.assertEqual(n.plan(n.CUSTOM, 100)[:2], (5120, 2160))
+            self.assertEqual(n.pick(n.CUSTOM, 1080)[:4], (n.PICK_OK, 50, 2560, 1080))
+            n.set_custom(7680, 2160)
+            self.assertEqual(n.plan(n.CUSTOM, 100)[:2], (7680, 2160))
+            for w, h in ((1920, 1200), (5121, 2160), (1024, 576), (15362, 4320), (0, 2160)):
+                n.set_custom(w, h)                                    # 16:10, odd, too small, too wide
+                self.assertIsNone(n.plan(n.CUSTOM, 100), (w, h))
+            self.assertEqual(n.read({'iss_native_output': '7', 'iss_native_width': '3840',
+                                     'iss_native_height': '1600'}), (7, 100))
+            self.assertEqual(n.plan(n.CUSTOM, 100)[:2], (3840, 1600))
+            self.assertIn('3840×1600', dict(n.output_options(lambda k, **f: k))['7'])
+        finally:
+            n.set_custom(0, 0)
 
     def test_off_and_custom(self):
         self.assertEqual(n.summary(t, 0, 100)[1], 'info')
@@ -102,6 +126,7 @@ class Behaviour(unittest.TestCase):
             self.assertEqual(n.read(values), (2, 50))
         self.assertEqual(n.read({}), (0, 100))
         self.assertEqual(n.read({'iss_native_output': '9', 'iss_native_percent': 'x'}), (0, 100))
+        n.set_custom(0, 0)
 
     def test_texts_have_both_languages_and_equal_placeholders(self):
         for key, (en, pt) in n.TEXT.items():

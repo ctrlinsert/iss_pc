@@ -15,9 +15,36 @@
 #include <errno.h>
 #include "iss_native_exposure.h"
 
-enum { ISS_NATIVE_PRESETS = 6, ISS_NATIVE_SITE_COUNT = 18 };
-static const uint32_t iss_native_widths[] = {0,1920,2560,3440,3840,5120};
-static const uint32_t iss_native_heights[] = {0,1080,1440,1440,2160,1440};
+/* Output presets (iss_native_output). The last one, ISS_NATIVE_CUSTOM, is any display size the
+ * player sets (iss_native_width / iss_native_height, or the in-game "Match this display" button):
+ * 5120x2160 (21:9 "5K2K"), 7680x2160 (32:9), 2560x1080... The widths/heights tables hold 0 for it;
+ * iss_native_output_size() reads the custom size set by iss_native_set_custom(). */
+enum { ISS_NATIVE_PRESETS = 8, ISS_NATIVE_CUSTOM = 7, ISS_NATIVE_SITE_COUNT = 18 };
+static const uint32_t iss_native_widths[] = {0,1920,2560,3440,3840,5120,7680,0};
+static const uint32_t iss_native_heights[] = {0,1080,1440,1440,2160,1440,2160,0};
+/* Custom output limits: 1280x720 or larger, even, 16:9 or wider (the camera is Hor+; narrower
+ * screens would need the projection patch this port does not carry), at most 15360 wide. */
+enum { ISS_NATIVE_CUSTOM_MIN_W = 1280, ISS_NATIVE_CUSTOM_MIN_H = 720, ISS_NATIVE_CUSTOM_MAX_W = 15360,
+       ISS_NATIVE_CUSTOM_MAX_H = 4320 };
+static inline int iss_native_custom_valid(uint32_t w,uint32_t h) {
+    return w>=ISS_NATIVE_CUSTOM_MIN_W && h>=ISS_NATIVE_CUSTOM_MIN_H && w<=ISS_NATIVE_CUSTOM_MAX_W &&
+           h<=ISS_NATIVE_CUSTOM_MAX_H && !(w&1) && !(h&1) && (uint64_t)w*9u>=(uint64_t)h*16u;
+}
+/* One per translation unit (static): each user (probe.c's config, the in-game menu, a test) sets
+ * it from its own source before planning. An invalid size reads as 0 x 0: the custom output is
+ * then refused like an unknown one. */
+static uint32_t iss_native_custom_w, iss_native_custom_h;
+static inline void iss_native_set_custom(uint32_t w,uint32_t h) {
+    if (iss_native_custom_valid(w,h)) { iss_native_custom_w=w; iss_native_custom_h=h; }
+    else iss_native_custom_w=iss_native_custom_h=0;
+}
+static inline int iss_native_output_size(int output,uint32_t *w,uint32_t *h) {
+    *w=*h=0;
+    if (output<=0 || output>=ISS_NATIVE_PRESETS) return 0;
+    if (output==ISS_NATIVE_CUSTOM) { *w=iss_native_custom_w; *h=iss_native_custom_h; }
+    else { *w=iss_native_widths[output]; *h=iss_native_heights[output]; }
+    return *w && *h;
+}
 typedef struct IssNativeConfig { int output, percent, hud_edges;
 #ifdef __cplusplus
     int ui_16_9=0;
@@ -57,7 +84,7 @@ static inline int iss_native_integer(const char *s,int min,int max,int *out) {
 static inline int iss_native_config(FILE *f, IssNativeConfig *c) {
     *c=(IssNativeConfig){0,100,0,1,0};
     if (!f) return 1;
-    char line[1024]; int valid=1;
+    char line[1024]; int valid=1, custom_w=0, custom_h=0;
     while (fgets(line,sizeof(line),f)) {
         size_t n=strlen(line);
         while(n && (line[n-1]==' '||line[n-1]=='\r'||line[n-1]=='\n'||line[n-1]=='\t'))line[--n]=0;
@@ -66,7 +93,10 @@ static inline int iss_native_config(FILE *f, IssNativeConfig *c) {
         if (!strncmp(line,"iss_native_hud_edges=",21)) valid &= iss_native_integer(line+21,0,1,&c->hud_edges);
         if (!strncmp(line,"iss_native_ui_16_9=",19)) valid &= iss_native_integer(line+19,0,2,&c->ui_16_9);
         if (!strncmp(line,"iss_temporal_mode=",18)) valid &= iss_native_integer(line+18,0,ISS_TEMPORAL_MODES-1,&c->temporal_mode);
+        if (!strncmp(line,"iss_native_width=",17)) valid &= iss_native_integer(line+17,0,ISS_NATIVE_CUSTOM_MAX_W,&custom_w);
+        if (!strncmp(line,"iss_native_height=",18)) valid &= iss_native_integer(line+18,0,ISS_NATIVE_CUSTOM_MAX_H,&custom_h);
     }
+    iss_native_set_custom((uint32_t)custom_w,(uint32_t)custom_h);
     return valid;
 }
 /* Folds the temporal mode into the config: the percent the mode stands for replaces iss_native_percent.
@@ -84,13 +114,13 @@ static inline int iss_native_plan(IssNativeConfig c, IssNativePlan *p) {
     memset(p,0,sizeof(*p));
     if(c.output<=0 || c.output>=ISS_NATIVE_PRESETS || c.percent<25 || c.percent>200 ||
        (c.hud_edges!=0 && c.hud_edges!=1)||c.ui_16_9<0||c.ui_16_9>2)return 0;
-    p->output_width=iss_native_widths[c.output]; p->output_height=iss_native_heights[c.output];
+    if(!iss_native_output_size(c.output,&p->output_width,&p->output_height)){memset(p,0,sizeof(*p));return 0;}
     /* At 100% these are EXACT output pixels, never an upscale-only 16:9 image.
      * Other percentages round to even pixels; Vulkan tiling alignment is handled
      * by the game's surface allocator, not by changing the visible dimensions. */
     p->width=iss_native_scale(p->output_width,c.percent);
     p->height=iss_native_scale(p->output_height,c.percent);
-    if (!p->width || !p->height || (uint64_t)p->width*p->height>3840u*2160u) {
+    if (!p->width || !p->height || (uint64_t)p->width*p->height>ISS_NATIVE_MAX_PIXELS) {
         memset(p,0,sizeof(*p)); return 0;
     }
     p->ui_height=1080;
@@ -123,7 +153,8 @@ typedef struct { int percent; uint32_t width, height; int32_t error; } IssNative
 static inline int iss_native_pick(int output,uint32_t target_height,IssNativePick *r) {
     memset(r,0,sizeof(*r));
     if (output<=0 || output>=ISS_NATIVE_PRESETS) return ISS_NATIVE_PICK_OUTPUT;
-    const uint32_t out_h=iss_native_heights[output];
+    uint32_t out_w,out_h;
+    if (!iss_native_output_size(output,&out_w,&out_h)) return ISS_NATIVE_PICK_OUTPUT;
     if ((uint64_t)target_height*100<(uint64_t)out_h*25 || (uint64_t)target_height*100>(uint64_t)out_h*200)
         return ISS_NATIVE_PICK_RANGE;
     int best=25; int64_t best_error=-1;
@@ -133,7 +164,7 @@ static inline int iss_native_pick(int output,uint32_t target_height,IssNativePic
         if (best_error<0 || error<best_error) {best=percent;best_error=error;}
     }
     r->percent=best;
-    r->width=iss_native_scale(iss_native_widths[output],best);
+    r->width=iss_native_scale(out_w,best);
     r->height=iss_native_scale(out_h,best);
     r->error=(int32_t)r->height-(int32_t)target_height;
     IssNativePlan plan;

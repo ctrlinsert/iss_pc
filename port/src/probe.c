@@ -942,9 +942,10 @@ static void install_iss_native_resolution(const char *app0,Segment *segments,uin
         }
     }
     if(!config.output)return;
+    runtime_native_live_set_custom(iss_native_custom_w,iss_native_custom_h);
     IssNativePlan plan;
     if(!iss_native_plan(config,&plan)){
-        runtime_native_publish(-1,"Requested scale exceeds the 4K pixel budget; no native patch applied",NULL);
+        runtime_native_publish(-1,"Requested size exceeds the 8K pixel budget, or the custom size is unset; no native patch applied",NULL);
         puts("Native rendering: refused dimensions/scale; original game dimensions retained");return;
     }
     char path[4096],serial[32]="",version[32]="";

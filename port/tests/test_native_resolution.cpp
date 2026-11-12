@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include <utility>
 #include "../src/iss_native_resolution.h"
 #include <cassert>
 #include <cmath>
@@ -50,9 +51,11 @@ int main(int argc,char** argv){
     FILE* legacy=tmpfile();assert(legacy);fputs("iss_native_ui_16_9=0\niss_native_hud_edges=1\n",legacy);rewind(legacy);
     assert(iss_native_config(legacy,&fresh)&&fresh.ui_16_9==0&&fresh.hud_edges==1);fclose(legacy);
     IssNativePlan p;
+    iss_native_set_custom(5120,2160);   // 5K2K: the custom slot runs the same checks as the presets
     for(int output=1;output<ISS_NATIVE_PRESETS;output++){
+        uint32_t ow,oh;assert(iss_native_output_size(output,&ow,&oh));
         assert(iss_native_plan({output,100,1},&p));
-        assert(p.width==iss_native_widths[output] && p.height==iss_native_heights[output]);
+        assert(p.width==ow && p.height==oh && p.output_width==ow);
         assert(p.ui_height==1080);
         const double aspect=double(p.output_width)/p.output_height;
         assert(std::abs(double(p.ui_width)/p.ui_height-aspect)<0.001);
@@ -64,7 +67,7 @@ int main(int argc,char** argv){
         assert(p.light_entries>=needed && p.light_entries>=0x320000 && p.light_entries%65536==0);
         for(int scale=25;scale<=200;scale++){
             bool ok=iss_native_plan({output,scale,1},&p);
-            if(ok){assert(!(p.width%2) && !(p.height%2));assert(uint64_t(p.width)*p.height<=8294400);}
+            if(ok){assert(!(p.width%2) && !(p.height%2));assert(uint64_t(p.width)*p.height<=ISS_NATIVE_MAX_PIXELS);}
             else assert(!p.width && !p.height);
         }
     }
@@ -72,7 +75,21 @@ int main(int argc,char** argv){
     assert(iss_native_plan({5,100,1},&p) && p.width==5120 && p.height==1440 && p.ui_width==3840 && p.light_entries==3735552);
     assert(iss_native_plan({4,100,1},&p) && p.light_entries==4194304);
     assert(iss_native_plan({3,50,1},&p) && p.width==1720 && p.height==720);
-    for(auto c:{IssNativeConfig{0,100,1},{6,100,1},{3,0,1},{3,201,1},{3,100,2},{5,200,1}})assert(!iss_native_plan(c,&p));
+    // 8K budget: 7680x2160 at 100%, 4K at 200% (exactly 8K); 7680x2160 at 150% is over it.
+    assert(iss_native_plan({6,100,1},&p) && p.width==7680 && p.height==2160 && p.ui_width==3840);
+    assert(iss_native_plan({4,200,1},&p) && p.width==7680 && p.height==4320);
+    assert(iss_native_plan({7,100,1},&p) && p.width==5120 && p.height==2160 && p.ui_width==2560);
+    iss_native_set_custom(7680,2160);assert(iss_native_plan({7,100,1},&p) && p.width==7680);
+    for(auto wh:{std::pair<unsigned,unsigned>{1920,1200},{5121,2160},{1024,576},{15362,4320},{0,2160},{3840,4322}}){
+        iss_native_set_custom(wh.first,wh.second);assert(!iss_native_plan({7,100,1},&p));   // 16:10, odd, small, large
+    }
+    for(auto c:{IssNativeConfig{0,100,1},{7,100,1},{8,100,1},{3,0,1},{3,201,1},{3,100,2},{6,150,1}})assert(!iss_native_plan(c,&p));
+    FILE* custom=tmpfile();assert(custom);fputs("iss_native_output=7\niss_native_width=3840\niss_native_height=1600\n",custom);rewind(custom);
+    {IssNativeConfig cc;assert(iss_native_config(custom,&cc) && cc.output==7);fclose(custom);
+     assert(iss_native_plan(cc,&p) && p.width==3840 && p.height==1600);}
+    custom=tmpfile();assert(custom);fputs("iss_native_width=20000\n",custom);rewind(custom);
+    {IssNativeConfig cc;assert(!iss_native_config(custom,&cc));fclose(custom);}
+    iss_native_set_custom(0,0);
     FILE* f=tmpfile();assert(f);fputs("iss_native_output=5\niss_native_percent=100\niss_native_hud_edges=0\n",f);rewind(f);
     IssNativeConfig c;assert(iss_native_config(f,&c) && c.output==5 && c.percent==100 && c.hud_edges==0);fclose(f);
     f=tmpfile();assert(f);fputs("iss_native_output=3\niss_native_percent=100oops\n",f);rewind(f);assert(!iss_native_config(f,&c));fclose(f);
@@ -111,7 +128,7 @@ int main(int argc,char** argv){
      assert(read32(eu.data()+0x1eff4a)==5120 && read32(eu.data()+0x1eff51)==1440);}
     assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.00",{3,100,1}));assert(image==original);
     assert(!iss_native_apply(image.data(),100,"CUSA00223","01.07",{3,100,1}));assert(image==original);
-    assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,200,1}));assert(image==original);
+    assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{6,150,1}));assert(image==original);
     assert(iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,100,1}));
     assert(read32(image.data()+0x1eff4a)==5120 && read32(image.data()+0x1eff51)==1440);
     assert(read32(image.data()+0x1f0403)==3840 && read32(image.data()+0x1f03fb)==1080);

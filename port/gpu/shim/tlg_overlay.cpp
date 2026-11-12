@@ -898,9 +898,14 @@ void NativeRenderingTab() {
         ImGui::EndDisabled();ImGui::Text("Rebuild check: %s",state==3?"verified":state==2?"rebuilding":state==1?"queued":state<0?"not confirmed":"not run");
     }
     const bool live_native=runtime_native_live_enabled()!=0;
-    ImGui::TextWrapped("%s",live_native?"Experimental live native rendering. Select a resolution or release the internal resolution slider to queue a safe rebuild. Larger allocations still require restarting this candidate.":"Experimental native 3D rendering for CUSA00223 update 1.07. Changes apply after closing and relaunching the game.");
+    ImGui::TextWrapped("%s",live_native?"Experimental live native rendering. Select a resolution or release the internal resolution slider to queue a safe rebuild. Larger allocations still require restarting this candidate.":"Experimental native 3D rendering for update 1.07 (CUSA00223 / CUSA00004). Changes apply after closing and relaunching the game.");
+    // The custom output (any display size): the header plans with it from here on.
+    iss_native_set_custom(uint32_t(s.iss_native_width.load()),uint32_t(s.iss_native_height.load()));
+    char custom_label[64];
+    if(iss_native_custom_w)std::snprintf(custom_label,sizeof(custom_label),TL("Custom  %u x %u","Personalizada  %u x %u"),iss_native_custom_w,iss_native_custom_h);
+    else std::snprintf(custom_label,sizeof(custom_label),"%s",TL("Custom (set the size below)","Personalizada (defina o tamanho abaixo)"));
     const char* outputs[]={TL("Off (original game)","Desligado (jogo original)"),"1080p  1920 x 1080","1440p  2560 x 1440",
-        "3440 x 1440 (21:9)","4K  3840 x 2160","5120 x 1440 (32:9)"};
+        "3440 x 1440 (21:9)","4K  3840 x 2160","5120 x 1440 (32:9)","7680 x 2160 (32:9)",custom_label};
     int output=s.iss_native_output, percent=s.iss_native_percent;
     bool edges=s.iss_native_hud_edges;
     // Output first; the internal resolution is a scene height (iss_native_pick in
@@ -909,6 +914,25 @@ void NativeRenderingTab() {
     if(ImGui::Combo(TL("Output","Saída"),&output,outputs,ISS_NATIVE_PRESETS)){native_commit=true;
         s.iss_native_percent=percent=iss_native_retarget(s.iss_native_output,percent,output);
         s.iss_native_output=output;dirty=true;
+    }
+    if(output==ISS_NATIVE_CUSTOM){
+        // Any display: width x height, or the size of the display the game window is on.
+        int size[2]={s.iss_native_width.load(),s.iss_native_height.load()};
+        if(ImGui::InputInt2(TL("Custom size (width x height)","Tamanho personalizado (largura x altura)"),size)){
+            s.iss_native_width=std::clamp(size[0],0,int(ISS_NATIVE_CUSTOM_MAX_W));s.iss_native_height=std::clamp(size[1],0,int(ISS_NATIVE_CUSTOM_MAX_H));dirty=true;}
+        if(ImGui::IsItemDeactivatedAfterEdit())native_commit=true;
+        if(ImGui::Button(TL("Match this display","Usar o tamanho desta tela"))){
+            SDL_Window* window=SDL_GetKeyboardFocus();
+            const SDL_DisplayID display=window?SDL_GetDisplayForWindow(window):SDL_GetPrimaryDisplay();
+            if(const SDL_DisplayMode* mode=display?SDL_GetDesktopDisplayMode(display):nullptr){
+                const float density=mode->pixel_density>0.0f?mode->pixel_density:1.0f;
+                s.iss_native_width=int(std::lround(mode->w*density))&~1;s.iss_native_height=int(std::lround(mode->h*density))&~1;
+                dirty=true;native_commit=true;
+            }
+        }
+        iss_native_set_custom(uint32_t(s.iss_native_width.load()),uint32_t(s.iss_native_height.load()));
+        if(!iss_native_custom_w)ImGui::TextWrapped(TL("Pick an even size from %d x %d up to %d x %d, 16:9 or wider (21:9, 32:9...).","Escolha um tamanho par de %d x %d até %d x %d, 16:9 ou mais largo (21:9, 32:9...)."),
+            int(ISS_NATIVE_CUSTOM_MIN_W),int(ISS_NATIVE_CUSTOM_MIN_H),int(ISS_NATIVE_CUSTOM_MAX_W),int(ISS_NATIVE_CUSTOM_MAX_H));
     }
     const int step=output?iss_native_step_for_percent(output,percent):-1;
     char preview[96];
@@ -924,7 +948,7 @@ void NativeRenderingTab() {
                 std::snprintf(label,sizeof(label),pick.error?TL("%up  about %u x %u (%d%%)","%up  cerca de %u x %u (%d%%)"):"%up  %u x %u (%d%%)",
                               iss_native_step_heights[i],pick.width,pick.height,pick.percent);
             else if(status==ISS_NATIVE_PICK_BUDGET)
-                std::snprintf(label,sizeof(label),TL("%up  over the 4K limit","%up  acima do limite de 4K"),iss_native_step_heights[i]);
+                std::snprintf(label,sizeof(label),TL("%up  over the 8K pixel limit","%up  acima do limite de pixels de 8K"),iss_native_step_heights[i]);
             else std::snprintf(label,sizeof(label),TL("%up  out of range for this output","%up  fora do alcance desta saída"),iss_native_step_heights[i]);
             ImGui::BeginDisabled(status!=ISS_NATIVE_PICK_OK);
             if(ImGui::Selectable(label,i==step)){s.iss_native_percent=percent=pick.percent;dirty=true;native_commit=true;}
@@ -939,8 +963,10 @@ void NativeRenderingTab() {
     // Native choices can apply while the overlay stays open. Persist committed edits now: closing the
     // game directly need not pass through SetOpen(false). Slider drags still write only once, on release.
     if(native_commit)TlgSettings::Save();
-    if(live_native&&native_commit)
+    if(live_native&&native_commit){
+        runtime_native_live_set_custom(uint32_t(s.iss_native_width.load()),uint32_t(s.iss_native_height.load()));
         runtime_native_live_request_config({output,percent,int(edges),s.iss_native_ui_16_9.load(),0});
+    }
     if(live_native)ImGui::TextWrapped("%s",runtime_native_live_reason());
     ImGui::TextWrapped("%s",TL("Pick the output (what is shown) and the internal resolution (what the 3D scene is drawn at): for example 720p inside a 1440p output renders less and shows more. The vertical field of view stays the same; wider displays show more world horizontally. Uncheck edge HUD to keep it centered within 16:9.",
         "Escolha a saída (o que aparece) e a resolução interna (o tamanho em que a cena 3D é desenhada): por exemplo 720p dentro de uma saída 1440p desenha menos e mostra mais. O campo de visão vertical continua o mesmo; telas mais largas mostram mais mundo na horizontal. Desmarque o HUD nas bordas para manter o HUD centralizado em 16:9."));
@@ -962,8 +988,8 @@ void NativeRenderingTab() {
                 }
             }
         }
-    }else ImGui::TextWrapped("%s",TL("This scale is over the 4K pixel limit: the game would refuse it at startup and run unchanged. Pick a lower internal resolution.",
-        "Esta escala passa do limite de pixels de 4K: o jogo a recusaria na partida e abriria sem mudança. Escolha uma resolução interna menor."));
+    }else ImGui::TextWrapped("%s",TL("This output or scale cannot be used: over the 8K pixel limit, or a custom size that is not set. The game would refuse it at startup and run unchanged.",
+        "Esta saída ou escala não pode ser usada: passa do limite de pixels de 8K, ou é um tamanho personalizado não definido. O jogo a recusaria na partida e abriria sem mudança."));
     ImGui::TextWrapped("%s",TL("Takes effect the next time the game starts.","Vale na próxima vez que o jogo iniciar."));
     ImGui::Separator();
     ImGui::TextWrapped("%s",runtime_native_reason());

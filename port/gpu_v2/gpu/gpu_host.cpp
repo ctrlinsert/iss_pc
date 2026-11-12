@@ -112,10 +112,12 @@ extern "C" int tlggpu_init(const TlgGpuConfig* config) {
     // Initial host window shape follows the requested output, independently of
     // scene scale. The game's actual buffers remain guarded in probe.c.
     const int native_output=TlgSettings::Get().iss_native_output;
-    if(native_output>0 && native_output<6){
-        constexpr uint32_t widths[]={0,1920,2560,3440,3840,5120};
-        constexpr uint32_t heights[]={0,1080,1440,1440,2160,1440};
-        callbacks.width=widths[native_output];callbacks.height=heights[native_output];
+    if(native_output>0 && native_output<8){
+        constexpr uint32_t widths[]={0,1920,2560,3440,3840,5120,7680,0};
+        constexpr uint32_t heights[]={0,1080,1440,1440,2160,1440,2160,0};
+        uint32_t w=widths[native_output],h=heights[native_output];
+        if(native_output==7){w=uint32_t(TlgSettings::Get().iss_native_width.load());h=uint32_t(TlgSettings::Get().iss_native_height.load());}
+        if(w&&h){callbacks.width=w;callbacks.height=h;}
     }
     // The launcher's choices (backports_table.py): TLG_RENDERER=2 picked this renderer, and
     // TLG_NATIVE_PASSES sets ISS_NATIVE_PASSES (off by default: NVIDIA's Linux driver).
