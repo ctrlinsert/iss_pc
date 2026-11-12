@@ -144,6 +144,8 @@ if [[ ${1:-} == --test || ${1:-} == --test-only ]]; then
     out/mouse-shake-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_mouse_touch.c -Isrc -lm -o out/mouse-touch-test
     out/mouse-touch-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_interact_gesture.c -Isrc -lm -o out/interact-gesture-test
+    out/interact-gesture-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_rumble_gate.c -Isrc -o out/rumble-gate-test
     out/rumble-gate-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG -pthread "${includes[@]}" -I. -Isrc tests/test_mouse_pad.c "${libraries[@]}" -lm -o out/mouse-pad-test

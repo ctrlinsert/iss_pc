@@ -49,10 +49,27 @@ class KeyboardTableTests(unittest.TestCase):
         mine = {button: scancode for button, scancode, _ in padsettings.KEYBOARD_BUTTONS}
         self.assertEqual(self.c_key_map(), mine)
 
-    def test_fixed_keys_exist_in_runtime_pad_c(self):
+    def test_host_actions_match_runtime_pad_c(self):
         text = RUNTIME_PAD.read_text(encoding='utf-8')
-        for scancode in ('W', 'A', 'S', 'D', 'LEFT', 'RIGHT', 'UP', 'DOWN', 'T', 'G', 'Y'):
-            self.assertIn(f'SDL_SCANCODE_{scancode}]', text, scancode)
+        body = text[text.index('static ButtonMap key_map='):]
+        body = body[:body.index('\n},')]
+        names = dict(re.findall(r'\{"(\w+)",(ACT_\w+)\}', text[text.index('ps_names[]'):text.index('typedef struct { int source')]))
+        self.assertEqual(set(names), set(padsettings.HOST_ACTIONS))
+        sources = {'MOUSE_X2': 'Mouse X2', 'UP': 'Up', 'DOWN': 'Down', 'LEFT': 'Left', 'RIGHT': 'Right'}
+        c_defaults = {}
+        for source, act in re.findall(r'\{(?:SDL_SCANCODE_)?(\w+),(ACT_\w+)\}', body):
+            c_defaults.setdefault(act, []).append(sources.get(source, source))
+        for action, keys in padsettings.KEYBOARD_ACTIONS:
+            self.assertEqual(sorted(c_defaults[names[action]]), sorted(keys), action)
+        # The game's keys go through the map, not straight from the keyboard state (F9 is a tool key).
+        self.assertNotRegex(text, r'k\[SDL_SCANCODE_(?:[WASDTGY]|TAB|UP|DOWN|LEFT|RIGHT)\]')
+
+    def test_a_button_binding_takes_the_key_from_a_host_action(self):
+        keys = padsettings.effective_keys('r1=Mouse X2,tilt_right=Q')
+        self.assertEqual(['V'], keys['interact'])
+        self.assertEqual(['Q'], keys['tilt_right'])
+        self.assertEqual(['V', 'Mouse X2'], padsettings.effective_keys('')['interact'])
+        self.assertEqual([], padsettings.parse_key_map('interact=E|Mouse X1,ls_up=I')[1])
 
     def test_ps4_button_names_are_the_ones_apply_button_map_reads(self):
         text = RUNTIME_PAD.read_text(encoding='utf-8')
@@ -408,6 +425,8 @@ class StringsTests(unittest.TestCase):
                 self.assertIn('ctl_what_' + key, STRINGS)
         for button, _, _ in padsettings.KEYBOARD_BUTTONS:
             self.assertIn('pad_btn_' + button, STRINGS)
+        for action in padsettings.HOST_ACTIONS:
+            self.assertIn('pad_act_' + action, STRINGS)
         if HAVE_QT:
             from qt.controls import PAD_KEY_LABELS
             for label in PAD_KEY_LABELS.values():
