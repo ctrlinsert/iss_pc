@@ -978,6 +978,14 @@ static void install_iss_native_resolution(const char *app0,Segment *segments,uin
         }else puts("Native lighting capacity-only test: override refused; verified native plan retained");
     }
     runtime_native_publish(1,"Experimental native startup rendering active",&plan);
+    {
+        const uint32_t need=iss_native_direct_memory_mb(plan.width,plan.height);
+        if(need>ISS_NATIVE_DMEM_RETAIL_MB){
+            const uint64_t now=runtime_memory_raise_pool_mb(need);
+            if(now)printf("Native rendering: direct memory %llu MiB for the %ux%u scene (TLG_DMEM_MB overrides upward)\n",(unsigned long long)now,plan.width,plan.height);
+            else printf("Native rendering: direct memory already allocated; the %ux%u scene may need TLG_DMEM_MB=%u\n",plan.width,plan.height,need);
+        }
+    }
     printf("Native exposure metering: required=%u floats, ping-pong capacity=%u floats (%u bytes each)\n",
         ((plan.width+127)/128)*((plan.height+71)/72),iss_native_exposure_entries(plan.width,plan.height),
         iss_native_exposure_entries(plan.width,plan.height)*4);

@@ -251,6 +251,19 @@ static inline int iss_native_raise_light_capacity(unsigned char *image,size_t si
     iss_native_write32(image+sites[14].offset+3,entries);
     iss_native_write32(image+sites[15].offset+2,entries);return 1;
 }
+/* Direct memory the scene size needs. The game sizes its heaps from sceKernelGetDirectMemorySize,
+ * and above about 5120x2160 the retail 5056 MiB runs out: at 7680x2160 the light list allocation
+ * returns NULL and the game crashes in memset. 6144 MiB was measured to work there. This allows
+ * 160 bytes per scene pixel beyond 3840x2160 (6400 MiB at 7680x2160, 9216 at 7680x4320), rounded
+ * up to 256 MiB; up to 4K it is the retail size. */
+#define ISS_NATIVE_DMEM_RETAIL_MB 5056u
+static inline uint32_t iss_native_direct_memory_mb(uint32_t width,uint32_t height){
+    const uint64_t pixels=(uint64_t)width*height, base=3840ull*2160ull;
+    if(pixels<=base)return ISS_NATIVE_DMEM_RETAIL_MB;
+    uint64_t mb=ISS_NATIVE_DMEM_RETAIL_MB+(((pixels-base)*160ull+(1u<<20)-1)>>20);
+    mb=(mb+255u)&~255ull;
+    return (uint32_t)(mb>16384u?16384u:mb);
+}
 #ifdef __cplusplus
 extern "C" {
 #endif
