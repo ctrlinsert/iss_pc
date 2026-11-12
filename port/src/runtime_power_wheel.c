@@ -2,11 +2,15 @@
 #include "power_wheel_transaction.h"
 #include "power_wheel_signatures.h"
 #include "power_wheel_gameplay.h"
+#include "iss_menu_aspect.h"
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <stdio.h>
 
 static unsigned char *pw_image;
+/* The menu presentation's scene sample; works without the experimental power wheel. */
+static unsigned char *ui_image;
+static atomic_int ui_scene; /* 0 = no camera update yet, 1 = no hero, 2 = hero */
 static atomic_int pw_supported,pw_ready,pw_active,pw_mask,pw_error,pw_requested;
 static atomic_int pw_visual_open,pw_visual_choice;
 static atomic_uint pw_generation;
@@ -47,6 +51,7 @@ static int pw_write_game(void *context,float energy,int missiles){
     return 1;
 }
 void runtime_power_wheel_attach(unsigned char *image,size_t size){
+    if(pw_pause_signature(image,size))ui_image=image;
     const char *opt=getenv("ISS_POWER_WHEEL_TEST");
     if(!opt||strcmp(opt,"1"))return;
     if(!pw_signatures(image,size)||!pw_pause_signature(image,size)){
@@ -58,6 +63,7 @@ void runtime_power_wheel_attach(unsigned char *image,size_t size){
     puts("Power wheel: experimental game-thread switching enabled; current resources carry across every switch");
 }
 void runtime_power_wheel_load_begin(void){
+    atomic_store(&ui_scene,1);
     atomic_store(&pw_visual_open,0);
     atomic_store(&pw_ready,0);atomic_store(&pw_requested,0);atomic_store(&pw_mask,0);
     atomic_fetch_add(&pw_generation,1);
@@ -118,7 +124,16 @@ static void pw_tick_impl(void){
     printf("Power wheel: request=%d result=%d\n",request-1,result);
     if(result<0&&result!=PW_SWITCH_LOCKED){atomic_store(&pw_error,result);atomic_store(&pw_ready,0);}
 }
+int runtime_menu_scene(void){
+    if(!ui_image)return ISS_MENU_SCENE_UNSUPPORTED;
+    int scene=atomic_load(&ui_scene);
+    if(scene==0)return ISS_MENU_SCENE_STARTING;
+    if(scene==1)return ISS_MENU_SCENE_NO_HERO;
+    /* A camera update has run, so the guest's data segment is mapped. */
+    return *(const volatile uint32_t*)(ui_image+PW_PAUSE_COUNTER) ? ISS_MENU_SCENE_PAUSED : ISS_MENU_SCENE_GAMEPLAY;
+}
 void runtime_power_wheel_tick(void){
+    if(ui_image)atomic_store(&ui_scene,pw_guest(pw_pointer(ui_image+0x1d0cfe0))?2:1);
     if(pw_inside||atomic_flag_test_and_set(&pw_working))return;
     pw_tick_impl();
     atomic_flag_clear(&pw_working);
