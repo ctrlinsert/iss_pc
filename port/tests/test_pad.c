@@ -26,6 +26,8 @@ void tlggpu_input_settings(TlgGpuInputSettings *settings) { *settings=supplied_s
 uint64_t tlggpu_total_draws(void) { return 0; }
 void tlggpu_frame_counters(TlgGpuFrameCounters *out) { memset(out,0,sizeof(*out)); }
 int tlggpu_overlay_captures_input(void) { return capture; }
+/* Button prompt icons (gpu/shim/tlg_prompt_icons.cpp, not linked here). */
+void iss_prompt_icons_device(int style) { (void)style; }
 /* The GPU library (not linked here): on-screen notices, the graffiti guide, the menu's aim speed. */
 void tlggpu_overlay_notice(const char *text, float seconds) { (void)text; (void)seconds; }
 void tlggpu_graffiti_guide(int force) { (void)force; }

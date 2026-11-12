@@ -26,6 +26,7 @@
 #include "mouse_touch.h"
 #include "rumble_gate.h"
 #include "mouse_shake.h"
+#include "iss_prompt_icons.h"
 #include <sys/stat.h>
 
 #define ERR_INVALID_ARG ((int32_t)0x80920001)
@@ -819,6 +820,52 @@ static bool pad_only(SDL_Gamepad *g) {
     if (only && told!=g) { told=g; printf("Runtime: %s: keyboard and mouse not read while it is in use\n",SDL_GetGamepadName(g)); }
     return only;
 }
+/* The prompt style of a gamepad: PlayStation pads keep the game's icons, the rest get Xbox's. */
+static int prompt_style_of(SDL_Gamepad *g) {
+    switch (SDL_GetGamepadType(g)) {
+    case SDL_GAMEPAD_TYPE_PS3: case SDL_GAMEPAD_TYPE_PS4: case SDL_GAMEPAD_TYPE_PS5: return IPI_STYLE_PS;
+    default: return IPI_STYLE_XBOX;
+    }
+}
+static void note_device(int style) {
+    static int last=-1;
+    if (style==last) return;
+    last=style;
+    iss_prompt_icons_device(style);
+}
+/* Short keycap labels of the keyboard map (iss_prompt_icons.h): a mouse source wins over keys
+ * (with the default map the mouse buttons are what players use for L2, R2 and R3). */
+const char *runtime_pad_key_label(uint32_t ps_button) {
+    load_button_maps();
+    static const struct { int source; const char *label; } named[]={
+        {MOUSE_LEFT,"LMB"}, {MOUSE_RIGHT,"RMB"}, {MOUSE_MIDDLE,"MMB"}, {MOUSE_X1,"M4"}, {MOUSE_X2,"M5"},
+        {WHEEL_UP,"WHL^"}, {WHEEL_DOWN,"WHL-"}, {WHEEL_LEFT,"WHL"}, {WHEEL_RIGHT,"WHL"},
+        {SDL_SCANCODE_SPACE,"SPACE"}, {SDL_SCANCODE_LSHIFT,"SHIFT"}, {SDL_SCANCODE_RSHIFT,"SHIFT"},
+        {SDL_SCANCODE_LCTRL,"CTRL"}, {SDL_SCANCODE_RCTRL,"CTRL"}, {SDL_SCANCODE_LALT,"ALT"},
+        {SDL_SCANCODE_RALT,"ALT"}, {SDL_SCANCODE_RETURN,"ENTER"}, {SDL_SCANCODE_BACKSPACE,"BKSP"},
+        {SDL_SCANCODE_TAB,"TAB"}, {SDL_SCANCODE_ESCAPE,"ESC"}, {SDL_SCANCODE_CAPSLOCK,"CAPS"},
+        {SDL_SCANCODE_UP,"UP"}, {SDL_SCANCODE_DOWN,"DOWN"}, {SDL_SCANCODE_LEFT,"LEFT"}, {SDL_SCANCODE_RIGHT,"RIGHT"},
+    };
+    int best=-1;
+    for (size_t i=0;i<key_map.count;++i) {
+        if (key_map.entries[i].ps!=ps_button) continue;
+        const int source=key_map.entries[i].source;
+        if (best<0 || (source>=MOUSE_SOURCE && best<MOUSE_SOURCE)) best=source;
+    }
+    if (best<0) return NULL;
+    for (size_t i=0;i<sizeof(named)/sizeof(*named);++i) if (named[i].source==best) return named[i].label;
+    if (best>=MOUSE_SOURCE) return NULL;
+    /* Letters, digits, F-keys: SDL's name, upper case, at most 5 characters. */
+    static char labels[64][8];
+    static int used;
+    const char *name=SDL_GetScancodeName((SDL_Scancode)best);
+    if (!name || !*name || used>=64) return NULL;
+    char *out=labels[used++];
+    size_t n=0;
+    for (;name[n] && n<5;++n) out[n]=(char)SDL_toupper((unsigned char)name[n]);
+    out[n]=0;
+    return out;
+}
 static void key_axis(uint8_t *axis, bool negative, bool positive) {
     if (negative || positive) *axis=(uint8_t)(128-(negative ? 128 : 0)+(positive ? 127 : 0));
 }
@@ -865,12 +912,19 @@ static void sample_host(PadData *d) {
         static SDL_Gamepad *told;
         if (pads>1 && told!=g) { told=g; printf("Runtime: %s: its 2 trackpads are the halves of the PS4 touchpad\n",SDL_GetGamepadName(g)); }
     }
+    /* Button prompts follow the device used last (iss_prompt_icons.h). */
+    const uint32_t pad_buttons=d->buttons;
+    if (g && (pad_buttons || d->l2>30 || d->r2>30 || abs(d->left_x-128)>48 || abs(d->left_y-128)>48 ||
+              abs(d->right_x-128)>48 || abs(d->right_y-128)>48))
+        note_device(prompt_style_of(g));
     if (g && pad_only(g)) k=NULL;
     sample_motion(d,g,k);
     /* The keyboard works with or without a gamepad: its buttons add to the pad's, and a stick
      * follows the keys only while one of them is held. */
     if (!k) return;
+    const uint8_t stick_before[2]={d->right_x,d->right_y};
     const uint32_t mouse=sample_mouse(d,motion.mode || k[SDL_SCANCODE_T] || k[SDL_SCANCODE_G],k); /* adds to the right stick */
+    const bool mouse_used=mouse || d->right_x!=stick_before[0] || d->right_y!=stick_before[1];
     for (size_t i=0;i<key_map.count;++i) {
         const int source=key_map.entries[i].source;
         const bool down=source>=MOUSE_SOURCE ? source<MOUSE_SOURCE_END && (mouse>>(source-MOUSE_SOURCE) & 1)
@@ -884,6 +938,9 @@ static void sample_host(PadData *d) {
     key_axis(&d->right_x,k[SDL_SCANCODE_LEFT],k[SDL_SCANCODE_RIGHT]);
     key_axis(&d->right_y,k[SDL_SCANCODE_UP],k[SDL_SCANCODE_DOWN]);
     if (k[SDL_SCANCODE_T] || k[SDL_SCANCODE_G]) d->right_x=d->right_y=128; /* the arrows point the can */
+    if (mouse_used || (d->buttons & ~pad_buttons) || k[SDL_SCANCODE_W] || k[SDL_SCANCODE_A] || k[SDL_SCANCODE_S] ||
+        k[SDL_SCANCODE_D] || k[SDL_SCANCODE_UP] || k[SDL_SCANCODE_DOWN] || k[SDL_SCANCODE_LEFT] || k[SDL_SCANCODE_RIGHT])
+        note_device(IPI_STYLE_KEYBOARD);
     apply_swipe(d,g,k);
     apply_mouse_touch(d);
 }

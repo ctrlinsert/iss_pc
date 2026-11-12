@@ -6,6 +6,7 @@
 #define _GNU_SOURCE
 #include "runtime.h"
 #include "iss_karma.h"
+#include "iss_prompt_icons.h"
 #include "gpu/tlggpu.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,7 +57,7 @@ typedef struct { char *names; size_t count, *offsets; unsigned char *types; } Li
  * inFAMOUS say "the disc or hard disk is corrupted" at the graffiti. Reads at the position go
  * through compat_pread like pread. */
 typedef struct { int used, host; Listing *dir; size_t position; char path[512];
-                 int64_t offset; int append; pthread_mutex_t io; } File;
+                 int64_t offset; int append; int prompts; pthread_mutex_t io; } File;
 typedef struct { char guest[64]; char host[512]; } Mount;
 static File files[MAX_FILES];
 static Mount mounts[MAX_MOUNTS];
@@ -271,7 +272,8 @@ static int64_t do_open(const char *guest,int flags,int mode) {
     int fd=-1;
     for (int i=3;i<MAX_FILES;++i) if (!files[i].used) { fd=i; break; }
     if (fd<0) { pthread_mutex_unlock(&lock); if (host>=0) close(host); free_listing(dir); if (runtime_verbose()) log_io_problem("open (descriptor table full)",guest,-EMFILE,EMFILE); return -EMFILE; }
-    files[fd]=(File){.used=1,.host=host,.dir=dir,.append=(flags&0x8)!=0};
+    files[fd]=(File){.used=1,.host=host,.dir=dir,.append=(flags&0x8)!=0,
+                     .prompts=!dir && !(flags&3) && ipi_is_text_package(guest)};
     pthread_mutex_init(&files[fd].io,NULL);
     snprintf(files[fd].path,sizeof(files[fd].path),"%s",guest);
     if(karma_save_trace()&&karma_save_file(&files[fd]))fprintf(stderr,"KARMA_SAVE_OPEN guest=%s host=%s flags=%x size=%lld\n",guest,path,flags,(long long)s.st_size);
@@ -279,6 +281,7 @@ static int64_t do_open(const char *guest,int flags,int mode) {
     ++opens;
     pthread_mutex_unlock(&lock);
     if(karma_save_file(&files[fd]))iss_karma_save_open(fd,(flags&3)!=0,(uint64_t)s.st_size);
+    if(files[fd].prompts)iss_prompt_icons_open(fd,path); /* button prompt icons (iss_prompt_icons.h) */
     if (runtime_verbose()) {
         static unsigned verbose_opens;
         const unsigned n=__atomic_fetch_add(&verbose_opens,1,__ATOMIC_RELAXED);
@@ -311,6 +314,7 @@ static int64_t do_close(int fd) {
     }
     if (f->host>=0) close(f->host);
     if(karma_save_file(f))iss_karma_save_close(fd);
+    if(f->prompts)iss_prompt_icons_close(fd);
     free_listing(f->dir);
     pthread_mutex_destroy(&f->io);
     *f=(File){0};
@@ -442,13 +446,14 @@ static int64_t do_read(int fd,void *buffer,uint64_t size) {
         pthread_mutex_unlock(&f->io);
     } else n=full_io(h,buffer,size,-1);
 #else
-    if(fd>=3&&karma_save_file(get(fd)))karma_offset=host_lseek(h,0,SEEK_CUR);
+    if(fd>=3&&(karma_save_file(get(fd))||(get(fd)&&get(fd)->prompts)))karma_offset=host_lseek(h,0,SEEK_CUR);
     ssize_t n=full_io(h,buffer,size,-1);
 #endif
     if (n<0) { int e=errno; log_read_problem("read",fd,size,-1,n,e); return -e; }
     __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED); __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
     karma_trace_io(fd,"read",karma_offset,n);
     if(n>0&&karma_save_file(get(fd)))iss_karma_save_part(fd,buffer,karma_offset,n,0);
+    if(n>0&&fd>=3&&get(fd)&&get(fd)->prompts)iss_prompt_icons_part(fd,buffer,karma_offset,n);
     return n;
 }
 static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
@@ -459,6 +464,7 @@ static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
     __atomic_add_fetch(&reads,1,__ATOMIC_RELAXED); __atomic_add_fetch(&bytes_read,(uint64_t)n,__ATOMIC_RELAXED);
     karma_trace_io(fd,"pread",offset,n);
     if(n>0&&karma_save_file(get(fd)))iss_karma_save_part(fd,buffer,offset,n,0);
+    if(n>0&&fd>=3&&get(fd)&&get(fd)->prompts)iss_prompt_icons_part(fd,buffer,offset,n);
     return n;
 }
 #ifdef _WIN32
