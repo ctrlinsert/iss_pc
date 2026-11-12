@@ -90,7 +90,7 @@ int main(void) {
     for(int available=0;available<2;available++){
         direct_available=available;
         PadData d={0};d.right_x=76;d.right_y=201;d.timestamp=1000000;
-        sample_mouse(&d,false,NULL);d.timestamp+=16000;sample_mouse(&d,false,NULL);
+        sample_mouse(&d,false,NULL,0);d.timestamp+=16000;sample_mouse(&d,false,NULL,0);
         assert(d.right_x==76&&d.right_y==201&&observed_dx==120&&observed_dy==-80);
     }
     assert(motion_calls==4);memset(&supplied_mouse,0,sizeof(supplied_mouse));memset(&supplied_settings,0,sizeof(supplied_settings));

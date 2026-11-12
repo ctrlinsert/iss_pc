@@ -70,5 +70,28 @@ int main(void) {
     ButtonMap sides=key_map;
     assert(apply_button_map(&sides,"touchpad_right=Delete",true)==1);
     assert(pressed_by(&sides,SDL_SCANCODE_BACKSPACE)==0 && pressed_by(&sides,SDL_SCANCODE_DELETE)==CLICK_RIGHT);
+    /* Host actions: the interact key, tilt/shake and the stick keys have defaults and remap. */
+    assert(pressed_by(&key_map,SDL_SCANCODE_V)==ACT_INTERACT && pressed_by(&key_map,MOUSE_X2)==ACT_INTERACT);
+    assert(pressed_by(&key_map,SDL_SCANCODE_T)==ACT_TILT_RIGHT && pressed_by(&key_map,SDL_SCANCODE_Y)==ACT_SHAKE);
+    assert(pressed_by(&key_map,SDL_SCANCODE_W)==ACT_LS_UP && pressed_by(&key_map,SDL_SCANCODE_LEFT)==ACT_RS_LEFT);
+    ButtonMap acts=key_map;
+    assert(apply_button_map(&acts,"interact=E|Mouse X1,tilt_right=Q,ls_up=Up,rs_up=I",true)==4);
+    assert(pressed_by(&acts,SDL_SCANCODE_V)==0 && pressed_by(&acts,MOUSE_X2)==0);
+    assert(pressed_by(&acts,SDL_SCANCODE_E)==(BTN_SQUARE|ACT_INTERACT) && pressed_by(&acts,MOUSE_X1)==ACT_INTERACT);
+    assert(pressed_by(&acts,SDL_SCANCODE_T)==0 && pressed_by(&acts,SDL_SCANCODE_Q)==(BTN_TRIANGLE|ACT_TILT_RIGHT));
+    assert(pressed_by(&acts,SDL_SCANCODE_W)==0 && pressed_by(&acts,SDL_SCANCODE_UP)==ACT_LS_UP && pressed_by(&acts,SDL_SCANCODE_I)==(BTN_UP|ACT_RS_UP));
+    /* A source the player binds to a button leaves its default host action: r1=Mouse X2 takes X2
+     * away from interact, and V stays. */
+    ButtonMap x2=key_map;
+    assert(apply_button_map(&x2,"r1=Mouse X2",true)==1);
+    assert(pressed_by(&x2,MOUSE_X2)==BTN_R1 && pressed_by(&x2,SDL_SCANCODE_V)==ACT_INTERACT);
+    /* A button binding after an interact one still wins the source. */
+    ButtonMap both=key_map;
+    assert(apply_button_map(&both,"interact=V|Mouse X2,r1=Mouse X2",true)==2);
+    assert(pressed_by(&both,MOUSE_X2)==BTN_R1);
+    /* The gamepad takes interact too. */
+    ButtonMap padi=pad_map;
+    assert(apply_button_map(&padi,"interact=paddle1",false)==1);
+    assert(pressed_by(&padi,SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1)==ACT_INTERACT);
     puts("PASS: pad and key maps");
 }
