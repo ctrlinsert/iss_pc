@@ -245,3 +245,7 @@ The game sizes its heaps from `sceKernelGetDirectMemorySize`, which defaults to 
 ## Menus at 16:9 outside gameplay
 
 The game lays out its 2D menus on a 1920x1080 canvas, so on outputs wider than 16:9 the title screen, main menu, loading screens and pause menu were stretched. The presenter now shows the frame at a centered 16:9 whenever the game is not in gameplay. The scene is sampled on the game's camera thread without the experimental power wheel: no camera update yet (logos, title), no player character (menus, loading, pre-rendered movies), or the game's pause counter set (pause menu, map). Gameplay and in-engine cutscenes keep the full Hor+ picture. `ISS_EXPERIMENTAL_PAUSE_PRESENTATION=0` turns it off. `TLG_UI_LAYOUT_TRACE=1` logs each widget kind once (`UI_LAYOUT`), to find menu roots for a per-widget fix later.
+
+## Gameplay prompts at 16:9 proportions
+
+Prompts, tutorials and notices are laid out on the same 1920x1080 canvas, so at 32:9 they came out about twice as wide. During gameplay, every top-level element (no owner, or owned by the HUD/notice containers 0xcdb7d0/0xd6a390) now has its x axis narrowed to 16:9 proportions while its position is kept, since positions may be edge-anchored or projected from the world. The minimap, karma and power meter keep their corner transform. `TLG_UI_FIT=0` turns it off. Untested in game at the time of writing; the first match logs `UI_FIT`.

@@ -24,9 +24,9 @@
 #define INTERACT_REACH 0.42f      /* a swipe runs from 0.5-REACH to 0.5+REACH */
 
 typedef struct {
-    float threshold;  /* mouse counts that make a hold a swipe (default 30) */
+    float threshold;  /* mouse counts that make a hold a swipe (default 60) */
     uint32_t hold_us; /* how long the key must stay still to be a hold (default 250 ms) */
-    uint32_t swipe_us;/* how long the finger takes to cross the pad (default 180 ms) */
+    uint32_t swipe_us;/* how long the finger takes to cross the pad (default 250 ms) */
 } InteractParams;
 
 enum { INTERACT_IDLE, INTERACT_DECIDING, INTERACT_TAP, INTERACT_HOLD, INTERACT_SWIPE, INTERACT_SPENT };
@@ -47,7 +47,7 @@ typedef struct {
 } InteractOut;
 
 static inline InteractParams interact_default_params(void) {
-    return (InteractParams){30.0f,250000u,180000u};
+    return (InteractParams){60.0f,250000u,250000u};
 }
 
 /* Snaps a motion to its main axis: -1/0/+1 each, one of them 0. */
@@ -56,6 +56,14 @@ static inline void interact_snap(float x, float y, int *dx, int *dy) {
     else { *dx=0; *dy=y<0 ? -1 : 1; }
 }
 
+/* The mouse picks a swipe once it has moved past the threshold mostly along one axis (the main
+ * axis at least twice the other), so the first jitter of a fast flick does not pick the wrong
+ * direction. A diagonal that keeps going still swipes, along its main axis, at 3x the threshold. */
+static inline int interact_decided(float x, float y, float threshold) {
+    const float d2=x*x+y*y, ax=fabsf(x), ay=fabsf(y);
+    if (d2<threshold*threshold) return 0;
+    return ax>=2.0f*ay || ay>=2.0f*ax || d2>=9.0f*threshold*threshold;
+}
 static inline void interact_begin(InteractGesture *g, int state, uint64_t now) {
     g->state=state; g->since=now;
     if (state==INTERACT_TAP || state==INTERACT_HOLD || state==INTERACT_SWIPE) g->id=g->id>=200 ? 40 : g->id+1;
@@ -76,7 +84,7 @@ static inline InteractOut interact_update(InteractGesture *g, const InteractPara
         g->ax+=mdx; g->ay+=mdy;
         if (!held) interact_begin(g,INTERACT_TAP,now);
         else if (dir_x || dir_y) { interact_snap((float)dir_x,(float)dir_y,&g->dx,&g->dy); interact_begin(g,INTERACT_SWIPE,now); }
-        else if (p->threshold>0 && g->ax*g->ax+g->ay*g->ay>=p->threshold*p->threshold) {
+        else if (p->threshold>0 && interact_decided(g->ax,g->ay,p->threshold)) {
             interact_snap(g->ax,g->ay,&g->dx,&g->dy);
             interact_begin(g,INTERACT_SWIPE,now);
         } else if (now-g->since>=p->hold_us) interact_begin(g,INTERACT_HOLD,now);

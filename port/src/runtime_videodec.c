@@ -88,6 +88,9 @@ static ABI int32_t videodec_create(const ConfigInfo *config, const ResourceInfo 
     d->frame=av_frame_alloc();
     d->nv12=av_frame_alloc();
     if (d->codec) d->codec->flags|=AV_CODEC_FLAG_COPY_OPAQUE; /* attached data follows its picture */
+    /* Slice threads: more cores per picture, with no extra delay (frame threads would hold
+     * pictures back, and the game expects one out per access unit). */
+    if (d->codec) { d->codec->thread_count=0; d->codec->thread_type=FF_THREAD_SLICE; }
     if (!d->codec || !d->packet || !d->frame || !d->nv12 || avcodec_open2(d->codec,codec,NULL)<0) {
         avcodec_free_context(&d->codec); av_packet_free(&d->packet); av_frame_free(&d->frame); av_frame_free(&d->nv12);
         free(d); return ERR_API_FAIL;

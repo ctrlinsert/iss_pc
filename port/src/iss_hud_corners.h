@@ -30,6 +30,24 @@ static inline int iss_hud_corner_transform(float matrix[16],uint32_t width,uint3
     matrix[12]=anchor+ratio*(matrix[12]-anchor);
     return 1;
 }
+/* Every other top-level gameplay element (prompts, tutorials, notices, world markers) on outputs
+ * wider than 16:9: the 1920x1080 canvas is spread across the whole width, so its shapes come out
+ * wide. Narrow the element's own x axis back to 16:9 proportions and keep its position, which
+ * may be anchored to an edge or projected from the world. Children follow their parent.
+ * Top level = no owner, or an owner of the HUD/notice container types (not a widget). */
+static inline int iss_ui_fit_top_level(uintptr_t owner,uintptr_t owner_vt){
+    return !owner || owner_vt==0xcdb7d0u || owner_vt==0xd6a390u;
+}
+static inline int iss_ui_fit_transform(float matrix[16],uint32_t width,uint32_t height){
+    if(!width || !height || (uint64_t)width*9u<=(uint64_t)height*16u)return 0;
+    float ratio=(16.0f*(float)height)/(9.0f*(float)width);
+    if(!isfinite(ratio) || ratio<0.2f || ratio>=1.0f)return 0;
+    for(unsigned i=0;i<16;i++)if(!isfinite(matrix[i]))return 0;
+    if(fabsf(matrix[3])>0.0001f || fabsf(matrix[7])>0.0001f || fabsf(matrix[11])>0.0001f ||
+       (fabsf(matrix[15])>0.0001f && fabsf(matrix[15]-1.0f)>0.0001f))return 0;
+    matrix[0]*=ratio;matrix[4]*=ratio;matrix[8]*=ratio;
+    return 1;
+}
 void runtime_hud_corner_attach(uintptr_t image);
 void __attribute__((ms_abi)) runtime_hud_corner_node(const void *widget,void *matrix);
 #endif

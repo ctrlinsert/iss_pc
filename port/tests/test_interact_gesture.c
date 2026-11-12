@@ -45,14 +45,14 @@ int main(void) {
 
     /* Mouse swipe up: motion past the threshold picks the direction; the finger runs from the
      * bottom to the top, then lifts; the key, still held, is spent until released. */
-    o=interact_update(&g,&p,1,2,-10,0,0,now+=MS(10));
+    o=interact_update(&g,&p,1,2,-20,0,0,now+=MS(10));
     assert(g.state==INTERACT_DECIDING);
-    o=interact_update(&g,&p,1,3,-25,0,0,now+=MS(10));
+    o=interact_update(&g,&p,1,3,-45,0,0,now+=MS(10));
     assert(g.state==INTERACT_SWIPE && g.dx==0 && g.dy==-1);
     assert(o.touch && !o.click && near(o.y,0.92f) && near(o.x,0.5f));
-    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(50+90)); /* halfway */
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(50+125)); /* halfway */
     assert(o.touch && near(o.y,0.5f));
-    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(90));
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(125));
     assert(o.touch && near(o.y,0.08f));
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(100));
     assert(!o.touch && o.owns && g.state==INTERACT_SPENT);
@@ -62,11 +62,26 @@ int main(void) {
     assert(!o.owns && g.state==INTERACT_IDLE);
 
     /* Mouse swipe right, a diagonal snapped to its main axis. */
-    o=interact_update(&g,&p,1,40,-20,0,0,now+=MS(10));
+    o=interact_update(&g,&p,1,80,-30,0,0,now+=MS(10));
     assert(g.state==INTERACT_SWIPE && g.dx==1 && g.dy==0 && near(o.x,0.08f) && near(o.y,0.5f));
-    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(50+180));
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(50+250));
     assert(o.touch && near(o.x,0.92f) && o.owns); /* released mid-swipe: it still finishes */
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(101));
+    assert(!o.touch && g.state==INTERACT_IDLE);
+
+    /* A flick that starts sideways but goes up: undecided until one axis dominates. */
+    o=interact_update(&g,&p,1,40,-45,0,0,now+=MS(10));
+    assert(g.state==INTERACT_DECIDING);
+    o=interact_update(&g,&p,1,0,-100,0,0,now+=MS(10));
+    assert(g.state==INTERACT_SWIPE && g.dx==0 && g.dy==-1);
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(500));
+    assert(!o.touch && g.state==INTERACT_IDLE);
+    /* A true diagonal still swipes along its main axis once it is long enough. */
+    o=interact_update(&g,&p,1,100,-90,0,0,now+=MS(10));
+    assert(g.state==INTERACT_DECIDING);
+    o=interact_update(&g,&p,1,40,-30,0,0,now+=MS(10));
+    assert(g.state==INTERACT_SWIPE && g.dx==1 && g.dy==0);
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(500));
     assert(!o.touch && g.state==INTERACT_IDLE);
 
     /* Key swipe: a direction key while deciding swipes that way at once, even later than the

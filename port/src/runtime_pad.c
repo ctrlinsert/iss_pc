@@ -944,8 +944,8 @@ static uint32_t map_keys(const bool *k, uint32_t mouse) {
     }
     return bits;
 }
-/* TLG_INTERACT_COUNTS (mouse counts that make a swipe, default 30; 0: the mouse never swipes),
- * TLG_INTERACT_HOLD_MS (default 250) and TLG_INTERACT_SWIPE_MS (default 180). */
+/* TLG_INTERACT_COUNTS (mouse counts that make a swipe, default 60; 0: the mouse never swipes),
+ * TLG_INTERACT_HOLD_MS (default 250) and TLG_INTERACT_SWIPE_MS (default 250). */
 static const InteractParams *interact_params(void) {
     static InteractParams p;
     static bool loaded;
