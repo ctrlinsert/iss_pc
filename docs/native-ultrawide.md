@@ -241,3 +241,7 @@ stopped by user instruction.
 ## Direct memory at large sizes
 
 The game sizes its heaps from `sceKernelGetDirectMemorySize`, which defaults to the retail 5056 MiB. Above about 5120x2160 that runs out: at 7680x2160 the light-list allocation returned NULL and the game crashed in `memset`. With a native plan larger than 3840x2160, the runtime now raises direct memory before the pool is created, by 160 bytes per scene pixel beyond 4K, rounded up to 256 MiB (6400 MiB at 7680x2160, 9216 MiB at 7680x4320). A larger `TLG_DMEM_MB` still wins. On Windows this memory is committed, so the page file must be able to back it.
+
+## Menus at 16:9 outside gameplay
+
+The game lays out its 2D menus on a 1920x1080 canvas, so on outputs wider than 16:9 the title screen, main menu, loading screens and pause menu were stretched. The presenter now shows the frame at a centered 16:9 whenever the game is not in gameplay. The scene is sampled on the game's camera thread without the experimental power wheel: no camera update yet (logos, title), no player character (menus, loading, pre-rendered movies), or the game's pause counter set (pause menu, map). Gameplay and in-engine cutscenes keep the full Hor+ picture. `ISS_EXPERIMENTAL_PAUSE_PRESENTATION=0` turns it off. `TLG_UI_LAYOUT_TRACE=1` logs each widget kind once (`UI_LAYOUT`), to find menu roots for a per-widget fix later.

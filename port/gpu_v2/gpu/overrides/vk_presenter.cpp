@@ -1103,17 +1103,14 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                     const char* p=std::getenv("ISS_EXPERIMENTAL_PAUSE_PRESENTATION");
                     return iss_menu_presentation_option(p);
                 }();
-                static thread_local unsigned gameplay_seen=0;
                 bool fit_menu=false;
                 if(pause_fit&&runtime_native_status()==1&&!Libraries::SystemService::IsSplashVisible()){
-                    IssPowerWheelStatus status;runtime_power_wheel_status(&status);
-                    const bool paused=iss_menu_pause_gate(&gameplay_seen,status.supported,status.ready,
-                        runtime_power_wheel_gameplay());
-                    fit_menu=iss_menu_presentation_fit(game_width,game_height,paused);
+                    // Menus, the title screen, loading and pause: the 1920x1080 UI at 16:9.
+                    fit_menu=iss_menu_presentation_fit(game_width,game_height,iss_menu_scene_fit(runtime_menu_scene()));
                 }
                 static thread_local bool previous_fit=false;
                 if(fit_menu!=previous_fit){
-                    std::fprintf(stderr,"PAUSE_PRESENTATION centered_16_9=%d; gameplay targets unchanged\n",fit_menu);
+                    std::fprintf(stderr,"MENU_PRESENTATION centered_16_9=%d (scene %d); gameplay targets unchanged\n",fit_menu,runtime_menu_scene());
                     previous_fit=fit_menu;
                 }
                 const auto imgRect = FitImage(fit_menu?16:game_width,fit_menu?9:game_height,
