@@ -821,6 +821,7 @@ int iss_temporal_get_frame(uint32_t seq, IssTemporalFrame *out) { return iss_tem
 #include "iss_power_wheel.h"
 #include "iss_karma_signatures.h"
 #include "iss_native_resolution.h"
+#include "iss_native_cone.h"
 #include "iss_native_live.h"
 #include "iss_native_aspect.h"
 #include "iss_hud_trace.h"
@@ -982,6 +983,16 @@ static void install_iss_native_resolution(const char *app0,Segment *segments,uin
         iss_native_exposure_entries(plan.width,plan.height)*4);
     printf("Native rendering: output selection %ux%u, scale %d%%, scene/output surface %ux%u, logical HUD %ux%u, light entries %u; Hor+ vertical FOV preserved\n",
         plan.output_width,plan.output_height,plan.percent,plan.width,plan.height,plan.ui_width,plan.ui_height,plan.light_entries);
+    /* Wider than 16:9: cap the character-framing cone (iss_native_cone.h) below 90 degrees. */
+    if((uint64_t)plan.output_width*9u>(uint64_t)plan.output_height*16u){
+        if(!iss_native_cone_signature(image,size)){puts("Native rendering: framing-cone cap unavailable (signature mismatch); 32:9 framing may misbehave");return;}
+        unsigned char *stub=allocate(page_size);
+        unsigned n=iss_native_cone_build_stub(stub,(uintptr_t)image+ISS_NATIVE_CONE_TANF,(uintptr_t)image+ISS_NATIVE_CONE_RESUME,ISS_NATIVE_CONE_MAX);
+        if(n>ISS_NATIVE_CONE_MAX_STUB||n>page_size)fail("Native framing-cone stub overflow");
+        protect(stub,page_size,5);
+        iss_native_cone_build_jump(image+ISS_NATIVE_CONE_SITE,(uintptr_t)stub);
+        printf("Native rendering: framing cone capped at %.2f rad for the %ux%u output\n",(double)ISS_NATIVE_CONE_MAX,plan.output_width,plan.output_height);
+    }
 }
 static void install_iss_karma(const char *app0,Segment *segments,uint64_t count,uint64_t size,int before_rewrites){
     char path[4096],serial[32]="",version[32]="";
