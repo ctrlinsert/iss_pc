@@ -62,6 +62,9 @@ uint32_t runtime_native_live_generation(void);
 uint32_t runtime_native_live_purge_plan(uint32_t sizes[4]);
 void runtime_native_live_aspect_enable(void);
 void __attribute__((ms_abi)) runtime_native_live_aspect_camera(void *object,int unused);
+/* The custom output size lives per translation unit (iss_native_set_custom); this sets the one the
+ * live resize plans with. Callers pass the size they planned with before requesting the custom output. */
+void runtime_native_live_set_custom(uint32_t width,uint32_t height);
 int runtime_native_live_request_config(IssNativeConfig config);
 const char *runtime_native_live_reason(void);
 void __attribute__((ms_abi)) runtime_native_dimension_resize(void *object,uint64_t *saved);

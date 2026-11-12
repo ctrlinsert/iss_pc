@@ -42,12 +42,12 @@ class TkLauncherBuilds(unittest.TestCase):
             app.native_output_box.current(1)                  # 1080p: 720p stays 720p (67%, about)
             app.native_output_picked()
             self.assertEqual(app.native_state(), (1, 67))
-            app.native_output_box.current(5)                  # 5120x1440 cannot do 2160p; 720p is fine
+            app.native_output_box.current(5)                  # 5120x1440: 720p stays 720p (50%)
             app.native_output_picked()
             self.assertEqual(app.native_state(), (5, 50))
-            app.native_internal_box.current(5)                # 2160p is over the budget: refused, unchanged
+            app.native_internal_box.current(5)                # 2160p fits the 8K budget: 150%
             app.native_internal_picked()
-            self.assertEqual(app.native_state(), (5, 50))
+            self.assertEqual(app.native_state(), (5, 150))
             app.native_output_box.current(0)
             app.native_output_picked()
             self.assertEqual(app.native_state()[0], 0)

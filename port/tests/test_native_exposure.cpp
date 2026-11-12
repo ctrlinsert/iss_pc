@@ -9,7 +9,9 @@ int main(){
  assert(iss_native_exposure_entries(3440,1440)==625);
  assert(iss_native_exposure_entries(3840,2160)==912);
  assert(iss_native_exposure_entries(5120,1440)==800);
- assert(!iss_native_exposure_entries(0,1440));assert(!iss_native_exposure_entries(3840,2161));
+ assert(!iss_native_exposure_entries(0,1440));assert(!iss_native_exposure_entries(7680,4321));
+ iss_native_set_custom(15360,2160); /* the custom slot at the budget's edge */
+ assert(iss_native_exposure_entries(7680,4320)>=60*60);
  for(int preset=1;preset<ISS_NATIVE_PRESETS;preset++)for(int scale=25;scale<=200;scale++){
   IssNativePlan p;if(!iss_native_plan({preset,scale,1},&p))continue;
   unsigned need=((p.width+127)/128)*((p.height+71)/72);
