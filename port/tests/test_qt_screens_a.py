@@ -765,7 +765,7 @@ class ControllerTests(unittest.TestCase):
         rows = {r['name']: r for r in self.controls.keyRows}
         self.assertEqual('Space', rows['Cross (X)']['keys'])
         self.assertFalse(any(r['changed'] for r in rows.values()))
-        self.assertEqual(22, len(rows))      # 2 sticks, 17 remappable buttons, 3 sensor keys
+        self.assertEqual(29, len(rows))      # 17 buttons, interact, 8 stick directions, 3 sensor keys: all remappable
         self.controls.setDraft('cross=Q,l1=none')
         self.assertTrue(self.controls.draftValid)
         self.controls.applyKeyMap()
@@ -798,7 +798,7 @@ class ControllerTests(unittest.TestCase):
         self.backend.setLang('pt_BR')
         names = [r['name'] for r in self.controls.keyRows]
         self.assertIn('Bola (Circle)', names)
-        self.assertIn('Analógico esquerdo', names)
+        self.assertIn('Analógico esquerdo: cima (andar para frente)', names)
 
 
 if __name__ == '__main__':
