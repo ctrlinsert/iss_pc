@@ -470,9 +470,14 @@ LoadingArt& Art(){static LoadingArt art;return art;}
 }
 
 namespace {
-// The loading screen's words, pt-BR or en-US as the launcher's language (TLG_UI_LANG).
+// The loading screen's words, pt-BR or en-US: TLG_UI_LANG, else the system locale (LC_MESSAGES, LANG),
+// else English, the same rule as the in-game menu (tlg_overlay.cpp UiPortuguese).
 bool Portuguese(){
-    static const bool pt=[]{const char* l=std::getenv("TLG_UI_LANG");return !(l&&!std::strncmp(l,"en",2));}();
+    static const bool pt=[]{
+        for(const char* name:{"TLG_UI_LANG","LC_MESSAGES","LANG"})
+            if(const char* l=std::getenv(name);l&&*l)return l[0]=='p'&&l[1]=='t';
+        return false;
+    }();
     return pt;
 }
 const wchar_t* L2(const wchar_t* en,const wchar_t* pt){return Portuguese()?pt:en;}
