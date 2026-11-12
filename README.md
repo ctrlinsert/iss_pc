@@ -160,7 +160,7 @@ The full list and the step-by-step guide, which also go in the notes of every Re
 1. Extract the package.
 2. Open **inFAMOUS Second Son** (on Windows, if "Windows protected your PC" appears, click *More info*, then *Run anyway*: the program is not digitally signed). Pick the game folder and click **Play**. The game language follows your system by default; you can change it on the same screen. If it stutters too much, the "GPU accuracy" option (**Graphics** screen) has a fast mode (without GPU particles).
 3. In game, **F10** toggles the FPS counter, and **Insert** (or R3 + L2 on a controller) opens the port's menu.
-4. When the game asks you to turn or shake the controller and yours has no sensor: tap L3+R3 (or Share on an Xbox Series). The controller is then on its side; cross/A shakes, R2 sprays and the left stick aims. Tap again to leave. On the keyboard: T/G (with the arrow keys to aim) and Y. See [Motion sensor and touchpad](#motion-sensor-and-touchpad).
+4. When the game asks you to turn or shake the controller and yours has no sensor: tap L3+R3 (or Share on an Xbox Series). The controller is then on its side; cross/A shakes, R2 sprays and the left stick aims. Tap again to leave. On the keyboard: press T or G once, aim with the mouse, F sprays and Y shakes; T or G again leaves. See [Motion sensor and touchpad](#motion-sensor-and-touchpad).
 
 The full guide is in [`README-player.md`](port/packaging/README-player.md), which also ships inside the package.
 
@@ -337,7 +337,7 @@ The game asks for the motion sensor and the touchpad in many scenes: graffiti, a
 - A notice on screen confirms it: "Sensor mode ON (spray can): cross shakes, R2 sprays, left stick aims" or "Sensor mode off".
 - While it is on, the controller is **on its side**, like a spray can (what the graffiti asks for), **cross/A shakes** and the **left stick aims**, pointing the can left/right and up/down (this moves the graffiti cursor; it stays where you let go; a small push is slow, for tracing the stencil; the right stick works too). R2 still sprays. The sticks and cross/A are hidden from the game, so Delsin neither walks nor jumps and the camera does not turn: **turn the mode off after the scene**. L3+R3 together never reaches the game either.
 - While it is on, the simulated tilt replaces the real gyro.
-- **Keyboard** (no mode needed, any time): hold **T** or **G** to turn the controller sideways (one side or the other; the arrow keys or the mouse aim) and **Y** to shake it, or wiggle the mouse quickly side to side (or spin the wheel) while T or G is held.
+- **Keyboard and mouse:** press **T** or **G** once to turn the controller sideways (one side or the other) and keep it there: the **mouse aims the spray can** for the whole graffiti (the arrow keys too), **F** or the left button sprays, and **Y**, a quick side-to-side wiggle of the mouse or spinning the wheel shakes it (a wiggle while spraying does not shake, so tracing keeps moving the cursor). Press the same key again to put the controller upright. `ISS_SENSOR_KEYS=hold` brings back the old behaviour (only while T or G is held).
 
 **Touchpad on a controller without one:**
 - **View/Select/Back** is the touchpad click (right side; with L1 held, the left side). Holding the button holds the touchpad.
@@ -349,9 +349,9 @@ The game asks for the motion sensor and the touchpad in many scenes: graffiti, a
 |---|---|---|---|
 | Absorb/drain a power (smoke, neon...) and "hold the touchpad" interactions | hold the touchpad | hold View/Select (leave the right stick alone, or it becomes a swipe) | hold Tab or Backspace (no arrow keys); mouse: Left Ctrl (or X1) + hold the left button still |
 | "Press the touchpad" interactions | click the touchpad | tap View/Select | Tab or Backspace |
-| Graffiti: turn the controller sideways | turn the controller | L3+R3 (sensor mode): it is on its side at once | hold T or G |
+| Graffiti: turn the controller sideways | turn the controller | L3+R3 (sensor mode): it is on its side at once | press T or G (again to leave) |
 | Graffiti: shake the can | shake the controller | cross/A in sensor mode | Y |
-| Graffiti: spray | R2, aiming with the controller | R2, aiming with the left stick in sensor mode | F (R2), aiming with the arrow keys while holding T or G |
+| Graffiti: spray | R2, aiming with the controller | R2, aiming with the left stick in sensor mode | F or left button (R2), aiming with the mouse or the arrow keys after T or G |
 | Press both ends of the touchpad (lifting the car off Reggie) | two fingers, one on each end | hold View/Select + R1 | hold Tab + Backspace; mouse: Left Ctrl (or X1) + right button |
 | Touchpad swipe ("Open Door", hand scanner) | swipe a finger | hold View/Select + right stick in the asked direction | hold Tab + arrow keys; mouse: hold Left Ctrl (or X1), left button and drag |
 | Back to normal after the graffiti | — | L3+R3 again ("Sensor mode off") | — |
@@ -727,7 +727,7 @@ O jogo pede o sensor de movimento e o touchpad em várias cenas: grafite, absorv
 - Um aviso na tela confirma: "Modo sensor LIGADO (lata de spray): X sacode, R2 pinta, analógico esquerdo mira" ou "Modo sensor desligado".
 - Com o modo ligado, o controle fica **de lado**, como uma lata de spray (o que o grafite pede), **X/A sacode** e o **analógico esquerdo mira**, girando a lata para os lados e para cima/baixo (é o que move o cursor do grafite; ele fica onde você soltou; pouco inclinado vai devagar, para contornar o desenho; o direito também serve). R2 continua pintando. O analógico e o X/A ficam escondidos do jogo, então o Delsin não anda, não pula e a câmera não gira: **desligue o modo depois da cena**. O L3+R3 juntos também não chega ao jogo.
 - Com o modo ligado, a inclinação simulada substitui o giroscópio real.
-- **Teclado** (sem modo, a qualquer hora): segure **T** ou **G** para virar o controle de lado (um lado ou o outro; as setas ou o mouse miram) e **Y** para sacudir, ou balance o mouse rápido para os lados (ou gire a rodinha) enquanto segura T ou G.
+- **Teclado e mouse:** aperte **T** ou **G** uma vez para virar o controle de lado (um lado ou o outro) e deixá-lo assim: o **mouse mira a lata de spray** durante todo o grafite (as setas também), **F** ou o botão esquerdo pinta, e **Y**, balançar o mouse rápido para os lados ou girar a rodinha sacode (balançar enquanto pinta não sacode, então contornar o desenho continua movendo o cursor). Aperte a mesma tecla de novo para pôr o controle em pé. `ISS_SENSOR_KEYS=hold` volta ao jeito antigo (só enquanto T ou G está seguro).
 
 **Touchpad em controle sem touchpad:**
 - **View/Select/Back** é o clique do touchpad (lado direito; com L1 segurado, o lado esquerdo). Segurar o botão é segurar o touchpad.
@@ -739,9 +739,9 @@ O jogo pede o sensor de movimento e o touchpad em várias cenas: grafite, absorv
 |---|---|---|---|
 | Absorver/drenar um poder (fumaça, neon...) e interações de "segure o touchpad" | segurar o touchpad | segurar View/Select (sem mexer o analógico direito, senão vira deslize) | segurar Tab ou Backspace (sem as setas); no mouse: Ctrl esquerdo (ou X1) + segurar o esquerdo parado |
 | Interação de "toque no touchpad" | clicar o touchpad | toque em View/Select | Tab ou Backspace |
-| Grafite: virar o controle de lado | virar o controle | L3+R3 (modo sensor): já fica de lado | segurar T ou G |
+| Grafite: virar o controle de lado | virar o controle | L3+R3 (modo sensor): já fica de lado | apertar T ou G (de novo para sair) |
 | Grafite: sacudir a lata | sacudir o controle | X/A no modo sensor | Y |
-| Grafite: pintar | R2, mirando com o controle | R2, mirando com o analógico esquerdo no modo sensor | F (R2), mirando com as setas enquanto segura T ou G |
+| Grafite: pintar | R2, mirando com o controle | R2, mirando com o analógico esquerdo no modo sensor | F ou botão esquerdo (R2), mirando com o mouse ou as setas depois de T ou G |
 | Apertar as duas pontas do touchpad (levantar o carro de cima do Reggie) | dois dedos, um em cada ponta | segurar View/Select + R1 | segurar Tab + Backspace; no mouse: Ctrl esquerdo (ou X1) + botão direito |
 | Deslizar no touchpad (porta "Open Door", scanner de mão) | deslizar o dedo | segurar View/Select + analógico direito na direção pedida | segurar Tab + setas; no mouse: segurar Ctrl esquerdo (ou X1), esquerdo e arrastar |
 | Voltar ao normal depois do grafite | — | L3+R3 de novo ("Modo sensor desligado") | — |

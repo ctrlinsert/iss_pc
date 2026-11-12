@@ -395,7 +395,37 @@ static int injected_motion; /* TLG_PAD_FILE tokens: 1 tilt_right (T), 2 tilt_lef
 static int mouse_shaking;   /* sample_mouse: the mouse is wiggled while the can is held (mouse_shake.h) */
 typedef struct { float w, x, y, z; } Quat;
 /* ref: the real sensors' reference orientation, set by scePadResetOrientation (reset). */
-static struct { Quat q, ref; float roll, pitch, yaw, aim_pitch, gravity[3]; uint64_t last_us; int sensors, warned, mode, toggle_held, boosting, reset; } motion={{1,0,0,0},{1,0,0,0},0,0,0,0,{0,0,0},0,-1,0,0,0,0,0};
+/* key_side: the keyboard's sensor mode (TLG_SENSOR_KEYS=toggle, the default): a press of tilt_right
+ * (T) or tilt_left (G) turns the controller on that side and keeps it there, so the mouse aims the
+ * can through the whole graffiti without a key held; the same key again puts it upright again. TLG_SENSOR_KEYS=hold: only while the key is held, as before. */
+static struct { Quat q, ref; float roll, pitch, yaw, aim_pitch, gravity[3]; uint64_t last_us; int sensors, warned, mode, toggle_held, boosting, reset, key_side; uint32_t key_prev; } motion={{1,0,0,0},{1,0,0,0},0,0,0,0,{0,0,0},0,-1,0,0,0,0,0,0,0};
+static bool sensor_keys_hold(void) {
+    static int hold=-1;
+    if (hold<0) { const char *e=getenv("TLG_SENSOR_KEYS"); hold=e && !SDL_strcasecmp(e,"hold"); }
+    return hold;
+}
+/* Keyboard tilt: the side (+1 T, -1 G, 0 upright) from the tilt keys, held or toggled. */
+static int key_tilt_side(uint32_t acts) {
+    const uint32_t keys=acts & (ACT_TILT_RIGHT|ACT_TILT_LEFT), pressed=keys & ~motion.key_prev;
+    motion.key_prev=keys;
+    if (sensor_keys_hold()) return (keys & ACT_TILT_RIGHT) ? 1 : (keys & ACT_TILT_LEFT) ? -1 : 0;
+    const int side=(pressed & ACT_TILT_RIGHT) ? 1 : (pressed & ACT_TILT_LEFT) ? -1 : 0;
+    if (side) {
+        motion.key_side=motion.key_side==side ? 0 : side;
+        const char *lang=getenv("TLG_UI_LANG");
+        const int pt=!(lang && !strncmp(lang,"en",2));
+        tlggpu_overlay_notice(motion.key_side ? (pt ? "Modo sensor LIGADO: o mouse mira a lata, F/esquerdo pinta, Y ou balançar o mouse sacode; T/G de novo desliga"
+                                                    : "Sensor mode ON: the mouse aims the can, F/left button sprays, Y or a mouse wiggle shakes; T/G again turns it off")
+                                              : (pt ? "Modo sensor desligado" : "Sensor mode off"), 3.0f);
+        printf("Runtime: keyboard sensor mode %s\n",motion.key_side ? "on" : "off");
+        if (motion.key_side) tlggpu_graffiti_guide(0); /* the steps, the first time only */
+    }
+    return motion.key_side;
+}
+/* The spray can is up: the mouse and the rs keys aim it instead of turning the camera. */
+static bool can_aiming(uint32_t acts) {
+    return motion.mode || motion.key_side || (sensor_keys_hold() && (acts & (ACT_TILT_RIGHT|ACT_TILT_LEFT)));
+}
 static Quat quat_mul(Quat a, Quat b) {
     return (Quat){a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z, a.w*b.x+a.x*b.w+a.y*b.z-a.z*b.y,
                   a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x, a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w};
@@ -463,12 +493,13 @@ static void sample_motion(PadData *d, SDL_Gamepad *g, uint32_t acts) {
     /* Simulated tilt: target roll/pitch from keys or the modifier + right stick. */
     float roll=0, pitch=0;
     int shake=0, simulated=0;
-    if ((acts & ACT_TILT_RIGHT) || (injected_motion & 1)) { roll=1.5708f; simulated=1; }
-    if ((acts & ACT_TILT_LEFT) || (injected_motion & 2)) { roll=-1.5708f; simulated=1; }
+    const int key_side=key_tilt_side(acts);
+    if (key_side>0 || (injected_motion & 1)) { roll=1.5708f; simulated=1; }
+    if (key_side<0 || (injected_motion & 2)) { roll=-1.5708f; simulated=1; }
     if ((acts & ACT_SHAKE) || (injected_motion & 4) || mouse_shaking) { shake=1; simulated=1; }
     /* Keyboard: while T or G holds the can on its side, the arrow keys point it (they leave the
      * camera alone meanwhile, see read_pad). */
-    const int key_can=(acts & (ACT_TILT_RIGHT|ACT_TILT_LEFT))!=0;
+    const int key_can=key_side!=0;
     if (key_can) {
         const float speed=0.6f*tlggpu_sensor_aim_scale();
         motion.yaw-=(float)(!!(acts & ACT_RS_RIGHT)-!!(acts & ACT_RS_LEFT))*speed*dt;
@@ -672,6 +703,7 @@ static size_t mouse_samples;
 static InteractGesture interact;
 static InteractOut interact_out;
 static struct { float dx, dy; } interact_mouse;
+static uint32_t map_keys(const bool *k, uint32_t mouse);
 static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_t acts) {
     TlgGpuMouse m;
     tlggpu_mouse_take(&m);
@@ -762,7 +794,11 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
          * can holds still meanwhile, so the wiggle does not move the cursor. */
         const float counts=mouse_shake_counts();
         const int notches=m.wheel_up+m.wheel_down+m.wheel_left+m.wheel_right;
-        const int shaking=counts>0.0f && mouse_shake_update(&mouse_shake,m.dx,m.dy,wheel_bound() ? 0 : notches,now,counts);
+        /* Not while spraying (R2): tracing a stencil back and forth must move the cursor, not
+         * freeze it in a shake. */
+        const bool spraying=k && (map_keys(k,raw) & BTN_R2);
+        if (spraying) mouse_shake_reset(&mouse_shake);
+        const int shaking=!spraying && counts>0.0f && mouse_shake_update(&mouse_shake,m.dx,m.dy,wheel_bound() ? 0 : notches,now,counts);
         if (shaking!=mouse_shaking) printf("Runtime: mouse shake %s\n",shaking ? "started" : "stopped");
         mouse_shaking=shaking;
         const float k=shaking ? 0.0f : 0.0006f*in.sensitivity*tlggpu_sensor_aim_scale();
@@ -988,7 +1024,7 @@ static void sample_host(PadData *d) {
         d->buttons&=~(uint32_t)ACT_ALL;
         return;
     }
-    const uint32_t mouse=sample_mouse(d,motion.mode || (early & (ACT_TILT_RIGHT|ACT_TILT_LEFT)),k,early); /* adds to the right stick */
+    const uint32_t mouse=sample_mouse(d,can_aiming(early),k,early); /* adds to the right stick */
     last_mouse=mouse;
     const uint32_t keys=map_keys(k,mouse), acts=keys & ACT_ALL;
     d->buttons|=keys & ~(uint32_t)ACT_ALL;
@@ -998,7 +1034,7 @@ static void sample_host(PadData *d) {
     key_axis(&d->left_y,acts & ACT_LS_UP,acts & ACT_LS_DOWN);
     key_axis(&d->right_x,acts & ACT_RS_LEFT,acts & ACT_RS_RIGHT);
     key_axis(&d->right_y,acts & ACT_RS_UP,acts & ACT_RS_DOWN);
-    if (acts & (ACT_TILT_RIGHT|ACT_TILT_LEFT)) d->right_x=d->right_y=128; /* the arrows point the can */
+    if (can_aiming(acts) && !motion.mode) d->right_x=d->right_y=128; /* the arrows point the can */
     apply_interact(d,g,acts);
     d->buttons&=~(uint32_t)ACT_ALL;
     if (!interact_out.owns) apply_swipe(d,g,(keys & CLICK_LEFT)!=0,acts);
