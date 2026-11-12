@@ -29,6 +29,8 @@ int main(){
  }
  assert(!iss_native_live_signature(image.data(),image.size(),"CUSA00000","01.07"));
  assert(!iss_native_live_signature(image.data(),image.size(),"CUSA00223","01.00"));
+ assert(iss_native_live_signature(image.data(),image.size(),"CUSA00004","01.07")); /* EU 1.07: same executable */
+ assert(!iss_native_live_signature(image.data(),image.size(),"CUSA00263","01.07"));
  assert(!iss_native_live_signature(image.data(),ISS_NATIVE_FRAME_SITE+19,"CUSA00223","01.07"));
  assert(!iss_native_live_signature(image.data(),ISS_NATIVE_SAFE_SITE+14,"CUSA00223","01.07"));
  // Only the verified object and an explicit queued request can invalidate
