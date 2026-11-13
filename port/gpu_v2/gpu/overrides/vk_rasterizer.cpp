@@ -3008,6 +3008,34 @@ static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
         const char* p = std::getenv("ISS_DISPATCH_SCAN");
         return p && *p == '1';
     }();
+    // ISS_DISPATCH_DUMP=<low 32 bits of cs hash, hex> prints every read buffer of
+    // 1 KiB or less of that shader as dwords (int and float), once per distinct dispatch.
+    static const u32 dump_hash = [] {
+        const char* p = std::getenv("ISS_DISPATCH_DUMP");
+        return p ? u32(std::strtoul(p, nullptr, 16)) : 0u;
+    }();
+    if (dump_hash && u32(info.pgm_hash) == dump_hash) {
+        int bi = 0;
+        for (const auto& res : info.buffers) {
+            const auto buffer = res.GetSharp(info);
+            const u32 size = buffer.GetSize();
+            const u8* base = reinterpret_cast<const u8*>(uintptr_t(u64(buffer.base_address)));
+            ++bi;
+            if (res.is_written || !base || size == 0 || size > 1024) continue;
+            for (u32 off = 0; off < size; off += 32) {
+                n = std::snprintf(line, sizeof(line), "DISPATCH_DUMP cs=%08x buf%d +%u:",
+                                  dump_hash, bi - 1, off);
+                for (u32 o = off; o < off + 32 && o + 4 <= size; o += 4) {
+                    u32 v;
+                    float f;
+                    std::memcpy(&v, base + o, 4);
+                    std::memcpy(&f, &v, 4);
+                    n += std::snprintf(line + n, sizeof(line) - n, " %u/%g", v, f);
+                }
+                std::fprintf(stderr, "%s\n", line);
+            }
+        }
+    }
     if (!scan) return;
     static const u32 wanted[] = {7680, 7679, 5760, 5759, 5120, 3840, 3839, 2560, 1920, 1919,
                                  2160, 2159, 1440, 1080, 1079, 540, 480, 479, 360, 359,
