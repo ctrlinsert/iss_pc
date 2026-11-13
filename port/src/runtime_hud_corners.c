@@ -35,6 +35,7 @@ static void ui_fit(const unsigned char *p,uintptr_t owner,uintptr_t owner_vt,voi
     if(enabled<0){const char *e=getenv("TLG_UI_FIT");enabled=!(e && *e=='0');}
     if(!enabled || !iss_ui_fit_top_level(owner,owner_vt) || runtime_menu_scene()!=ISS_MENU_SCENE_GAMEPLAY)return;
     float matrix[16];memcpy(matrix,output,sizeof(matrix));
+    if(iss_ui_fit_own_3d(p[0x586],matrix))return;
     /* TLG_UI_FIT_ANCHOR=0: narrow in place (the element's own origin), as before. */
     static int anchored=-1;
     if(anchored<0){const char *e=getenv("TLG_UI_FIT_ANCHOR");anchored=!(e && *e=='0');}

@@ -40,6 +40,9 @@ int main(){
   m=1u<<6;assert(iss_menu_mouse_buttons(&m,0,2,5,6,0x4000,0x2000,0x10,0x40)==0x40u&&m==0);}
  // Gameplay elements: x axis narrowed to 16:9 proportions, position kept; 16:9 output untouched.
  assert(iss_ui_fit_top_level(0,0)&&iss_ui_fit_top_level(5,0xcdb7d0)&&iss_ui_fit_top_level(5,0xd6a390)&&iss_ui_fit_top_level(5,0xcd03c0)&&!iss_ui_fit_top_level(5,0xd74668));
+    {float flat[16]={1,0,0,0, 0,1,0,0, 0,0,1,0, 10,20,0,0};
+     float world[16]={-0.2598f,-0.9653f,0,0, -0.000143f,-0.02602f,0,0, -0.9657f,0.2597f,0,0, 253,288,0,0};
+     assert(!iss_ui_fit_own_3d(0,flat)&&iss_ui_fit_own_3d(1,flat)&&iss_ui_fit_own_3d(0,world));}
  {float m[16]={1,0,0,0,0,1,0,0,0,0,1,0,674,476,0,0};assert(iss_ui_fit_transform(m,7680,2160));
   assert(fabsf(m[0]-0.5f)<0.0001f&&m[5]==1&&m[12]==674&&m[13]==476);
   float n[16]={1,0,0,0,0,1,0,0,0,0,1,0,674,476,0,0};assert(!iss_ui_fit_transform(n,3840,2160)&&n[0]==1);}
