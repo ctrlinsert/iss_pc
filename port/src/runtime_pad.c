@@ -738,6 +738,7 @@ static InteractGesture interact;
 static InteractOut interact_out;
 static struct { float dx, dy; } interact_mouse;
 static bool interact_mouse_moving; /* this press began while the mouse turned the camera */
+static float interact_vx, interact_vy; /* ...at this speed, counts per ms */
 static float interact_moving_counts(void) {
     static float counts=-1.0f;
     if (counts<0.0f) { const char *e=getenv("TLG_INTERACT_MOVING"); counts=15.0f; if (e && *e) counts=fmaxf(strtof(e,NULL),0.0f); }
@@ -779,26 +780,31 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
         interact_down=(key_map.entries[i].ps & ACT_INTERACT) && source>=MOUSE_SOURCE && source<MOUSE_SOURCE_END &&
                       (raw>>(source-MOUSE_SOURCE) & 1);
     }
-    /* A press made while the mouse is turning the camera cannot swipe with the mouse, and the
-     * mouse keeps the camera: draining while looking around stays a hold. "Turning" is a recent
-     * motion of TLG_INTERACT_MOVING counts or more (default 15, decaying over 100 ms; 0: off),
-     * so a resting hand's jitter does not count. A hold gives the mouse back too. */
-    static float recent; static uint64_t recent_at;
+    /* A press made while the mouse is turning the camera leaves the mouse on the camera: steady
+     * panning never becomes a swipe, so draining while looking around stays a hold, but a sharp
+     * flick on top of the panning still swipes (interact_gesture.h). "Turning" is a recent motion
+     * of TLG_INTERACT_MOVING counts or more (default 15, decaying over 100 ms; 0: off), so a
+     * resting hand's jitter does not count. A hold gives the mouse back too. */
+    static float recent, rx, ry; static uint64_t recent_at;
     static bool was_down;
-    if (recent_at && now>recent_at) recent*=expf(-(float)(now-recent_at)/100000.0f);
+    if (recent_at && now>recent_at) {
+        const float k=expf(-(float)(now-recent_at)/100000.0f);
+        recent*=k; rx*=k; ry*=k;
+    }
     recent_at=now;
     if (interact_down && !was_down && interact.state==INTERACT_IDLE) {
         const float limit=interact_moving_counts();
         interact_mouse_moving=limit>0.0f && recent>=limit;
+        interact_vx=rx/100.0f; interact_vy=ry/100.0f; /* a decaying sum over 100 ms: speed x 100 ms */
         if (interact_mouse_moving)
-            printf("Runtime: interact pressed while the mouse turns the camera (%.0f counts): tap or hold only\n",recent);
+            printf("Runtime: interact pressed while the mouse turns the camera (%.0f counts): mouse stays the camera, a sharp flick still swipes\n",recent);
     }
     was_down=interact_down;
-    recent+=fabsf(m.dx)+fabsf(m.dy);
+    recent+=fabsf(m.dx)+fabsf(m.dy); rx+=m.dx; ry+=m.dy;
     const bool deciding=interact_down && interact.state==INTERACT_IDLE;
-    if ((deciding && !interact_mouse_moving) || interact_out.owns_mouse) {
+    if (deciding || interact_out.owns_mouse || (interact_down && interact.state==INTERACT_DECIDING)) {
         interact_mouse.dx+=m.dx; interact_mouse.dy+=m.dy;
-        m.dx=m.dy=0;
+        if ((deciding && !interact_mouse_moving) || interact_out.owns_mouse) m.dx=m.dy=0; /* else the camera keeps it too */
     }
     /* Touchpad mode: the mode key (a keyboard key or a mouse button). */
     bool key_down=false;
@@ -1012,7 +1018,7 @@ static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
     const int dy=!!(fresh & (ACT_LS_DOWN|ACT_RS_DOWN))-!!(fresh & (ACT_LS_UP|ACT_RS_UP));
     const int was=interact.state;
     interact_out=interact_update_ex(&interact,interact_params(),held,interact_mouse.dx,interact_mouse.dy,dx,dy,d->timestamp,
-                                    !pad_held && interact_mouse_moving);
+                                    !pad_held && interact_mouse_moving,interact_vx,interact_vy);
     interact_mouse.dx=interact_mouse.dy=0;
     if (interact.state!=was && (interact.state==INTERACT_TAP || interact.state==INTERACT_HOLD || interact.state==INTERACT_SWIPE))
         printf("Runtime: interact %s%s\n",interact.state==INTERACT_TAP ? "tap" : interact.state==INTERACT_HOLD ? "hold" : "swipe ",

@@ -108,44 +108,57 @@ int main(void) {
     o=interact_update(&g,&nomouse,1,0,0,0,1,now+=MS(10));
     assert(g.state==INTERACT_SWIPE && g.dy==1);
 
-    /* Pressed while the mouse turns the camera: mouse motion never swipes, the mouse stays with the
-     * camera, and holding still drains. A hold also gives the mouse back to the camera. */
+    /* Pressed while the mouse turns the camera (2 counts/ms to the right): steady panning stays
+     * camera (the mouse is not taken) and the press holds; a sharp flick on top still swipes. */
     {
         InteractGesture h={0};
         uint64_t t=now+MS(1000);
-        o=interact_update_ex(&h,&p,1,200,0,0,0,t,1);
+        o=interact_update_ex(&h,&p,1,20,0,0,0,t,1,2.0f,0.0f);
         assert(h.state==INTERACT_DECIDING && o.owns && !o.owns_mouse);
-        o=interact_update_ex(&h,&p,1,300,40,0,0,t+=MS(100),0);
+        o=interact_update_ex(&h,&p,1,200,5,0,0,t+=MS(100),0,0,0);
         assert(h.state==INTERACT_DECIDING && !o.owns_mouse);
-        o=interact_update_ex(&h,&p,1,300,0,0,0,t+=MS(200),0);
+        o=interact_update_ex(&h,&p,1,300,0,0,0,t+=MS(160),0,0,0);
         assert(h.state==INTERACT_HOLD && o.touch && !o.owns_mouse);
-        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0,0,0);
         assert(h.state==INTERACT_IDLE && !o.owns_mouse);
+        /* Same panning, plus a flick up of 150 counts (rescuing a detainee on the run): swipes up. */
+        o=interact_update_ex(&h,&p,1,20,0,0,0,t+=MS(10),1,2.0f,0.0f);
+        o=interact_update_ex(&h,&p,1,100,-150,0,0,t+=MS(50),0,0,0);
+        assert(h.state==INTERACT_SWIPE && h.dx==0 && h.dy==-1 && o.owns_mouse);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(500),0,0,0);
+        assert(h.state==INTERACT_IDLE);
+        /* A flick the size a still press needs (70) is not enough on top of panning. */
+        o=interact_update_ex(&h,&p,1,20,0,0,0,t+=MS(10),1,2.0f,0.0f);
+        o=interact_update_ex(&h,&p,1,100,-70,0,0,t+=MS(50),0,0,0);
+        assert(h.state==INTERACT_DECIDING);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0,0,0);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(500),0,0,0);
+        assert(h.state==INTERACT_IDLE);
         /* A still press still swipes, and owns the mouse while deciding and swiping. */
-        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(10),0);
+        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(10),0,0,0);
         assert(o.owns_mouse);
-        o=interact_update_ex(&h,&p,1,0,-80,0,0,t+=MS(10),0);
+        o=interact_update_ex(&h,&p,1,0,-80,0,0,t+=MS(10),0,0,0);
         assert(h.state==INTERACT_SWIPE && o.owns_mouse);
-        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(500),0);
+        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(500),0,0,0);
         assert(h.state==INTERACT_SPENT && o.touch && near(o.y,0.08f) && !o.owns_mouse);
-        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0,0,0);
         assert(!o.touch && h.state==INTERACT_IDLE);
         /* TLG_INTERACT_SWIPE_HOLD=0: the finger lifts after the swipe even if the key is held. */
         InteractParams q=p; q.swipe_hold=0;
-        o=interact_update_ex(&h,&q,1,0,0,0,0,t+=MS(10),0);
-        o=interact_update_ex(&h,&q,1,0,-80,0,0,t+=MS(10),0);
-        o=interact_update_ex(&h,&q,1,0,0,0,0,t+=MS(500),0);
+        o=interact_update_ex(&h,&q,1,0,0,0,0,t+=MS(10),0,0,0);
+        o=interact_update_ex(&h,&q,1,0,-80,0,0,t+=MS(10),0,0,0);
+        o=interact_update_ex(&h,&q,1,0,0,0,0,t+=MS(500),0,0,0);
         assert(h.state==INTERACT_SPENT && !o.touch);
-        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0,0,0);
         /* A still press that becomes a hold hands the mouse back. */
-        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(10),0);
-        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(300),0);
+        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(10),0,0,0);
+        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(300),0,0,0);
         assert(h.state==INTERACT_HOLD && !o.owns_mouse && o.owns);
         /* A direction key still swipes from a press made while the mouse moved. */
-        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0);
-        o=interact_update_ex(&h,&p,1,100,0,0,0,t+=MS(10),1);
-        o=interact_update_ex(&h,&p,1,0,0,1,0,t+=MS(10),0);
-        assert(h.state==INTERACT_SWIPE && h.dx==1 && !o.owns_mouse);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0,0,0);
+        o=interact_update_ex(&h,&p,1,100,0,0,0,t+=MS(10),1,0,0);
+        o=interact_update_ex(&h,&p,1,0,0,1,0,t+=MS(10),0,0,0);
+        assert(h.state==INTERACT_SWIPE && h.dx==1 && o.owns_mouse);
     }
 
     /* Hold first, then a direction: the hold becomes a swipe that way, and stays at the end. */

@@ -43,7 +43,8 @@ typedef struct {
     float ax, ay;     /* mouse motion gathered while deciding */
     int dx, dy;       /* swipe direction (one of them is 0) */
     int id;           /* touch id of the current gesture, grows with each one */
-    int mouse_off;    /* this press began with the mouse moving: the mouse cannot swipe */
+    int mouse_off;    /* this press began with the mouse turning the camera: it stays the camera */
+    float bvx, bvy;   /* ...at this speed (counts per ms); only a flick beyond it swipes */
     int swiped;       /* the gesture was a swipe (SPENT keeps the mouse until release) */
 } InteractGesture;
 
@@ -84,11 +85,16 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
     InteractOut o={0,0,0.5f,0.5f,g->id,0,0};
     if (g->state==INTERACT_DECIDING) {
         g->ax+=mdx; g->ay+=mdy;
-        const int mouse_swipes=p->threshold>0 && !g->mouse_off;
+        /* Pressed while the camera turns: the steady panning is taken away and what is left
+         * must be a flick of twice the usual size, so panning stays camera and a sharp flick
+         * (rescuing a detainee on the run) still swipes. */
+        const float el=(float)(now-g->since)/1000.0f;
+        const float fx=g->mouse_off ? g->ax-g->bvx*el : g->ax, fy=g->mouse_off ? g->ay-g->bvy*el : g->ay;
+        const float need=g->mouse_off ? 2.0f*p->threshold : p->threshold;
         if (!held) interact_begin(g,INTERACT_TAP,now);
         else if (dir_x || dir_y) { interact_snap((float)dir_x,(float)dir_y,&g->dx,&g->dy); g->swiped=1; interact_begin(g,INTERACT_SWIPE,now); }
-        else if (mouse_swipes && interact_decided(g->ax,g->ay,p->threshold)) {
-            interact_snap(g->ax,g->ay,&g->dx,&g->dy);
+        else if (p->threshold>0 && interact_decided(fx,fy,need)) {
+            interact_snap(fx,fy,&g->dx,&g->dy);
             g->swiped=1; interact_begin(g,INTERACT_SWIPE,now);
         } else if (now-g->since>=p->hold_us) interact_begin(g,INTERACT_HOLD,now);
         else { o.owns=1; return o; }
@@ -140,20 +146,21 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
 }
 
 static inline int interact_owns_mouse_state(const InteractGesture *g) {
-    if (g->mouse_off) return 0;
-    return g->state==INTERACT_DECIDING || g->state==INTERACT_SWIPE;
+    if (g->state==INTERACT_DECIDING) return !g->mouse_off;
+    return g->state==INTERACT_SWIPE;
 }
 /* held: the key is down. mdx/mdy: mouse counts since the last sample. dir_x/dir_y: a direction
- * key or stick (-1/0/+1). mouse_moving: the mouse was turning the camera just before this sample
- * (read only when the key goes down). */
+ * key or stick (-1/0/+1). mouse_moving: the mouse was turning the camera just before this sample,
+ * at vx/vy counts per ms (read only when the key goes down). */
 static inline InteractOut interact_update_ex(InteractGesture *g, const InteractParams *p, int held,
                                              float mdx, float mdy, int dir_x, int dir_y, uint64_t now,
-                                             int mouse_moving) {
+                                             int mouse_moving, float vx, float vy) {
     InteractOut o={0,0,0.5f,0.5f,g->id,0,0};
     if (g->id<40) g->id=40;
     if (g->state==INTERACT_IDLE) {
         if (!held) return o;
         g->ax=g->ay=0; g->dx=g->dy=0; g->swiped=0; g->mouse_off=mouse_moving!=0;
+        g->bvx=g->mouse_off ? vx : 0.0f; g->bvy=g->mouse_off ? vy : 0.0f;
         interact_begin(g,INTERACT_DECIDING,now); /* this sample's motion counts below */
     }
     o=interact_step(g,p,held,mdx,mdy,dir_x,dir_y,now);
@@ -162,6 +169,6 @@ static inline InteractOut interact_update_ex(InteractGesture *g, const InteractP
 }
 static inline InteractOut interact_update(InteractGesture *g, const InteractParams *p, int held,
                                           float mdx, float mdy, int dir_x, int dir_y, uint64_t now) {
-    return interact_update_ex(g,p,held,mdx,mdy,dir_x,dir_y,now,0);
+    return interact_update_ex(g,p,held,mdx,mdy,dir_x,dir_y,now,0,0.0f,0.0f);
 }
 #endif
