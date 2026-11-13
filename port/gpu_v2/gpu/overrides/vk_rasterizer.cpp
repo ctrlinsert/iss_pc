@@ -1,4 +1,6 @@
 #include <mutex>
+#include <cmath>
+#include <cstring>
 #include <shared_mutex>
 #include "../../../src/iss_native_resolution.h"
 #include "../../../src/iss_warning_budget.h"
@@ -3000,6 +3002,45 @@ static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
                            buffer.GetSize());
     }
     std::fprintf(stderr, "%s\n", line);
+    // ISS_DISPATCH_SCAN=1 also scans each small read buffer (constants, light
+    // tables) for screen-size values, int, float or reciprocal, to find a cap.
+    static const bool scan = [] {
+        const char* p = std::getenv("ISS_DISPATCH_SCAN");
+        return p && *p == '1';
+    }();
+    if (!scan) return;
+    static const u32 wanted[] = {7680, 7679, 5760, 5759, 5120, 3840, 3839, 2560, 1920, 1919,
+                                 2160, 2159, 1440, 1080, 1079, 540, 480, 479, 360, 359,
+                                 320, 240, 239, 135, 134, 120, 119, 90, 68, 67};
+    int bi = 0;
+    for (const auto& res : info.buffers) {
+        const auto buffer = res.GetSharp(info);
+        const u32 size = buffer.GetSize();
+        const u8* base = reinterpret_cast<const u8*>(uintptr_t(u64(buffer.base_address)));
+        ++bi;
+        if (res.is_written || !base || size == 0 || size > 65536) continue;
+        n = std::snprintf(line, sizeof(line), "DISPATCH_SCAN cs=%016llx buf%d size=%u",
+                          (unsigned long long)info.pgm_hash, bi - 1, size);
+        int hits = 0;
+        for (u32 off = 0; off + 4 <= size && hits < 48; off += 4) {
+            u32 v;
+            std::memcpy(&v, base + off, 4);
+            float f;
+            std::memcpy(&f, &v, 4);
+            for (u32 w : wanted) {
+                const bool as_int = v == w;
+                const bool as_float = f == float(w);
+                const bool as_inv = w >= 120 && f != 0.f && std::fabs(f * float(w) - 1.f) < 1e-5f;
+                if (!as_int && !as_float && !as_inv) continue;
+                if (n < int(sizeof(line)) - 32)
+                    n += std::snprintf(line + n, sizeof(line) - n, " +%u=%s%u", off,
+                                       as_int ? "i" : as_float ? "f" : "1/", w);
+                ++hits;
+                break;
+            }
+        }
+        if (hits) std::fprintf(stderr, "%s\n", line);
+    }
 }
 
 void Rasterizer::DispatchDirect() {
