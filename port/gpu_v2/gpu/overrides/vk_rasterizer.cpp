@@ -2978,6 +2978,48 @@ static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
     }();
     if (!enabled || !pipeline) return;
     const auto& info = pipeline->GetStage(Shader::SwStage::Compute);
+    // ISS_DISPATCH_DUMP=<hash>[,<hash>...] (low 32 bits, hex, up to 4) prints every read
+    // buffer of 8 KiB or less of those shaders as dwords (int/float), every 300th dispatch, 8 times.
+    static const std::array<u32, 4> dump_hashes = [] {
+        std::array<u32, 4> h{};
+        const char* p = std::getenv("ISS_DISPATCH_DUMP");
+        for (int i = 0; p && *p && i < 4; ++i) {
+            char* end = nullptr;
+            h[i] = u32(std::strtoul(p, &end, 16));
+            p = (end && *end == ',') ? end + 1 : nullptr;
+        }
+        return h;
+    }();
+    static std::atomic<u32> dump_calls[4]{};
+    int dump_slot = -1;
+    for (int i = 0; i < 4; ++i)
+        if (dump_hashes[i] && u32(info.pgm_hash) == dump_hashes[i]) dump_slot = i;
+    const u32 dump_hash = dump_slot >= 0 ? dump_hashes[dump_slot] : 0u;
+    if (dump_slot >= 0 && dump_calls[dump_slot].fetch_add(1) % 300 == 0 &&
+        dump_calls[dump_slot].load() < 300 * 8) {
+        char line[2048];
+        int n = 0;
+        int bi = 0;
+        for (const auto& res : info.buffers) {
+            const auto buffer = res.GetSharp(info);
+            const u32 size = buffer.GetSize();
+            const u8* base = reinterpret_cast<const u8*>(uintptr_t(u64(buffer.base_address)));
+            ++bi;
+            if (res.is_written || !base || size == 0 || size > 8192) continue;
+            for (u32 off = 0; off < size; off += 32) {
+                n = std::snprintf(line, sizeof(line), "DISPATCH_DUMP cs=%08x buf%d +%u:",
+                                  dump_hash, bi - 1, off);
+                for (u32 o = off; o < off + 32 && o + 4 <= size; o += 4) {
+                    u32 v;
+                    float f;
+                    std::memcpy(&v, base + o, 4);
+                    std::memcpy(&f, &v, 4);
+                    n += std::snprintf(line + n, sizeof(line) - n, " %u/%g", v, f);
+                }
+                std::fprintf(stderr, "%s\n", line);
+            }
+        }
+    }
     const u64 key = info.pgm_hash ^ (u64(cs.dim_x) << 40) ^ (u64(cs.dim_y) << 20) ^ u64(cs.dim_z);
     static std::mutex lock;
     static std::unordered_set<u64> seen;
@@ -3008,34 +3050,6 @@ static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
         const char* p = std::getenv("ISS_DISPATCH_SCAN");
         return p && *p == '1';
     }();
-    // ISS_DISPATCH_DUMP=<low 32 bits of cs hash, hex> prints every read buffer of
-    // 1 KiB or less of that shader as dwords (int and float), once per distinct dispatch.
-    static const u32 dump_hash = [] {
-        const char* p = std::getenv("ISS_DISPATCH_DUMP");
-        return p ? u32(std::strtoul(p, nullptr, 16)) : 0u;
-    }();
-    if (dump_hash && u32(info.pgm_hash) == dump_hash) {
-        int bi = 0;
-        for (const auto& res : info.buffers) {
-            const auto buffer = res.GetSharp(info);
-            const u32 size = buffer.GetSize();
-            const u8* base = reinterpret_cast<const u8*>(uintptr_t(u64(buffer.base_address)));
-            ++bi;
-            if (res.is_written || !base || size == 0 || size > 1024) continue;
-            for (u32 off = 0; off < size; off += 32) {
-                n = std::snprintf(line, sizeof(line), "DISPATCH_DUMP cs=%08x buf%d +%u:",
-                                  dump_hash, bi - 1, off);
-                for (u32 o = off; o < off + 32 && o + 4 <= size; o += 4) {
-                    u32 v;
-                    float f;
-                    std::memcpy(&v, base + o, 4);
-                    std::memcpy(&f, &v, 4);
-                    n += std::snprintf(line + n, sizeof(line) - n, " %u/%g", v, f);
-                }
-                std::fprintf(stderr, "%s\n", line);
-            }
-        }
-    }
     if (!scan) return;
     static const u32 wanted[] = {7680, 7679, 5760, 5759, 5120, 3840, 3839, 2560, 1920, 1919,
                                  2160, 2159, 1440, 1080, 1079, 540, 480, 479, 360, 359,
