@@ -85,15 +85,28 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
     InteractOut o={0,0,0.5f,0.5f,g->id,0,0};
     if (g->state==INTERACT_DECIDING) {
         g->ax+=mdx; g->ay+=mdy;
-        /* Pressed while the camera turns: the steady panning is taken away and what is left
-         * must be a flick of twice the usual size, so panning stays camera and a sharp flick
-         * (rescuing a detainee on the run) still swipes. */
+        /* Pressed while the camera turns: the steady panning is taken away, motion that carries
+         * on in the pan's own direction never counts (a pan that speeds up is still a pan), and
+         * what is left must be a flick of twice the usual size across or against the pan. So
+         * panning stays camera and drains, and a sharp flick the other way (rescuing a detainee
+         * on the run) still swipes; a direction key swipes any way. */
         const float el=(float)(now-g->since)/1000.0f;
-        const float fx=g->mouse_off ? g->ax-g->bvx*el : g->ax, fy=g->mouse_off ? g->ay-g->bvy*el : g->ay;
+        float fx=g->ax, fy=g->ay, carried=0.0f;
+        if (g->mouse_off) {
+            fx-=g->bvx*el; fy-=g->bvy*el;
+            const float pl=sqrtf(g->bvx*g->bvx+g->bvy*g->bvy);
+            if (pl>0.0f) {
+                const float ux=g->bvx/pl, uy=g->bvy/pl, along=fx*ux+fy*uy;
+                if (along>0.0f) { fx-=along*ux; fy-=along*uy; carried=along; }
+            }
+        }
+        /* A hand that pans harder drifts sideways too: the flick must also outweigh the pan's
+         * own growth (at least half of it), so drift on a fast pan is not a swipe. */
+        const int flick_clear=!g->mouse_off || sqrtf(fx*fx+fy*fy)>=0.5f*carried;
         const float need=g->mouse_off ? 2.0f*p->threshold : p->threshold;
         if (!held) interact_begin(g,INTERACT_TAP,now);
         else if (dir_x || dir_y) { interact_snap((float)dir_x,(float)dir_y,&g->dx,&g->dy); g->swiped=1; interact_begin(g,INTERACT_SWIPE,now); }
-        else if (p->threshold>0 && interact_decided(fx,fy,need)) {
+        else if (p->threshold>0 && flick_clear && interact_decided(fx,fy,need)) {
             interact_snap(fx,fy,&g->dx,&g->dy);
             g->swiped=1; interact_begin(g,INTERACT_SWIPE,now);
         } else if (now-g->since>=p->hold_us) interact_begin(g,INTERACT_HOLD,now);
@@ -162,6 +175,7 @@ static inline InteractOut interact_update_ex(InteractGesture *g, const InteractP
         g->ax=g->ay=0; g->dx=g->dy=0; g->swiped=0; g->mouse_off=mouse_moving!=0;
         g->bvx=g->mouse_off ? vx : 0.0f; g->bvy=g->mouse_off ? vy : 0.0f;
         interact_begin(g,INTERACT_DECIDING,now); /* this sample's motion counts below */
+        if (g->mouse_off) mdx=mdy=0.0f; /* ...unless it is the pan the press landed in */
     }
     o=interact_step(g,p,held,mdx,mdy,dir_x,dir_y,now);
     o.owns_mouse=o.owns && interact_owns_mouse_state(g);

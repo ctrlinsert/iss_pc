@@ -176,6 +176,27 @@ int main(void) {
         assert(!o.touch && h.state==INTERACT_IDLE);
     }
 
+    /* Panning that speeds up after the press (Joshua's drain at 90..1265 counts) is still a pan:
+     * no swipe in the pan's direction, the press holds and drains. */
+    {
+        InteractGesture h={0};
+        uint64_t t=now+MS(9000);
+        o=interact_update_ex(&h,&p,1,160,0,0,0,t,1,10.0f,0.0f);   /* press sample: 160 counts */
+        assert(h.state==INTERACT_DECIDING);
+        for (int k=0;k<15;++k) {
+            o=interact_update_ex(&h,&p,1,400,10,0,0,t+=MS(17),0,0,0); /* 2.4x faster, same way */
+            assert(h.state==INTERACT_DECIDING || h.state==INTERACT_HOLD);
+        }
+        assert(h.state==INTERACT_HOLD && o.touch);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0,0,0);
+        /* A flick up across the same pan swipes. */
+        o=interact_update_ex(&h,&p,1,160,0,0,0,t+=MS(10),1,10.0f,0.0f);
+        o=interact_update_ex(&h,&p,1,170,-150,0,0,t+=MS(17),0,0,0);
+        assert(h.state==INTERACT_SWIPE && h.dy==-1);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(500),0,0,0);
+        assert(h.state==INTERACT_IDLE);
+    }
+
     puts("PASS: interact gesture");
     return 0;
 }
