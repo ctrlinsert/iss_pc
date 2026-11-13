@@ -154,6 +154,8 @@ if [[ ${1:-} == --test || ${1:-} == --test-only ]]; then
     out/camera-aspect-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_light_tiles.c -Isrc -o out/light-tiles-test
     out/light-tiles-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_touch_reads.c -Isrc -o out/touch-reads-test
+    out/touch-reads-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_rumble_gate.c -Isrc -o out/rumble-gate-test
     out/rumble-gate-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG -pthread "${includes[@]}" -I. -Isrc tests/test_mouse_pad.c "${libraries[@]}" -lm -o out/mouse-pad-test

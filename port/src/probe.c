@@ -1173,6 +1173,38 @@ static void install_iss_mouse_aim(const char *app0,Segment *segments,uint64_t co
 
 /* Aim assist follows the input device (iss_aim_assist.h). Off when TLG_AIM_ASSIST=on: the game's
  * own assist then runs untouched. */
+#include "iss_touch_reads.h"
+/* The interact key's auto-detect (iss_touch_reads.h): count script reads of the touchpad.
+ * TLG_INTERACT_AUTO=0 leaves the game untouched (the key then swipes on any flick, as before). */
+static void install_iss_touch_reads(const char *app0,Segment *segments,uint64_t count,uint64_t size){
+    const char *e=getenv("TLG_INTERACT_AUTO");
+    if(e && *e=='0'){puts("Interact auto-detect: off (TLG_INTERACT_AUTO=0)");return;}
+    char path[4096],serial[32]="",version[32]="";
+    snprintf(path,sizeof(path),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
+    sfo_value(path,"TITLE_ID",serial,sizeof(serial),NULL);sfo_value(path,"APP_VER",version,sizeof(version),NULL);
+    int executable=0;
+    for(uint64_t i=0;i<count;i++)
+        if((segments[i].flags&1) && segments[i].address<=iss_touch_read_sites[0] &&
+           iss_touch_read_sites[ISS_TOUCH_READ_GETTERS-1]+ISS_TOUCH_READ_THUNK<=segments[i].address+segments[i].size)executable=1;
+    uintptr_t pads[ISS_TOUCH_READ_GETTERS]={0};
+    int valid=iss_title_107(serial,version)&&executable;
+    for(unsigned i=0;i<ISS_TOUCH_READ_GETTERS&&valid;i++){
+        pads[i]=iss_touch_read_check(image,size,i);
+        if(!pads[i] || pads[i]<(uintptr_t)image || pads[i]+8>(uintptr_t)image+size)valid=0;
+    }
+    if(!valid){puts("Interact auto-detect: touchpad readers not recognised; the interact key decides by itself");return;}
+    unsigned char *stubs=allocate(page_size);
+    for(unsigned i=0;i<ISS_TOUCH_READ_GETTERS;i++){
+        unsigned n=iss_touch_read_build_stub(stubs+i*ISS_TOUCH_READ_STUB,(uintptr_t)&iss_touch_reads[i],pads[i],
+                                             iss_touch_read_slots[i]);
+        if(n>ISS_TOUCH_READ_STUB)fail("Touch read stub overflow");
+    }
+    protect(stubs,page_size,5);
+    for(unsigned i=0;i<ISS_TOUCH_READ_GETTERS;i++)
+        iss_karma_jump(image+iss_touch_read_sites[i],(uintptr_t)(stubs+i*ISS_TOUCH_READ_STUB));
+    iss_touch_reads_active=1;
+    puts("Interact auto-detect: watching the game's touchpad reads; the key swipes only while a prompt reads the finger");
+}
 static void install_iss_aim_assist(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     if(iss_aim_assist_mode(getenv("TLG_AIM_ASSIST"))==ISS_AIM_ASSIST_ON)return;
     char path[4096],serial[32]="",version[32]="";
@@ -1812,6 +1844,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_iss_pitch_safeguard(app0, segments, ns, size);
     if (gpu_enabled) install_iss_mouse_aim(app0, segments, ns, size);
     if (gpu_enabled) install_iss_aim_assist(app0, segments, ns, size);
+    install_iss_touch_reads(app0, segments, ns, size);
     if (gpu_enabled) install_iss_trophies(app0, segments, ns, size);
     if (gpu_enabled) install_iss_karma(app0, segments, ns, size, karma_before_runtime_rewrites);
     protect(traps, round_page((import_count + 1) * 32), 5);

@@ -25,6 +25,7 @@
 #include "power_wheel_input.h"
 #include "mouse_touch.h"
 #include "interact_gesture.h"
+#include "iss_touch_reads.h"
 #include "rumble_gate.h"
 #include "mouse_shake.h"
 #include "iss_aim_assist.h"
@@ -738,7 +739,31 @@ static InteractGesture interact;
 static InteractOut interact_out;
 static struct { float dx, dy; } interact_mouse;
 static bool interact_mouse_moving; /* this press began while the mouse turned the camera */
+/* Auto-detect (iss_touch_reads.h, installed by the probe): script reads of the touchpad. */
+volatile uint64_t iss_touch_reads[ISS_TOUCH_READ_GETTERS];
+volatile int iss_touch_reads_active;
+/* A swipe prompt is up: a script read the finger's position (TOUCH_X/Y) in the last
+ * TLG_INTERACT_AUTO_MS (default 500). Without the hook, always (the key decides by itself). */
+static bool touch_swipe_wanted(uint64_t now) {
+    if (!iss_touch_reads_active) return true;
+    static uint64_t seen, last_read, last_log; static unsigned window_us;
+    if (!window_us) { const char *e=getenv("TLG_INTERACT_AUTO_MS"); window_us=(e && atoi(e)>0 ? (unsigned)atoi(e) : 500u)*1000u; }
+    const uint64_t reads=iss_touch_reads[ISS_TOUCH_X]+iss_touch_reads[ISS_TOUCH_Y]+
+                         iss_touch_reads[ISS_TOUCH_X2]+iss_touch_reads[ISS_TOUCH_Y2];
+    if (reads!=seen) {
+        seen=reads; last_read=now ? now : 1;
+        if (now-last_log>=1000000u) {
+            last_log=now;
+            printf("TOUCH_POS_READ x=%llu y=%llu x2=%llu y2=%llu num=%llu\n",
+                   (unsigned long long)iss_touch_reads[ISS_TOUCH_X],(unsigned long long)iss_touch_reads[ISS_TOUCH_Y],
+                   (unsigned long long)iss_touch_reads[ISS_TOUCH_X2],(unsigned long long)iss_touch_reads[ISS_TOUCH_Y2],
+                   (unsigned long long)iss_touch_reads[ISS_TOUCH_NUM]);
+        }
+    }
+    return last_read && now-last_read<window_us;
+}
 static float interact_vx, interact_vy; /* ...at this speed, counts per ms */
+static bool interact_no_swipe;         /* this press began with no swipe prompt up: tap or hold only */
 /* The interact key's mouse thresholds are in camera units (raw counts times the mouse
  * sensitivity; sample_mouse), set for 800 DPI at sensitivity 1. TLG_MOUSE_DPI is optional: set
  * it only if you scale DPI without scaling the sensitivity, and it multiplies the thresholds by
@@ -808,6 +833,7 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
     if (interact_down && !was_down && interact.state==INTERACT_IDLE) {
         const float limit=interact_moving_counts();
         interact_mouse_moving=limit>0.0f && recent>=limit;
+        interact_no_swipe=!touch_swipe_wanted(now);
         interact_vx=rx/100.0f; interact_vy=ry/100.0f; /* a decaying sum over 100 ms: speed x 100 ms */
         if (interact_mouse_moving)
             printf("Runtime: interact pressed while the mouse turns the camera (%.0f counts): mouse stays the camera, a sharp flick still swipes\n",recent);
@@ -823,7 +849,7 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
     const bool deciding=interact_down && interact.state==INTERACT_IDLE;
     if (deciding || interact_out.owns_mouse || (interact_down && interact.state==INTERACT_DECIDING)) {
         interact_mouse.dx+=cdx; interact_mouse.dy+=cdy;
-        if ((deciding && !interact_mouse_moving) || interact_out.owns_mouse) m.dx=m.dy=0; /* else the camera keeps it too */
+        if ((deciding && !interact_mouse_moving && !interact_no_swipe) || interact_out.owns_mouse) m.dx=m.dy=0; /* else the camera keeps it too */
     }
     /* Touchpad mode: the mode key (a keyboard key or a mouse button). */
     bool key_down=false;
@@ -1041,8 +1067,13 @@ static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
     const int dx=!!(fresh & (ACT_LS_RIGHT|ACT_RS_RIGHT))-!!(fresh & (ACT_LS_LEFT|ACT_RS_LEFT));
     const int dy=!!(fresh & (ACT_LS_DOWN|ACT_RS_DOWN))-!!(fresh & (ACT_LS_UP|ACT_RS_UP));
     const int was=interact.state;
-    interact_out=interact_update_ex(&interact,interact_params(),held,interact_mouse.dx,interact_mouse.dy,dx,dy,d->timestamp,
-                                    !pad_held && interact_mouse_moving,interact_vx,interact_vy);
+    /* Auto-detect: with no swipe prompt reading the finger, the key only taps or holds; no flick
+     * or direction becomes a swipe, and the mouse stays on the camera (draining in a fight). */
+    if (held) interact_no_swipe=!touch_swipe_wanted(d->timestamp);
+    const bool no_swipe=held && interact_no_swipe;
+    interact_out=interact_update_ex(&interact,interact_params(),held,no_swipe ? 0.0f : interact_mouse.dx,
+                                    no_swipe ? 0.0f : interact_mouse.dy,no_swipe ? 0 : dx,no_swipe ? 0 : dy,d->timestamp,
+                                    no_swipe || (!pad_held && interact_mouse_moving),interact_vx,interact_vy);
     interact_mouse.dx=interact_mouse.dy=0;
     if (interact.state!=was && (interact.state==INTERACT_TAP || interact.state==INTERACT_HOLD || interact.state==INTERACT_SWIPE))
         printf("Runtime: interact %s%s\n",interact.state==INTERACT_TAP ? "tap" : interact.state==INTERACT_HOLD ? "hold" : "swipe ",
