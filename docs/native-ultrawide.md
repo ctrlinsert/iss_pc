@@ -267,3 +267,34 @@ At 32:9, shadows and local lights end near the edges of the centre 16:9: hard ve
 - `trace` (default): logs each distinct caller, camera type and aspect once as `CAMERA_ASPECT … kept|would-fix`.
 - `fix`: a camera handed exactly 16:9, whose horizontal tangent follows its aspect, gets the output aspect instead (any ratio, wider or narrower; nothing changes at a 16:9 output). Experimental: cameras that render to 16:9 textures would be distorted.
 - `off`: no hook.
+
+### Real-width UI canvas again, with the map target fixed (2026-11-13)
+
+A static audit of the stretched gameplay UI on the 1920x1080 canvas (mode 1) found:
+
+- The tutorial hint, the banner (SUSPECTS RESCUED), the objective text and the district status
+  are data-defined widgets owned by the HUD message manager. They are laid out when created
+  (load, or after a cutscene) and the result is cached; only some HUD pieces (the karma and
+  power meters, the minimap) are laid out again every frame. A fix applied at layout time and
+  gated on the current scene is therefore wrong for those four by construction.
+- The owner classes the per-widget fit keyed on are world objects (the hero, props,
+  collectibles, the interact prompt), not HUD roots. That fit, its any-class variant, the
+  3D-prompt skip and the gameplay scene gate are removed. The three corner groups stay for
+  mode 1 only; they are laid out every frame, so narrowing their layout result is sound.
+- The game's layout already anchors every widget to the edges of the canvas it is given
+  (canvas width and height, and the safe margins, read on every layout). With the real-width
+  canvas (`iss_native_ui_16_9=0`) no per-widget correction is needed.
+- The pause-map distortion that ruled out mode 0 has one cause: the map render target (shared
+  by the HUD minimap and the pause map) is sized for a 1920x1080 canvas, from a literal
+  1920.0 and 0x780 x 0x438 caps, while its sampler divides the canvas width by the allocated
+  width. `src/iss_native_map_rt.h` sizes it from the canvas instead (six guarded sites; the
+  float has a single reader). Mode 2 failed for the same reason: the bug tracks the canvas
+  width, not its aspect.
+- The presenter's 16:9 menu fit now applies only to a 16:9 canvas. On the real-width canvas
+  the menus fill the screen at their own anchors, and full-screen movies are already
+  pillarboxed by the game's movie quad.
+
+Still to confirm in game on the real-width canvas: the map, text wrapping (the auto-wrap width
+reads the canvas width), the menu cursor's look rate, menu backdrops, and the menu slowdown
+seen in October, for which no code-side cause was found. The default stays mode 1 until then.
+Live output changes need a restart in mode 0.

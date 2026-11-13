@@ -1104,7 +1104,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                     return iss_menu_presentation_option(p);
                 }();
                 bool fit_menu=false;
-                if(pause_fit&&runtime_native_status()==1&&!Libraries::SystemService::IsSplashVisible()){
+                if(pause_fit&&runtime_native_status()==1&&!Libraries::SystemService::IsSplashVisible()&&
+                   iss_menu_canvas_16_9(runtime_native_plan()->ui_width,runtime_native_plan()->ui_height)){
                     // Menus, the title screen, loading and pause: the 1920x1080 UI at 16:9.
                     fit_menu=iss_menu_presentation_fit(game_width,game_height,iss_menu_scene_fit(runtime_menu_scene()));
                 }

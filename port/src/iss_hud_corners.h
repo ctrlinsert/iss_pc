@@ -1,4 +1,8 @@
-/* Gameplay-only root transforms observed in CUSA00223 1.07. */
+/* Gameplay-only root transforms observed in CUSA00223 1.07, for the 1920x1080 UI canvas
+ * (iss_native_ui_16_9=1) only. The game re-lays out these three every frame (layout 0x564cf0,
+ * anchored by their PEG property at +0x4f4), so narrowing the layout result is safe for them.
+ * Their owner class 0xcdb7d0 is the hero object, not a HUD root. With the real-width canvas
+ * (iss_native_ui_16_9=0, the default) the game anchors them itself and this is not used. */
 #ifndef ISS_HUD_CORNERS_H
 #define ISS_HUD_CORNERS_H
 #include <stdint.h>
@@ -27,45 +31,6 @@ static inline int iss_hud_corner_transform(float matrix[16],uint32_t width,uint3
        (fabsf(matrix[15])>0.0001f && fabsf(matrix[15]-1.0f)>0.0001f))return 0;
     const float anchor=kind==3?960.0f:-960.0f;
     matrix[0]*=ratio;matrix[4]*=ratio;matrix[8]*=ratio;
-    matrix[12]=anchor+ratio*(matrix[12]-anchor);
-    return 1;
-}
-/* Every other top-level gameplay element (prompts, tutorials, notices, world markers) on outputs
- * wider than 16:9: the 1920x1080 canvas is spread across the whole width, so its shapes come out
- * wide. Narrow the element's own x axis back to 16:9 proportions and keep its position, which
- * may be anchored to an edge or projected from the world. Children follow their parent.
- * Top level = no owner, or an owner of the HUD, notice or prompt/label container types (not a
- * widget). The prompt/label container (0xcd03c0) holds the tutorial hints ("Use Right Stick"), whose
- * text is centred on its origin, and labels placed from the world, so keeping the origin is right. */
-static inline int iss_ui_fit_top_level(uintptr_t owner,uintptr_t owner_vt){
-    return !owner || owner_vt==0xcdb7d0u || owner_vt==0xd6a390u || owner_vt==0xcd03c0u;
-}
-/* A widget that keeps its own 3D transform (trs byte [w+0x586], as the compact world-space swipe
- * prompts) is projected later by the perspective camera, whose aspect is already the output's: it
- * was never stretched, so it is left alone. A z term in its x or y row says the same. */
-static inline int iss_ui_fit_own_3d(uint8_t trs,const float matrix[16]){
-    return trs!=0 || fabsf(matrix[8])>0.01f || fabsf(matrix[9])>0.01f;
-}
-static inline int iss_ui_fit_transform(float matrix[16],uint32_t width,uint32_t height){
-    if(!width || !height || (uint64_t)width*9u<=(uint64_t)height*16u)return 0;
-    float ratio=(16.0f*(float)height)/(9.0f*(float)width);
-    if(!isfinite(ratio) || ratio<0.2f || ratio>=1.0f)return 0;
-    for(unsigned i=0;i<16;i++)if(!isfinite(matrix[i]))return 0;
-    if(fabsf(matrix[3])>0.0001f || fabsf(matrix[7])>0.0001f || fabsf(matrix[11])>0.0001f ||
-       (fabsf(matrix[15])>0.0001f && fabsf(matrix[15]-1.0f)>0.0001f))return 0;
-    matrix[0]*=ratio;matrix[4]*=ratio;matrix[8]*=ratio;
-    return 1;
-}
-/* The same, keeping the element on the edge it is anchored to (flags bit 1 = left, bit 2 =
- * right, as the minimap's 10 and the corner groups' 5/9): its position from that edge narrows
- * with it, as kind 3 does, so right-anchored pieces (the call portrait) line up with the other
- * right-hand HUD. Centred or unanchored elements keep their position. */
-static inline int iss_ui_fit_transform_anchored(float matrix[16],uint32_t width,uint32_t height,uint32_t flags){
-    if(!iss_ui_fit_transform(matrix,width,height))return 0;
-    const int left=(flags&1u)!=0,right=(flags&2u)!=0;
-    if(left==right || (flags&0x20u))return 1; /* 0x20: placed relative to its own transform */
-    const float ratio=(16.0f*(float)height)/(9.0f*(float)width);
-    const float anchor=right?960.0f:-960.0f;
     matrix[12]=anchor+ratio*(matrix[12]-anchor);
     return 1;
 }
