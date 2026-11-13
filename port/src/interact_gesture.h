@@ -6,7 +6,7 @@
  *   - hold still past the hold time: the finger lands and the pad stays pressed while the key is
  *     held (absorbing/draining powers, "hold the touchpad" prompts);
  *   - hold and move the mouse past the threshold, or press a direction (W/A/S/D, the arrows, a
- *     stick), before the hold starts: a full swipe in that direction, played on its own (finger
+ *     stick, also during a hold): a full swipe in that direction, played on its own (finger
  *     down, slide across the pad, lift). The direction snaps to up/down/left/right, as the game's
  *     swipes are. If the key is still held when the swipe ends, the finger stays at the end of
  *     the pad until the key is released (swipe and hold: lifting a mobile command centre while
@@ -111,6 +111,12 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
         o.click=t>=INTERACT_LEAD_US && t<INTERACT_LEAD_US+INTERACT_CLICK_US;
         o.owns=held;
         return o;
+    }
+    if (g->state==INTERACT_HOLD && held && (dir_x || dir_y)) {
+        /* A direction pressed during a hold still swipes (press, wait, then W for a lift). */
+        interact_snap((float)dir_x,(float)dir_y,&g->dx,&g->dy);
+        g->swiped=1; interact_begin(g,INTERACT_SWIPE,now);
+        return interact_step(g,p,held,0,0,0,0,now);
     }
     if (g->state==INTERACT_HOLD) {
         if (!held) { g->state=INTERACT_IDLE; return o; }

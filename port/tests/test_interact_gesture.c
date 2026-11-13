@@ -93,10 +93,11 @@ int main(void) {
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(400));
     assert(!o.touch && g.state==INTERACT_IDLE);
 
-    /* A direction key after the hold has started does not swipe: the hold stays. */
+    /* Mouse motion after the hold has started does not swipe: the hold stays (the mouse is the
+     * camera again). A direction key does (see the hold-then-direction case below). */
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(300));
-    o=interact_update(&g,&p,1,0,0,0,1,now+=MS(60));
+    o=interact_update(&g,&p,1,0,300,0,0,now+=MS(60));
     assert(g.state==INTERACT_HOLD && o.click);
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
 
@@ -145,6 +146,21 @@ int main(void) {
         o=interact_update_ex(&h,&p,1,100,0,0,0,t+=MS(10),1);
         o=interact_update_ex(&h,&p,1,0,0,1,0,t+=MS(10),0);
         assert(h.state==INTERACT_SWIPE && h.dx==1 && !o.owns_mouse);
+    }
+
+    /* Hold first, then a direction: the hold becomes a swipe that way, and stays at the end. */
+    {
+        InteractGesture h={0};
+        uint64_t t=now+MS(5000);
+        o=interact_update(&h,&p,1,0,0,0,0,t);
+        o=interact_update(&h,&p,1,0,0,0,0,t+=MS(300));
+        assert(h.state==INTERACT_HOLD && o.touch);
+        o=interact_update(&h,&p,1,0,0,0,-1,t+=MS(500));
+        assert(h.state==INTERACT_SWIPE && h.dy==-1 && o.touch && near(o.y,0.92f));
+        o=interact_update(&h,&p,1,0,0,0,0,t+=MS(500));
+        assert(h.state==INTERACT_SPENT && o.touch && near(o.y,0.08f));
+        o=interact_update(&h,&p,0,0,0,0,0,t+=MS(10));
+        assert(!o.touch && h.state==INTERACT_IDLE);
     }
 
     puts("PASS: interact gesture");

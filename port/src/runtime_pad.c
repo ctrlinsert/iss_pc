@@ -738,10 +738,10 @@ static InteractGesture interact;
 static InteractOut interact_out;
 static struct { float dx, dy; } interact_mouse;
 static bool interact_mouse_moving; /* this press began while the mouse turned the camera */
-static uint64_t interact_still_us(void) {
-    static uint64_t us=1;
-    if (us==1) { const char *e=getenv("TLG_INTERACT_STILL_MS"); us=150000u; if (e && *e) us=(uint64_t)strtoul(e,NULL,10)*1000u; }
-    return us;
+static float interact_moving_counts(void) {
+    static float counts=-1.0f;
+    if (counts<0.0f) { const char *e=getenv("TLG_INTERACT_MOVING"); counts=15.0f; if (e && *e) counts=fmaxf(strtof(e,NULL),0.0f); }
+    return counts;
 }
 static uint32_t map_keys(const bool *k, uint32_t mouse);
 static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_t acts) {
@@ -779,15 +779,22 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
         interact_down=(key_map.entries[i].ps & ACT_INTERACT) && source>=MOUSE_SOURCE && source<MOUSE_SOURCE_END &&
                       (raw>>(source-MOUSE_SOURCE) & 1);
     }
-    /* A press made while the mouse is turning the camera (motion in the last
-     * TLG_INTERACT_STILL_MS, default 150) cannot swipe with the mouse, and the mouse keeps the
-     * camera: draining while looking around stays a hold. A hold gives the mouse back too. */
-    static uint64_t last_motion;
+    /* A press made while the mouse is turning the camera cannot swipe with the mouse, and the
+     * mouse keeps the camera: draining while looking around stays a hold. "Turning" is a recent
+     * motion of TLG_INTERACT_MOVING counts or more (default 15, decaying over 100 ms; 0: off),
+     * so a resting hand's jitter does not count. A hold gives the mouse back too. */
+    static float recent; static uint64_t recent_at;
     static bool was_down;
-    if (interact_down && !was_down && interact.state==INTERACT_IDLE)
-        interact_mouse_moving=last_motion && now-last_motion<interact_still_us();
+    if (recent_at && now>recent_at) recent*=expf(-(float)(now-recent_at)/100000.0f);
+    recent_at=now;
+    if (interact_down && !was_down && interact.state==INTERACT_IDLE) {
+        const float limit=interact_moving_counts();
+        interact_mouse_moving=limit>0.0f && recent>=limit;
+        if (interact_mouse_moving)
+            printf("Runtime: interact pressed while the mouse turns the camera (%.0f counts): tap or hold only\n",recent);
+    }
     was_down=interact_down;
-    if (m.dx!=0 || m.dy!=0) last_motion=now ? now : 1;
+    recent+=fabsf(m.dx)+fabsf(m.dy);
     const bool deciding=interact_down && interact.state==INTERACT_IDLE;
     if ((deciding && !interact_mouse_moving) || interact_out.owns_mouse) {
         interact_mouse.dx+=m.dx; interact_mouse.dy+=m.dy;
