@@ -6378,6 +6378,40 @@ void Rasterizer::UpdateViewportScissorState() const {
         scissors.push_back(empty_scissor);
     }
 
+    // ISS_VIEWPORT_TRACE=1: each distinct viewport/scissor pair, up to 400, to find a
+    // pass whose rectangle stops short of the scene (for example at 3/4 of the width).
+    static const bool vp_trace = [] {
+        const char* p = std::getenv("ISS_VIEWPORT_TRACE");
+        return p && *p == '1';
+    }();
+    if (vp_trace) {
+        static std::mutex vp_lock;
+        static std::unordered_set<u64> vp_seen;
+        const auto& v = viewports[0];
+        const auto& r = scissors[0];
+        const u64 key = (u64(u16(s32(v.x))) << 48) ^ (u64(u16(s32(v.width))) << 32) ^
+                        (u64(u16(s32(v.height))) << 16) ^ (u64(u16(r.offset.x)) << 40) ^
+                        (u64(u16(r.extent.width)) << 8) ^ u64(u16(r.extent.height)) ^
+                        (u64(u16(scsr.bottom_right_x)) << 24) ^ (u64(viewports.size()) << 60);
+        bool fresh = false;
+        {
+            std::scoped_lock guard{vp_lock};
+            fresh = vp_seen.size() < 400 && vp_seen.insert(key).second;
+        }
+        if (fresh)
+            std::fprintf(stderr,
+                         "VIEWPORT_TRACE n=%zu vp=%.1f,%.1f %.1fx%.1f scissor=%d,%d %ux%u "
+                         "screen_br=%d,%d window_br=%d,%d generic_br=%d,%d clipoff=%d ui_scale=%.3f\n",
+                         viewports.size(), v.x, v.y, v.width, v.height, r.offset.x, r.offset.y,
+                         r.extent.width, r.extent.height, int(regs.screen_scissor.bottom_right_x),
+                         int(regs.screen_scissor.bottom_right_y),
+                         int(regs.window_scissor.bottom_right_x),
+                         int(regs.window_scissor.bottom_right_y),
+                         int(regs.generic_scissor.bottom_right_x),
+                         int(regs.generic_scissor.bottom_right_y), int(regs.IsClipDisabled()),
+                         iss_ui_scale_x);
+    }
+
     auto& dynamic_state = scheduler.GetDynamicState();
     dynamic_state.SetViewports(viewports);
     dynamic_state.SetScissors(scissors);
