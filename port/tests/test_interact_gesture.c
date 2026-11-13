@@ -54,10 +54,11 @@ int main(void) {
     assert(o.touch && near(o.y,0.5f));
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(125));
     assert(o.touch && near(o.y,0.08f));
+    const int swipe_id=o.id;
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(100));
-    assert(!o.touch && o.owns && g.state==INTERACT_SPENT);
-    o=interact_update(&g,&p,1,0,-100,0,0,now+=MS(100));
-    assert(!o.touch && o.owns && g.state==INTERACT_SPENT); /* no second swipe */
+    assert(o.touch && near(o.y,0.08f) && o.id==swipe_id && o.owns && g.state==INTERACT_SPENT); /* swipe and hold */
+    o=interact_update(&g,&p,1,0,-100,0,0,now+=MS(2000));
+    assert(o.touch && near(o.y,0.08f) && o.id==swipe_id && !o.click && g.state==INTERACT_SPENT); /* no second swipe */
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
     assert(!o.owns && g.state==INTERACT_IDLE);
 
@@ -125,7 +126,15 @@ int main(void) {
         o=interact_update_ex(&h,&p,1,0,-80,0,0,t+=MS(10),0);
         assert(h.state==INTERACT_SWIPE && o.owns_mouse);
         o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(500),0);
-        assert(h.state==INTERACT_SPENT && o.owns_mouse);
+        assert(h.state==INTERACT_SPENT && o.touch && near(o.y,0.08f) && !o.owns_mouse);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0);
+        assert(!o.touch && h.state==INTERACT_IDLE);
+        /* TLG_INTERACT_SWIPE_HOLD=0: the finger lifts after the swipe even if the key is held. */
+        InteractParams q=p; q.swipe_hold=0;
+        o=interact_update_ex(&h,&q,1,0,0,0,0,t+=MS(10),0);
+        o=interact_update_ex(&h,&q,1,0,-80,0,0,t+=MS(10),0);
+        o=interact_update_ex(&h,&q,1,0,0,0,0,t+=MS(500),0);
+        assert(h.state==INTERACT_SPENT && !o.touch);
         o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0);
         /* A still press that becomes a hold hands the mouse back. */
         o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(10),0);

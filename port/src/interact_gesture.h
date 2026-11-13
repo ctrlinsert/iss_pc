@@ -8,7 +8,9 @@
  *   - hold and move the mouse past the threshold, or press a direction (W/A/S/D, the arrows, a
  *     stick), before the hold starts: a full swipe in that direction, played on its own (finger
  *     down, slide across the pad, lift). The direction snaps to up/down/left/right, as the game's
- *     swipes are. After a swipe the key does nothing more until it is released.
+ *     swipes are. If the key is still held when the swipe ends, the finger stays at the end of
+ *     the pad until the key is released (swipe and hold: lifting a mobile command centre while
+ *     pressing R2). Nothing else starts until the key is released.
  *
  * While a gesture runs (`owns`), the caller keeps the direction keys from walking; the mouse is
  * taken only while it can still pick a swipe or a swipe plays (`owns_mouse`). A press made while
@@ -30,6 +32,7 @@ typedef struct {
     float threshold;  /* mouse counts that make a hold a swipe (default 60) */
     uint32_t hold_us; /* how long the key must stay still to be a hold (default 250 ms) */
     uint32_t swipe_us;/* how long the finger takes to cross the pad (default 250 ms) */
+    int swipe_hold;   /* after a swipe, a still-held key keeps the finger at the end (default 1) */
 } InteractParams;
 
 enum { INTERACT_IDLE, INTERACT_DECIDING, INTERACT_TAP, INTERACT_HOLD, INTERACT_SWIPE, INTERACT_SPENT };
@@ -53,7 +56,7 @@ typedef struct {
 } InteractOut;
 
 static inline InteractParams interact_default_params(void) {
-    return (InteractParams){60.0f,250000u,250000u};
+    return (InteractParams){60.0f,250000u,250000u,1};
 }
 
 /* Snaps a motion to its main axis: -1/0/+1 each, one of them 0. */
@@ -92,6 +95,12 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
     } else if (g->state==INTERACT_SPENT) {
         if (!held) { g->state=INTERACT_IDLE; return o; }
         o.owns=1;
+        if (g->swiped && p->swipe_hold) { /* swipe and hold: the finger rests at the end */
+            const float a=0.5f-INTERACT_REACH, b=0.5f+INTERACT_REACH;
+            o.touch=1; o.id=g->id;
+            o.x=g->dx ? (g->dx>0 ? b : a) : 0.5f;
+            o.y=g->dy ? (g->dy>0 ? b : a) : 0.5f;
+        }
         return o;
     }
     o.id=g->id;
@@ -110,7 +119,10 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
     }
     /* INTERACT_SWIPE: rest at the start for the lead, slide, rest at the end for the tail. */
     const uint64_t slide=p->swipe_us ? p->swipe_us : 1;
-    if (t>=INTERACT_LEAD_US+slide+INTERACT_TAIL_US) { g->state=held ? INTERACT_SPENT : INTERACT_IDLE; o.owns=held; return o; }
+    if (t>=INTERACT_LEAD_US+slide+INTERACT_TAIL_US) {
+        if (held) { g->state=INTERACT_SPENT; return interact_step(g,p,held,0,0,0,0,now); }
+        g->state=INTERACT_IDLE; return o;
+    }
     float f=t<=INTERACT_LEAD_US ? 0.0f : (float)(t-INTERACT_LEAD_US)/(float)slide;
     if (f>1.0f) f=1.0f;
     const float a=0.5f-INTERACT_REACH, b=0.5f+INTERACT_REACH;
@@ -123,7 +135,7 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
 
 static inline int interact_owns_mouse_state(const InteractGesture *g) {
     if (g->mouse_off) return 0;
-    return g->state==INTERACT_DECIDING || g->state==INTERACT_SWIPE || (g->state==INTERACT_SPENT && g->swiped);
+    return g->state==INTERACT_DECIDING || g->state==INTERACT_SWIPE;
 }
 /* held: the key is down. mdx/mdy: mouse counts since the last sample. dir_x/dir_y: a direction
  * key or stick (-1/0/+1). mouse_moving: the mouse was turning the camera just before this sample

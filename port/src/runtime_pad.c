@@ -960,7 +960,8 @@ static uint32_t map_keys(const bool *k, uint32_t mouse) {
     }
     return bits;
 }
-/* TLG_INTERACT_COUNTS (mouse counts that make a swipe, default 60; 0: the mouse never swipes),
+/* TLG_INTERACT_SWIPE_HOLD=0 (lift the finger after a swipe even while the key is held),
+ * TLG_INTERACT_COUNTS (mouse counts that make a swipe, default 60; 0: the mouse never swipes),
  * TLG_INTERACT_HOLD_MS (default 250) and TLG_INTERACT_SWIPE_MS (default 250). */
 static const InteractParams *interact_params(void) {
     static InteractParams p;
@@ -972,6 +973,8 @@ static const InteractParams *interact_params(void) {
         if (e && *e) p.threshold=fmaxf(strtof(e,NULL),0.0f);
         e=getenv("TLG_INTERACT_HOLD_MS");
         if (e && *e && atoi(e)>0) p.hold_us=(uint32_t)atoi(e)*1000u;
+        e=getenv("TLG_INTERACT_SWIPE_HOLD");
+        if (e && *e=='0') p.swipe_hold=0;
         e=getenv("TLG_INTERACT_SWIPE_MS");
         if (e && *e && atoi(e)>0) p.swipe_us=(uint32_t)atoi(e)*1000u;
         printf("Runtime: interact key: swipe after %.0f mouse counts, hold after %u ms, swipe %u ms\n",
