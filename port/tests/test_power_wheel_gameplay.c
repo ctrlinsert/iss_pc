@@ -2,6 +2,7 @@
 #include "../src/runtime_power_wheel.c"
 #include <assert.h>
 int tlggpu_overlay_captures_input(void){return 0;}
+int runtime_movie_playing(void){return 0;}
 int main(void){
     /* Supported code can be installed before guest writable pages exist. */
     pw_image=(unsigned char*)0x800000000ull;
