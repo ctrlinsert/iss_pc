@@ -35,7 +35,11 @@ static void ui_fit(const unsigned char *p,uintptr_t owner,uintptr_t owner_vt,voi
     if(enabled<0){const char *e=getenv("TLG_UI_FIT");enabled=!(e && *e=='0');}
     if(!enabled || !iss_ui_fit_top_level(owner,owner_vt) || runtime_menu_scene()!=ISS_MENU_SCENE_GAMEPLAY)return;
     float matrix[16];memcpy(matrix,output,sizeof(matrix));
-    if(!iss_ui_fit_transform(matrix,plan->output_width,plan->output_height))return;
+    /* TLG_UI_FIT_ANCHOR=0: narrow in place (the element's own origin), as before. */
+    static int anchored=-1;
+    if(anchored<0){const char *e=getenv("TLG_UI_FIT_ANCHOR");anchored=!(e && *e=='0');}
+    if(!(anchored ? iss_ui_fit_transform_anchored(matrix,plan->output_width,plan->output_height,hud32(p+0x4f4))
+                  : iss_ui_fit_transform(matrix,plan->output_width,plan->output_height)))return;
     memcpy(output,matrix,sizeof(matrix));
     if(atomic_fetch_add(&told,1)==0)fprintf(stderr,"UI_FIT top-level gameplay elements narrowed to 16:9 proportions (first: vt=+%#lx owner_vt=+%#lx)\n",
         (unsigned long)((uintptr_t)hud64(p)-image_base),(unsigned long)owner_vt);
