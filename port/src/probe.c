@@ -940,7 +940,8 @@ static void install_iss_camera_aspect(Segment *segments,uint64_t count,uint64_t 
     for(uint64_t i=0;i<count;i++)if((segments[i].flags&1)&&ISS_CAMERA_ASPECT_SITE>=segments[i].address&&
         ISS_CAMERA_ASPECT_SITE-segments[i].address<=segments[i].size&&
         ISS_CAMERA_ASPECT_STOLEN<=segments[i].size-(ISS_CAMERA_ASPECT_SITE-segments[i].address))executable=1;
-    if(!executable||!iss_native_aspect_signature(image,size)){puts("Camera aspect observer: code check failed; not installed");return;}
+    if(!executable||size<ISS_CAMERA_ASPECT_SITE+sizeof(iss_native_aspect_setter)||
+       memcmp(image+ISS_CAMERA_ASPECT_SITE,iss_native_aspect_setter,sizeof(iss_native_aspect_setter))){puts("Camera aspect observer: code check failed; not installed");return;}
     unsigned char *bridge=allocate(page_size);
     unsigned n=iss_karma_bridge_ex(bridge,(uintptr_t)runtime_camera_aspect_setter,image+ISS_CAMERA_ASPECT_SITE,
         (uintptr_t)image+ISS_CAMERA_ASPECT_SITE+ISS_CAMERA_ASPECT_STOLEN,ISS_CAMERA_ASPECT_STOLEN,7);
