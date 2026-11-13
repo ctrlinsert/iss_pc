@@ -1026,6 +1026,8 @@ static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
     if (interact.state!=was && (interact.state==INTERACT_TAP || interact.state==INTERACT_HOLD || interact.state==INTERACT_SWIPE))
         printf("Runtime: interact %s%s\n",interact.state==INTERACT_TAP ? "tap" : interact.state==INTERACT_HOLD ? "hold" : "swipe ",
                interact.state!=INTERACT_SWIPE ? "" : interact.dx<0 ? "left" : interact.dx>0 ? "right" : interact.dy<0 ? "up" : "down");
+    if (interact.state!=was && interact.state!=INTERACT_IDLE && interact.state!=INTERACT_DECIDING && interact.state!=INTERACT_SPENT)
+        printf("Runtime: interact flick peak %.1f counts/ms (pan %.1f)\n",interact.peak,sqrtf(interact.bvx*interact.bvx+interact.bvy*interact.bvy));
     if (interact_out.owns) d->left_x=d->left_y=128;
     if (interact_out.owns && (interact_out.owns_mouse || (pad_held && interact.state!=INTERACT_HOLD))) d->right_x=d->right_y=128;
     if (interact_out.touch && d->touch_count<2) {
