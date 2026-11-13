@@ -739,10 +739,10 @@ static InteractOut interact_out;
 static struct { float dx, dy; } interact_mouse;
 static bool interact_mouse_moving; /* this press began while the mouse turned the camera */
 static float interact_vx, interact_vy; /* ...at this speed, counts per ms */
-/* TLG_MOUSE_DPI (default 800): the interact key's mouse thresholds are set for an 800 DPI
- * mouse and scale with the DPI, so a flick takes the same hand movement on any mouse (counts
- * are raw: in-game sensitivity and the Windows pointer speed do not change them). An explicit
- * TLG_INTERACT_* count or speed is taken as given, in counts. */
+/* The interact key's mouse thresholds are in camera units (raw counts times the mouse
+ * sensitivity; sample_mouse), set for 800 DPI at sensitivity 1. TLG_MOUSE_DPI is optional: set
+ * it only if you scale DPI without scaling the sensitivity, and it multiplies the thresholds by
+ * DPI/800. An explicit TLG_INTERACT_* value is taken as given. */
 static float mouse_dpi_scale(void) {
     static float scale=0.0f;
     if (scale<=0.0f) {
@@ -813,10 +813,16 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
             printf("Runtime: interact pressed while the mouse turns the camera (%.0f counts): mouse stays the camera, a sharp flick still swipes\n",recent);
     }
     was_down=interact_down;
-    recent+=fabsf(m.dx)+fabsf(m.dy); rx+=m.dx; ry+=m.dy;
+    /* The interact key measures motion in camera units: counts times the mouse sensitivity, so
+     * a flick is the same camera-sized gesture whatever the DPI and sensitivity (a 1600 DPI mouse
+     * at sensitivity 0.5 behaves as 800 DPI at 1). TLG_MOUSE_DPI scales on top, for players who
+     * would rather set it by hand movement. */
+    const float cam=fminf(fmaxf(isfinite(in.sensitivity) ? in.sensitivity : 1.0f,0.05f),10.0f);
+    const float cdx=m.dx*cam, cdy=m.dy*cam;
+    recent+=fabsf(cdx)+fabsf(cdy); rx+=cdx; ry+=cdy;
     const bool deciding=interact_down && interact.state==INTERACT_IDLE;
     if (deciding || interact_out.owns_mouse || (interact_down && interact.state==INTERACT_DECIDING)) {
-        interact_mouse.dx+=m.dx; interact_mouse.dy+=m.dy;
+        interact_mouse.dx+=cdx; interact_mouse.dy+=cdy;
         if ((deciding && !interact_mouse_moving) || interact_out.owns_mouse) m.dx=m.dy=0; /* else the camera keeps it too */
     }
     /* Touchpad mode: the mode key (a keyboard key or a mouse button). */
