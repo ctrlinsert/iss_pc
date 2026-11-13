@@ -853,7 +853,9 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
     const float cdx=m.dx*cam, cdy=m.dy*cam;
     recent+=fabsf(cdx)+fabsf(cdy); rx+=cdx; ry+=cdy;
     const bool deciding=interact_down && interact.state==INTERACT_IDLE;
-    if (deciding || interact_out.owns_mouse || (interact_down && interact.state==INTERACT_DECIDING)) {
+    /* ...and during a hold, where a flick still swipes if a swipe prompt is up (apply_interact
+     * passes the motion on only then; the camera keeps it either way). */
+    if (deciding || interact_out.owns_mouse || (interact_down && (interact.state==INTERACT_DECIDING || interact.state==INTERACT_HOLD))) {
         interact_mouse.dx+=cdx; interact_mouse.dy+=cdy;
         if ((deciding && !interact_mouse_moving && !interact_no_swipe) || interact_out.owns_mouse) m.dx=m.dy=0; /* else the camera keeps it too */
     }
