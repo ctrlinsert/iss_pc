@@ -737,6 +737,12 @@ static size_t mouse_samples;
 static InteractGesture interact;
 static InteractOut interact_out;
 static struct { float dx, dy; } interact_mouse;
+static bool interact_mouse_moving; /* this press began while the mouse turned the camera */
+static uint64_t interact_still_us(void) {
+    static uint64_t us=1;
+    if (us==1) { const char *e=getenv("TLG_INTERACT_STILL_MS"); us=150000u; if (e && *e) us=(uint64_t)strtoul(e,NULL,10)*1000u; }
+    return us;
+}
 static uint32_t map_keys(const bool *k, uint32_t mouse);
 static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_t acts) {
     TlgGpuMouse m;
@@ -773,7 +779,17 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
         interact_down=(key_map.entries[i].ps & ACT_INTERACT) && source>=MOUSE_SOURCE && source<MOUSE_SOURCE_END &&
                       (raw>>(source-MOUSE_SOURCE) & 1);
     }
-    if (interact_down || interact_out.owns) {
+    /* A press made while the mouse is turning the camera (motion in the last
+     * TLG_INTERACT_STILL_MS, default 150) cannot swipe with the mouse, and the mouse keeps the
+     * camera: draining while looking around stays a hold. A hold gives the mouse back too. */
+    static uint64_t last_motion;
+    static bool was_down;
+    if (interact_down && !was_down && interact.state==INTERACT_IDLE)
+        interact_mouse_moving=last_motion && now-last_motion<interact_still_us();
+    was_down=interact_down;
+    if (m.dx!=0 || m.dy!=0) last_motion=now ? now : 1;
+    const bool deciding=interact_down && interact.state==INTERACT_IDLE;
+    if ((deciding && !interact_mouse_moving) || interact_out.owns_mouse) {
         interact_mouse.dx+=m.dx; interact_mouse.dy+=m.dy;
         m.dx=m.dy=0;
     }
@@ -985,12 +1001,14 @@ static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
     const int dx=!!(fresh & (ACT_LS_RIGHT|ACT_RS_RIGHT))-!!(fresh & (ACT_LS_LEFT|ACT_RS_LEFT));
     const int dy=!!(fresh & (ACT_LS_DOWN|ACT_RS_DOWN))-!!(fresh & (ACT_LS_UP|ACT_RS_UP));
     const int was=interact.state;
-    interact_out=interact_update(&interact,interact_params(),held,interact_mouse.dx,interact_mouse.dy,dx,dy,d->timestamp);
+    interact_out=interact_update_ex(&interact,interact_params(),held,interact_mouse.dx,interact_mouse.dy,dx,dy,d->timestamp,
+                                    !pad_held && interact_mouse_moving);
     interact_mouse.dx=interact_mouse.dy=0;
     if (interact.state!=was && (interact.state==INTERACT_TAP || interact.state==INTERACT_HOLD || interact.state==INTERACT_SWIPE))
         printf("Runtime: interact %s%s\n",interact.state==INTERACT_TAP ? "tap" : interact.state==INTERACT_HOLD ? "hold" : "swipe ",
                interact.state!=INTERACT_SWIPE ? "" : interact.dx<0 ? "left" : interact.dx>0 ? "right" : interact.dy<0 ? "up" : "down");
-    if (interact_out.owns) d->left_x=d->left_y=d->right_x=d->right_y=128;
+    if (interact_out.owns) d->left_x=d->left_y=128;
+    if (interact_out.owns && (interact_out.owns_mouse || (pad_held && interact.state!=INTERACT_HOLD))) d->right_x=d->right_y=128;
     if (interact_out.touch && d->touch_count<2) {
         d->touches[d->touch_count]=(PadTouch){.x=touch_axis(interact_out.x,1919),.y=touch_axis(interact_out.y,942),
                                               .id=(uint8_t)interact_out.id};

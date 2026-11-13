@@ -10,8 +10,11 @@
  *     down, slide across the pad, lift). The direction snaps to up/down/left/right, as the game's
  *     swipes are. After a swipe the key does nothing more until it is released.
  *
- * While a gesture runs (`owns`), the caller keeps the mouse and the direction keys from turning
- * the camera or walking. Coordinates are 0..1 across the pad (x right, y down). Time is passed
+ * While a gesture runs (`owns`), the caller keeps the direction keys from walking; the mouse is
+ * taken only while it can still pick a swipe or a swipe plays (`owns_mouse`). A press made while
+ * the mouse is already moving (turning the camera) cannot swipe with the mouse: it stays a tap or
+ * a hold and the mouse keeps the camera, so draining while looking around works. A hold also
+ * gives the mouse back to the camera. Coordinates are 0..1 across the pad (x right, y down). Time is passed
  * in, so tests/test_interact_gesture.c checks it without SDL or the runtime. */
 #ifndef ISS_INTERACT_GESTURE_H
 #define ISS_INTERACT_GESTURE_H
@@ -37,13 +40,16 @@ typedef struct {
     float ax, ay;     /* mouse motion gathered while deciding */
     int dx, dy;       /* swipe direction (one of them is 0) */
     int id;           /* touch id of the current gesture, grows with each one */
+    int mouse_off;    /* this press began with the mouse moving: the mouse cannot swipe */
+    int swiped;       /* the gesture was a swipe (SPENT keeps the mouse until release) */
 } InteractGesture;
 
 typedef struct {
     int touch, click; /* the game sees a finger, and the touchpad pressed */
     float x, y;       /* the finger, 0..1 */
     int id;
-    int owns;         /* the key is in use: keep the camera and the character still */
+    int owns;         /* the key is in use: keep the character still */
+    int owns_mouse;   /* the mouse belongs to the gesture: keep the camera still */
 } InteractOut;
 
 static inline InteractParams interact_default_params(void) {
@@ -69,24 +75,18 @@ static inline void interact_begin(InteractGesture *g, int state, uint64_t now) {
     if (state==INTERACT_TAP || state==INTERACT_HOLD || state==INTERACT_SWIPE) g->id=g->id>=200 ? 40 : g->id+1;
 }
 
-/* held: the key is down. mdx/mdy: mouse counts since the last sample. dir_x/dir_y: a direction
- * key or stick (-1/0/+1). */
-static inline InteractOut interact_update(InteractGesture *g, const InteractParams *p, int held,
-                                          float mdx, float mdy, int dir_x, int dir_y, uint64_t now) {
-    InteractOut o={0,0,0.5f,0.5f,g->id,0};
-    if (g->id<40) g->id=40;
-    if (g->state==INTERACT_IDLE) {
-        if (!held) return o;
-        g->ax=g->ay=0; g->dx=g->dy=0;
-        interact_begin(g,INTERACT_DECIDING,now); /* this sample's motion counts below */
-    }
+/* One sample of a gesture already under way (not IDLE). */
+static inline InteractOut interact_step(InteractGesture *g, const InteractParams *p, int held,
+                                        float mdx, float mdy, int dir_x, int dir_y, uint64_t now) {
+    InteractOut o={0,0,0.5f,0.5f,g->id,0,0};
     if (g->state==INTERACT_DECIDING) {
         g->ax+=mdx; g->ay+=mdy;
+        const int mouse_swipes=p->threshold>0 && !g->mouse_off;
         if (!held) interact_begin(g,INTERACT_TAP,now);
-        else if (dir_x || dir_y) { interact_snap((float)dir_x,(float)dir_y,&g->dx,&g->dy); interact_begin(g,INTERACT_SWIPE,now); }
-        else if (p->threshold>0 && interact_decided(g->ax,g->ay,p->threshold)) {
+        else if (dir_x || dir_y) { interact_snap((float)dir_x,(float)dir_y,&g->dx,&g->dy); g->swiped=1; interact_begin(g,INTERACT_SWIPE,now); }
+        else if (mouse_swipes && interact_decided(g->ax,g->ay,p->threshold)) {
             interact_snap(g->ax,g->ay,&g->dx,&g->dy);
-            interact_begin(g,INTERACT_SWIPE,now);
+            g->swiped=1; interact_begin(g,INTERACT_SWIPE,now);
         } else if (now-g->since>=p->hold_us) interact_begin(g,INTERACT_HOLD,now);
         else { o.owns=1; return o; }
     } else if (g->state==INTERACT_SPENT) {
@@ -119,5 +119,31 @@ static inline InteractOut interact_update(InteractGesture *g, const InteractPara
     o.y=g->dy ? (g->dy>0 ? a+(b-a)*f : b-(b-a)*f) : 0.5f;
     o.owns=1;
     return o;
+}
+
+static inline int interact_owns_mouse_state(const InteractGesture *g) {
+    if (g->mouse_off) return 0;
+    return g->state==INTERACT_DECIDING || g->state==INTERACT_SWIPE || (g->state==INTERACT_SPENT && g->swiped);
+}
+/* held: the key is down. mdx/mdy: mouse counts since the last sample. dir_x/dir_y: a direction
+ * key or stick (-1/0/+1). mouse_moving: the mouse was turning the camera just before this sample
+ * (read only when the key goes down). */
+static inline InteractOut interact_update_ex(InteractGesture *g, const InteractParams *p, int held,
+                                             float mdx, float mdy, int dir_x, int dir_y, uint64_t now,
+                                             int mouse_moving) {
+    InteractOut o={0,0,0.5f,0.5f,g->id,0,0};
+    if (g->id<40) g->id=40;
+    if (g->state==INTERACT_IDLE) {
+        if (!held) return o;
+        g->ax=g->ay=0; g->dx=g->dy=0; g->swiped=0; g->mouse_off=mouse_moving!=0;
+        interact_begin(g,INTERACT_DECIDING,now); /* this sample's motion counts below */
+    }
+    o=interact_step(g,p,held,mdx,mdy,dir_x,dir_y,now);
+    o.owns_mouse=o.owns && interact_owns_mouse_state(g);
+    return o;
+}
+static inline InteractOut interact_update(InteractGesture *g, const InteractParams *p, int held,
+                                          float mdx, float mdy, int dir_x, int dir_y, uint64_t now) {
+    return interact_update_ex(g,p,held,mdx,mdy,dir_x,dir_y,now,0);
 }
 #endif

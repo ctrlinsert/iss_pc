@@ -106,6 +106,38 @@ int main(void) {
     o=interact_update(&g,&nomouse,1,0,0,0,1,now+=MS(10));
     assert(g.state==INTERACT_SWIPE && g.dy==1);
 
+    /* Pressed while the mouse turns the camera: mouse motion never swipes, the mouse stays with the
+     * camera, and holding still drains. A hold also gives the mouse back to the camera. */
+    {
+        InteractGesture h={0};
+        uint64_t t=now+MS(1000);
+        o=interact_update_ex(&h,&p,1,200,0,0,0,t,1);
+        assert(h.state==INTERACT_DECIDING && o.owns && !o.owns_mouse);
+        o=interact_update_ex(&h,&p,1,300,40,0,0,t+=MS(100),0);
+        assert(h.state==INTERACT_DECIDING && !o.owns_mouse);
+        o=interact_update_ex(&h,&p,1,300,0,0,0,t+=MS(200),0);
+        assert(h.state==INTERACT_HOLD && o.touch && !o.owns_mouse);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0);
+        assert(h.state==INTERACT_IDLE && !o.owns_mouse);
+        /* A still press still swipes, and owns the mouse while deciding and swiping. */
+        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(10),0);
+        assert(o.owns_mouse);
+        o=interact_update_ex(&h,&p,1,0,-80,0,0,t+=MS(10),0);
+        assert(h.state==INTERACT_SWIPE && o.owns_mouse);
+        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(500),0);
+        assert(h.state==INTERACT_SPENT && o.owns_mouse);
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0);
+        /* A still press that becomes a hold hands the mouse back. */
+        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(10),0);
+        o=interact_update_ex(&h,&p,1,0,0,0,0,t+=MS(300),0);
+        assert(h.state==INTERACT_HOLD && !o.owns_mouse && o.owns);
+        /* A direction key still swipes from a press made while the mouse moved. */
+        o=interact_update_ex(&h,&p,0,0,0,0,0,t+=MS(10),0);
+        o=interact_update_ex(&h,&p,1,100,0,0,0,t+=MS(10),1);
+        o=interact_update_ex(&h,&p,1,0,0,1,0,t+=MS(10),0);
+        assert(h.state==INTERACT_SWIPE && h.dx==1 && !o.owns_mouse);
+    }
+
     puts("PASS: interact gesture");
     return 0;
 }
