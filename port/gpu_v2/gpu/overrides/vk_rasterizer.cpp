@@ -6412,6 +6412,19 @@ void Rasterizer::UpdateViewportScissorState() const {
         scissors.push_back(empty_scissor);
     }
 
+    // Experiment ISS_SHADOW_SCISSOR_FULL=1: a 1024x1024 shadow-map viewport draws with a
+    // scissor fitted to the camera; open it to the whole map to see whether that fit is what
+    // drops shadows at the sides of a wide view. Diagnostic only.
+    static const bool shadow_scissor_full = [] {
+        const char* p = std::getenv("ISS_SHADOW_SCISSOR_FULL");
+        return p && *p == '1';
+    }();
+    if (shadow_scissor_full && viewports.size() == 1 && !regs.IsClipDisabled() &&
+        std::fabs(viewports[0].width) == 1024.f && std::fabs(viewports[0].height) == 1024.f &&
+        viewports[0].x == 0.f) {
+        scissors[0] = vk::Rect2D{{0, 0}, {1024, 1024}};
+    }
+
     // ISS_VIEWPORT_TRACE=1: each distinct viewport/scissor pair, up to 400, to find a
     // pass whose rectangle stops short of the scene (for example at 3/4 of the width).
     static const bool vp_trace = [] {
