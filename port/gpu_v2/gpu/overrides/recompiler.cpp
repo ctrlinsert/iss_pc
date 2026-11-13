@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/perf_stats.h"
+#include "light_tiles_patch.h"
 #include <string>
 #include <cstdlib>
 #include <cstdio>
@@ -117,9 +118,12 @@ struct PassClock {
 };
 } // namespace
 
-IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Info& info,
+IR::Program TranslateProgram(const std::span<const u32>& original_code, Pools& pools, Info& info,
                              RuntimeInfo& runtime_info, const Profile& profile) {
     PassClock clock;
+    std::vector<u32> patched_code;
+    const std::span<const u32> code =
+        iss::light_tiles::Apply(info.pgm_hash, original_code, patched_code);
     // Ensure first instruction is expected.
     constexpr u32 token_mov_vcchi = 0xBEEB03FF;
     if (code[0] != token_mov_vcchi) {
