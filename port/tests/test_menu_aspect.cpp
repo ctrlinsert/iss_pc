@@ -43,6 +43,14 @@ int main(){
  {float m[16]={1,0,0,0,0,1,0,0,0,0,1,0,674,476,0,0};assert(iss_ui_fit_transform(m,7680,2160));
   assert(fabsf(m[0]-0.5f)<0.0001f&&m[5]==1&&m[12]==674&&m[13]==476);
   float n[16]={1,0,0,0,0,1,0,0,0,0,1,0,674,476,0,0};assert(!iss_ui_fit_transform(n,3840,2160)&&n[0]==1);}
+ /* Anchored: right (flags 10) keeps its distance from the right edge in 16:9 terms; left (5) from
+  * the left; centred (8) stays put. */
+ {float r[16]={1,0,0,0,0,1,0,0,0,0,1,0,744,-384,0,0};assert(iss_ui_fit_transform_anchored(r,7680,2160,10));
+  assert(r[0]==0.5f&&r[12]==852.0f&&r[13]==-384.0f);
+  float l[16]={1,0,0,0,0,1,0,0,0,0,1,0,-900,0,0,0};assert(iss_ui_fit_transform_anchored(l,7680,2160,5));assert(l[12]==-930.0f);
+  float c[16]={1,0,0,0,0,1,0,0,0,0,1,0,100,0,0,0};assert(iss_ui_fit_transform_anchored(c,7680,2160,8));assert(c[12]==100.0f);
+  float n2[16]={1,0,0,0,0,1,0,0,0,0,1,0,744,0,0,0};assert(!iss_ui_fit_transform_anchored(n2,3840,2160,10)&&n2[12]==744.0f);}
+ {float t[16]={1,0,0,0,0,1,0,0,0,0,1,0,744,0,0,0};assert(iss_ui_fit_transform_anchored(t,7680,2160,10|0x20)&&t[12]==744.0f);}
  nodes[0]={0xcdfc10,0,1870,1020,0};nodes[1]={0xd74668,1,0,0,0};nodes[2]={0xd795d0,2,0,0,0};
  assert(iss_menu_member(1,reader,nullptr));assert(iss_menu_member(3,reader,nullptr));
  auto original=nodes[0];for(unsigned f=0;f<4;f++){nodes[0]=original;if(f==0)nodes[0].vtable++;if(f==1)nodes[0].width++;if(f==2)nodes[0].height++;if(f==3)nodes[0].flags++;assert(!iss_menu_member(3,reader,nullptr));}nodes[0]=original;

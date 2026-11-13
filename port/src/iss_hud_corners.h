@@ -48,6 +48,19 @@ static inline int iss_ui_fit_transform(float matrix[16],uint32_t width,uint32_t 
     matrix[0]*=ratio;matrix[4]*=ratio;matrix[8]*=ratio;
     return 1;
 }
+/* The same, keeping the element on the edge it is anchored to (flags bit 1 = left, bit 2 =
+ * right, as the minimap's 10 and the corner groups' 5/9): its position from that edge narrows
+ * with it, as kind 3 does, so right-anchored pieces (the call portrait) line up with the other
+ * right-hand HUD. Centred or unanchored elements keep their position. */
+static inline int iss_ui_fit_transform_anchored(float matrix[16],uint32_t width,uint32_t height,uint32_t flags){
+    if(!iss_ui_fit_transform(matrix,width,height))return 0;
+    const int left=(flags&1u)!=0,right=(flags&2u)!=0;
+    if(left==right || (flags&0x20u))return 1; /* 0x20: placed relative to its own transform */
+    const float ratio=(16.0f*(float)height)/(9.0f*(float)width);
+    const float anchor=right?960.0f:-960.0f;
+    matrix[12]=anchor+ratio*(matrix[12]-anchor);
+    return 1;
+}
 void runtime_hud_corner_attach(uintptr_t image);
 void __attribute__((ms_abi)) runtime_hud_corner_node(const void *widget,void *matrix);
 #endif
