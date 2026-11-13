@@ -44,6 +44,12 @@ static void ui_fit(const unsigned char *p,uintptr_t owner,uintptr_t owner_vt,voi
     if(atomic_fetch_add(&told,1)==0)fprintf(stderr,"UI_FIT top-level gameplay elements narrowed to 16:9 proportions (first: vt=+%#lx owner_vt=+%#lx)\n",
         (unsigned long)((uintptr_t)hud64(p)-image_base),(unsigned long)owner_vt);
 }
+/* TLG_UI_FIT_ANY_VT=0: only the generic group class is fitted under the HUD/notice containers. */
+static int ui_fit_any_class(void){
+    static int on=-1;
+    if(on<0){const char *e=getenv("TLG_UI_FIT_ANY_VT");on=!(e && *e=='0');}
+    return on;
+}
 void __attribute__((ms_abi)) runtime_hud_corner_node(const void *widget,void *output){
     if(!image_base || runtime_native_status()!=1)return;
     const IssNativePlan *plan=runtime_native_plan();
@@ -60,6 +66,12 @@ void __attribute__((ms_abi)) runtime_hud_corner_node(const void *widget,void *ou
         owner_vt=(uintptr_t)hud64((const unsigned char*)owner)-image_base;
     }else if(vt!=image_base+0xd795d0u || owner){
         if(!owner)ui_fit(p,0,0,output,plan);
+        else if(ui_fit_any_class() && owner>=0x1000000000ull && owner<0x10000000000ull){
+            /* Other widget classes (images such as the objective star, panels, text) owned by the
+             * HUD or notice containers get the same top-level fit as the generic group class. */
+            const uintptr_t ovt=(uintptr_t)hud64((const unsigned char*)owner)-image_base;
+            if(iss_ui_fit_top_level(owner,ovt))ui_fit(p,owner,ovt,output,plan);
+        }
         return;
     }
     int kind=iss_hud_corner_kind(vt-image_base,owner_vt,hud32(p+0x4ec),hud32(p+0x4f0),hud32(p+0x4f4));
