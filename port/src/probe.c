@@ -822,6 +822,7 @@ int iss_temporal_get_frame(uint32_t seq, IssTemporalFrame *out) { return iss_tem
 #include "iss_power_wheel.h"
 #include "iss_karma_signatures.h"
 #include "iss_native_resolution.h"
+#include "iss_native_light_tiles.h"
 #include "iss_native_cone.h"
 #include "iss_native_live.h"
 #include "iss_native_aspect.h"
@@ -1002,6 +1003,23 @@ static void install_iss_native_resolution(const char *app0,Segment *segments,uin
         }else puts("Native lighting capacity-only test: override refused; verified native plan retained");
     }
     runtime_native_publish(1,"Experimental native startup rendering active",&plan);
+    {
+        /* Tiled lighting planes (iss_native_light_tiles.h): size both tables from the scene.
+         * TLG_LIGHT_TILES=0 keeps the retail 200x128-tile block for comparison. */
+        const char *tiles_env=getenv("TLG_LIGHT_TILES");
+        IssLightTiles tiles;
+        if(tiles_env&&tiles_env[0]=='0')puts("Native lighting tiles: retail 200x128 plane tables (TLG_LIGHT_TILES=0)");
+        else if(!iss_light_tiles_layout(plan.width,plan.height,&tiles))puts("Native lighting tiles: unusable scene size; retail tables kept");
+        else if(tiles.columns==ISS_LIGHT_TILES_ORIGINAL_COLUMNS&&tiles.rows==ISS_LIGHT_TILES_ORIGINAL_ROWS)
+            printf("Native lighting tiles: %ux%u scene fits the retail 200x128 tables\n",plan.width,plan.height);
+        else if(!iss_light_tiles_guard(image,size))puts("Native lighting tiles: code check failed; retail tables kept (lights past x=3200 may be wrong)");
+        else{
+            iss_light_tiles_write(image,&tiles);
+            iss_light_tiles_publish(tiles.row_base);
+            printf("Native lighting tiles: %u column and %u row planes, row table at +%u, block %u bytes (retail 201/129, +3504, 5568)\n",
+                tiles.columns,tiles.rows,tiles.row_base,tiles.size);
+        }
+    }
     {
         const uint32_t need=iss_native_direct_memory_mb(plan.width,plan.height);
         if(need>ISS_NATIVE_DMEM_RETAIL_MB){

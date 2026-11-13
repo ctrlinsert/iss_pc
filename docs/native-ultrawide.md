@@ -250,9 +250,17 @@ The game lays out its 2D menus on a 1920x1080 canvas, so on outputs wider than 1
 
 Prompts, tutorials and notices are laid out on the same 1920x1080 canvas, so at 32:9 they came out about twice as wide. During gameplay, every top-level element (no owner, or owned by the HUD/notice containers 0xcdb7d0/0xd6a390) now has its x axis narrowed to 16:9 proportions while its position is kept, since positions may be edge-anchored or projected from the world. The minimap, karma and power meter keep their corner transform. `TLG_UI_FIT=0` turns it off. Untested in game at the time of writing; the first match logs `UI_FIT`.
 
-## Shadows and lights beyond the centre 16:9
+## Lights past 3200 pixels wide (tiled lighting planes)
 
-At 32:9, shadows and local lights end near the edges of the centre 16:9: hard vertical seams on walls, unlit sides and shadows that slide while panning. A scan of 1.07 found no 16:9 constant behind it, and the projection, unprojection and light-constant code all use the camera's own tangents. The remaining suspect is a secondary camera (culling or shadow) that is handed the 16:9 aspect while the port only refreshes the main camera.
+At 7680x2160, local lights and their shadows were wrong on the right side of the screen and in the bottom rows: a soft dark band from about x=5760, worst on nearby surfaces, changing with the camera angle. It is not an aspect problem. The scene's lighting compute pass works in 16-pixel tiles and reads two tables of world-space boundary planes from a per-frame constant block: one plane per tile column at +0x120 and one per tile row at +0xdb0. The block (0x16ac40, 0x15c0 bytes) holds 201 column and 129 row planes, enough for 200x128 tiles: 3200x2048, which covers the PS4 Pro's 3200x1800 mode. The filler (0x16a4e0) writes cols+1 and rows+1 planes regardless, so a wider scene overwrites the row table and runs past the block, and the shader reads row planes, then other data, as column planes.
+
+`src/iss_native_light_tiles.h` sizes both tables from the scene at startup: column planes = ceil(W/16)+1, row planes = ceil(H/16)+1 (never fewer than retail), the row table directly after the column table, and the block large enough for both. The four instructions are checked byte for byte first. The recompiler moves the lighting shader's row-table offset (a single literal, `light_tiles_patch.h`) to match; the shader cache stores that variant under its own binary version. `TLG_LIGHT_TILES=0` keeps the retail tables for comparison. The log reports the layout as `Native lighting tiles: …`.
+
+Diagnostics used to find it: `ISS_DISPATCH_TRACE=1` (each distinct compute dispatch with its image and buffer sizes), `ISS_DISPATCH_SCAN=1`, `ISS_DISPATCH_DUMP=<hash>[,…]`, `ISS_VIEWPORT_TRACE=1`, and the camera aspect hook below.
+
+### Camera aspect hook (diagnostic)
+
+At 32:9, shadows and local lights end near the edges of the centre 16:9: hard vertical seams on walls, unlit sides and shadows that slide while panning. A scan of 1.07 found no 16:9 constant behind it, and the projection, unprojection and light-constant code all use the camera's own tangents. Every camera turned out to take the render size already; the cause was the tile plane tables above.
 
 `ISS_CAMERA_ASPECT` hooks the camera aspect setter (0x581b70) when native rendering is on:
 
