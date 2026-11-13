@@ -2971,6 +2971,39 @@ static DispatchCycles g_dispatch_cycles;
 
 // ISS_DISPATCH_TRACE=1 (diagnosis): each distinct compute dispatch (shader, group counts) once,
 // with the sizes of the images and buffers it binds. Finds passes sized for a smaller screen.
+// Experiment: the shadow setup kernel 0e4ea3cd reads a 96-byte constant block holding
+// 1920 at +40 and a 16:9-looking view width at +0. ISS_SHADOW_SETUP_FIX: bit 1 writes the
+// scene width over the 1920, bit 2 scales +0 by scene aspect / (16/9). Diagnostic only.
+static void ShadowSetupExperiment(const ComputePipeline* pipeline) {
+    static const int mode = [] {
+        const char* p = std::getenv("ISS_SHADOW_SETUP_FIX");
+        return p ? std::atoi(p) : 0;
+    }();
+    if (!mode || !pipeline) return;
+    const auto& info = pipeline->GetStage(Shader::SwStage::Compute);
+    if (u32(info.pgm_hash) != 0x0e4ea3cdu || info.buffers.empty()) return;
+    const auto buffer = info.buffers[0].GetSharp(info);
+    u8* base = reinterpret_cast<u8*>(uintptr_t(u64(buffer.base_address)));
+    if (!base || buffer.GetSize() != 96) return;
+    const auto plan = *runtime_native_plan();
+    if (!plan.width || !plan.height) return;
+    u32 width_value;
+    std::memcpy(&width_value, base + 40, 4);
+    float view;
+    std::memcpy(&view, base, 4);
+    static std::atomic<u32> logged{0};
+    const float scale = (float(plan.width) / float(plan.height)) / (16.0f / 9.0f);
+    if ((mode & 1) && width_value == 1920u) std::memcpy(base + 40, &plan.width, 4);
+    if ((mode & 2) && view > 0.f && scale > 1.001f) {
+        const float scaled = view * scale;
+        std::memcpy(base, &scaled, 4);
+    }
+    if (logged.fetch_add(1) < 4)
+        std::fprintf(stderr, "SHADOW_SETUP_FIX mode=%d +40 %u -> %u, +0 %g -> %g\n", mode,
+                     width_value, (mode & 1) && width_value == 1920u ? plan.width : width_value,
+                     view, (mode & 2) && view > 0.f && scale > 1.001f ? view * scale : view);
+}
+
 static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
     static const bool enabled = [] {
         const char* p = std::getenv("ISS_DISPATCH_TRACE");
@@ -3111,6 +3144,7 @@ void Rasterizer::DispatchDirect() {
         dc.active = false;
         return;
     }
+    ShadowSetupExperiment(pipeline);
     TraceDispatchOnce(pipeline, cs_program);
 
     // Prepare the complete SRT read set before a split packet can touch BindResources.
