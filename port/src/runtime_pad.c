@@ -835,7 +835,13 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
         interact_mouse_moving=limit>0.0f && recent>=limit;
         interact_no_swipe=!touch_swipe_wanted(now);
         interact_vx=rx/100.0f; interact_vy=ry/100.0f; /* a decaying sum over 100 ms: speed x 100 ms */
-        if (interact_mouse_moving)
+        if (iss_touch_reads_active && !interact_no_swipe) {
+            /* A swipe prompt is up (auto-detect): motion just before the press is the start of
+             * the flick, not camera panning. Count it towards the swipe instead of against it. */
+            interact_mouse_moving=false;
+            interact_mouse.dx+=rx; interact_mouse.dy+=ry;
+            if (recent>=1.0f) printf("Runtime: interact pressed mid-flick at a swipe prompt (%.0f counts carried into the swipe)\n",recent);
+        } else if (interact_mouse_moving)
             printf("Runtime: interact pressed while the mouse turns the camera (%.0f counts): mouse stays the camera, a sharp flick still swipes\n",recent);
     }
     was_down=interact_down;
