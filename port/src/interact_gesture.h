@@ -49,6 +49,9 @@ typedef struct {
     float peak;       /* fastest sample while deciding, beyond the pan (counts per ms) */
     uint64_t last;    /* time of the previous sample while deciding */
     int swiped;       /* the gesture was a swipe (SPENT keeps the mouse until release) */
+    int swipe_prompt; /* set by the caller: the game is reading where the finger is (a swipe prompt
+                       * is up), so a press waits for its flick instead of holding, and a flick
+                       * during a hold still swipes */
 } InteractGesture;
 
 typedef struct {
@@ -124,7 +127,10 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
         else if (p->threshold>0 && flick_clear && interact_decided(fx,fy,need)) {
             interact_snap(fx,fy,&g->dx,&g->dy);
             g->swiped=1; interact_begin(g,INTERACT_SWIPE,now);
-        } else if (now-g->since>=p->hold_us) interact_begin(g,INTERACT_HOLD,now);
+        } else if (now-g->since>=p->hold_us && !g->swipe_prompt) {
+            interact_begin(g,INTERACT_HOLD,now);
+            g->ax=g->ay=0.0f; g->peak=0.0f; g->last=0; /* a flick during the hold starts afresh */
+        }
         else { o.owns=1; return o; }
     } else if (g->state==INTERACT_SPENT) {
         if (!held) { g->state=INTERACT_IDLE; return o; }
@@ -151,6 +157,29 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
         interact_snap((float)dir_x,(float)dir_y,&g->dx,&g->dy);
         g->swiped=1; interact_begin(g,INTERACT_SWIPE,now);
         return interact_step(g,p,held,0,0,0,0,now);
+    }
+    if (g->state==INTERACT_HOLD && held && g->swipe_prompt && p->threshold>0 && (mdx!=0.0f || mdy!=0.0f)) {
+        /* A swipe prompt came up during a hold: a flick still swipes (the finger lifts from the
+         * centre, then slides). Only at a swipe prompt, so looking around during a drain stays the
+         * camera. It needs a real flick (speed and distance), not a slow drift. */
+        const float dt=g->last && now>g->last ? (float)(now-g->last)/1000.0f : 8.0f;
+        /* Pressed while panning: the pan, and anything carrying on in its direction, stays camera. */
+        float sx=mdx-g->bvx*dt, sy=mdy-g->bvy*dt;
+        const float pan=sqrtf(g->bvx*g->bvx+g->bvy*g->bvy);
+        if (g->mouse_off && pan>0.0f) {
+            const float ux=g->bvx/pan, uy=g->bvy/pan, along=sx*ux+sy*uy;
+            if (along>0.0f) { sx-=along*ux; sy-=along*uy; }
+        }
+        const float v=sqrtf(sx*sx+sy*sy)/dt;
+        if (v>g->peak) g->peak=v;
+        g->last=now; g->ax+=sx; g->ay+=sy;
+        const float fast=p->flick_speed>0.5f*pan ? p->flick_speed : 0.5f*pan;
+        const float need=g->mouse_off ? 2.0f*p->threshold : p->threshold;
+        if ((p->flick_speed<=0.0f || g->peak>=fast) && interact_decided(g->ax,g->ay,need)) {
+            interact_snap(g->ax,g->ay,&g->dx,&g->dy);
+            g->swiped=1; interact_begin(g,INTERACT_SWIPE,now);
+            return interact_step(g,p,held,0,0,0,0,now);
+        }
     }
     if (g->state==INTERACT_HOLD) {
         if (!held) { g->state=INTERACT_IDLE; return o; }

@@ -93,13 +93,54 @@ int main(void) {
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(400));
     assert(!o.touch && g.state==INTERACT_IDLE);
 
-    /* Mouse motion after the hold has started does not swipe: the hold stays (the mouse is the
-     * camera again). A direction key does (see the hold-then-direction case below). */
+    /* No swipe prompt: mouse motion after the hold has started does not swipe (looking around
+     * while draining); the hold stays. A direction key does (hold-then-direction case below). */
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(300));
     o=interact_update(&g,&p,1,0,300,0,0,now+=MS(60));
     assert(g.state==INTERACT_HOLD && o.click);
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
+
+    /* At a swipe prompt a still press does not hold: it waits for the flick, however long, and a
+     * release with no flick taps. */
+    g.swipe_prompt=1;
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(900));
+    assert(g.state==INTERACT_DECIDING && !o.touch && o.owns_mouse);
+    o=interact_update(&g,&p,1,-300,0,0,0,now+=MS(60));
+    assert(g.state==INTERACT_SWIPE && g.dx==-1);
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(500));
+    assert(g.state==INTERACT_IDLE);
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(900));
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
+    assert(g.state==INTERACT_TAP);
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(500));
+    g.swipe_prompt=0;
+
+    /* A swipe prompt that comes up during a hold: a flick still swipes. A slow drift does not. */
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(300));
+    assert(g.state==INTERACT_HOLD);
+    g.swipe_prompt=1;
+    for (int k=0;k<10;++k) o=interact_update(&g,&p,1,0,5,0,0,now+=MS(16)); /* 0.3 counts/ms */
+    assert(g.state==INTERACT_HOLD && o.click);
+    o=interact_update(&g,&p,1,0,300,0,0,now+=MS(60));
+    assert(g.state==INTERACT_SWIPE && g.dy==1 && o.touch && !o.click && o.owns_mouse);
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(500));
+    assert(g.state==INTERACT_SPENT && near(o.y,0.92f));
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
+    assert(g.state==INTERACT_IDLE);
+    /* ...and a hold pressed while panning ignores more panning the same way. */
+    g.swipe_prompt=0;
+    o=interact_update_ex(&g,&p,1,20,0,0,0,now+=MS(10),1,2.0f,0.0f);
+    o=interact_update_ex(&g,&p,1,0,0,0,0,now+=MS(300),0,0,0);
+    assert(g.state==INTERACT_HOLD);
+    g.swipe_prompt=1;
+    for (int k=0;k<10;++k) o=interact_update_ex(&g,&p,1,160,0,0,0,now+=MS(16),0,0,0); /* 10/ms, same way */
+    assert(g.state==INTERACT_HOLD);
+    o=interact_update_ex(&g,&p,0,0,0,0,0,now+=MS(10),0,0,0);
+    g.swipe_prompt=0;
 
     /* threshold 0 turns mouse swipes off; keys still swipe. */
     InteractParams nomouse=p; nomouse.threshold=0;

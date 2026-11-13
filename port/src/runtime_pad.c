@@ -1077,6 +1077,9 @@ static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
      * or direction becomes a swipe, and the mouse stays on the camera (draining in a fight). */
     if (held) interact_no_swipe=!touch_swipe_wanted(d->timestamp);
     const bool no_swipe=held && interact_no_swipe;
+    /* A swipe prompt is up (auto-detect on and the finger is read): a press waits for its flick
+     * instead of holding at the centre, and a flick during a hold still swipes. */
+    interact.swipe_prompt=held && iss_touch_reads_active && !interact_no_swipe;
     interact_out=interact_update_ex(&interact,interact_params(),held,no_swipe ? 0.0f : interact_mouse.dx,
                                     no_swipe ? 0.0f : interact_mouse.dy,no_swipe ? 0 : dx,no_swipe ? 0 : dy,d->timestamp,
                                     no_swipe || (!pad_held && interact_mouse_moving),interact_vx,interact_vy);
