@@ -150,6 +150,8 @@ if [[ ${1:-} == --test || ${1:-} == --test-only ]]; then
     out/aim-assist-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_native_cone.c -Isrc -lm -o out/native-cone-test
     out/native-cone-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_camera_aspect.c -Isrc -lm -o out/camera-aspect-test
+    out/camera-aspect-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_rumble_gate.c -Isrc -o out/rumble-gate-test
     out/rumble-gate-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG -pthread "${includes[@]}" -I. -Isrc tests/test_mouse_pad.c "${libraries[@]}" -lm -o out/mouse-pad-test

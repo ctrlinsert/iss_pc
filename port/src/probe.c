@@ -818,6 +818,7 @@ uint32_t iss_temporal_latest_seq(void) { return iss_temporal_state.seq; }
 int iss_temporal_get_frame(uint32_t seq, IssTemporalFrame *out) { return iss_temporal_copy_frame(seq, out); }
 
 #include "iss_karma.h"
+#include "iss_camera_aspect.h"
 #include "iss_power_wheel.h"
 #include "iss_karma_signatures.h"
 #include "iss_native_resolution.h"
@@ -927,6 +928,28 @@ static void install_iss_native_live_trace(const char *app0,Segment *segments,uin
         }else puts("Native live aspect: code check failed; different aspect ratios require restarting");
     }
     puts("Native live observer: verified frame/target hooks active; dimensions unchanged");
+}
+/* Camera aspect setter observer: logs every aspect a camera receives (ISS_CAMERA_ASPECT=trace,
+ * the default with native rendering on) and, with ISS_CAMERA_ASPECT=fix, gives cameras handed the
+ * 16:9 value the output aspect. Diagnostic for shadows and lights ending at the centre 16:9. */
+static void install_iss_camera_aspect(Segment *segments,uint64_t count,uint64_t size){
+    if(runtime_native_status()!=1)return;
+    const int mode=iss_camera_aspect_mode(getenv("ISS_CAMERA_ASPECT"));
+    if(mode==ISS_CAMERA_ASPECT_OFF)return;
+    int executable=0;
+    for(uint64_t i=0;i<count;i++)if((segments[i].flags&1)&&ISS_CAMERA_ASPECT_SITE>=segments[i].address&&
+        ISS_CAMERA_ASPECT_SITE-segments[i].address<=segments[i].size&&
+        ISS_CAMERA_ASPECT_STOLEN<=segments[i].size-(ISS_CAMERA_ASPECT_SITE-segments[i].address))executable=1;
+    if(!executable||!iss_native_aspect_signature(image,size)){puts("Camera aspect observer: code check failed; not installed");return;}
+    unsigned char *bridge=allocate(page_size);
+    unsigned n=iss_karma_bridge_ex(bridge,(uintptr_t)runtime_camera_aspect_setter,image+ISS_CAMERA_ASPECT_SITE,
+        (uintptr_t)image+ISS_CAMERA_ASPECT_SITE+ISS_CAMERA_ASPECT_STOLEN,ISS_CAMERA_ASPECT_STOLEN,7);
+    if(n>page_size)fail("Camera aspect bridge overflow");
+    protect(bridge,page_size,5);
+    runtime_camera_aspect_attach((uintptr_t)image,mode);
+    memset(image+ISS_CAMERA_ASPECT_SITE,0x90,ISS_CAMERA_ASPECT_STOLEN);
+    iss_karma_jump(image+ISS_CAMERA_ASPECT_SITE,(uintptr_t)bridge);
+    printf("Camera aspect observer: %s (CAMERA_ASPECT lines)\n",mode==ISS_CAMERA_ASPECT_FIX?"16:9 cameras get the output aspect":"trace only");
 }
 static void install_iss_native_resolution(const char *app0,Segment *segments,uint64_t count,uint64_t size) {
     const char *config_path=getenv("TLG_CONFIG");
@@ -1763,6 +1786,7 @@ int main(int argc, char **argv) {
     }
     if (gpu_enabled) install_iss_native_resolution(app0, segments, ns, size);
     if (gpu_enabled) install_iss_native_live_trace(app0, segments, ns, size);
+    if (gpu_enabled) install_iss_camera_aspect(segments, ns, size);
     if (gpu_enabled) install_iss_hud_corners(app0, segments, ns, size);
     if (gpu_enabled) install_iss_hud_trace(app0, segments, ns, size);
     if (gpu_enabled) install_iss_camera_speed(app0, segments, ns, size);
