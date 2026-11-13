@@ -1346,6 +1346,24 @@ static void power_switch_input(PadData *d){
     }
     if(wheel.request>=0&&(status.unlocked_mask&(1<<wheel.request)))runtime_power_wheel_request(wheel.request);
 }
+/* TLG_TOUCH_TRACE=1: log what the game receives from the touchpad (fingers, ids, positions,
+ * the click) plus R2 and the sticks on every change, with ms since the first line. Played on a
+ * real DualShock 4 / DualSense this records the gesture a prompt accepts, for the interact key. */
+static void touch_trace(const PadData *d) {
+    static int enabled=-1; static char last[160]; static uint64_t start;
+    if (enabled<0) { const char *e=getenv("TLG_TOUCH_TRACE"); enabled=e && *e=='1'; }
+    if (!enabled) return;
+    char line[160];
+    int n=snprintf(line,sizeof(line),"n=%u click=%d r2=%u",d->touch_count,(d->buttons & BTN_TOUCHPAD)!=0,d->r2);
+    for (int i=0;i<d->touch_count && i<2 && n>0 && n<(int)sizeof(line);++i)
+        n+=snprintf(line+n,sizeof(line)-(size_t)n," t%d=(%u,%u id%u)",i,d->touches[i].x,d->touches[i].y,d->touches[i].id);
+    if (n>0 && n<(int)sizeof(line))
+        snprintf(line+n,sizeof(line)-(size_t)n," ls=%u,%u rs=%u,%u",d->left_x,d->left_y,d->right_x,d->right_y);
+    if (!strcmp(line,last)) return;
+    memcpy(last,line,sizeof(last));
+    if (!start) start=d->timestamp ? d->timestamp : 1;
+    printf("TOUCH_TRACE +%llums %s\n",(unsigned long long)((d->timestamp-start)/1000u),line);
+}
 static void sample(PadData *d) {
     sample_host(d);
     power_switch_input(d);
@@ -1364,6 +1382,7 @@ static void sample(PadData *d) {
         else hold_after_capture=0;
     }
     number_touches(d);
+    touch_trace(d);
 }
 
 static ABI int32_t pad_init(void) { pthread_mutex_lock(&lock); initialized=1; pthread_mutex_unlock(&lock); return 0; }
