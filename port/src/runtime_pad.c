@@ -739,9 +739,22 @@ static InteractOut interact_out;
 static struct { float dx, dy; } interact_mouse;
 static bool interact_mouse_moving; /* this press began while the mouse turned the camera */
 static float interact_vx, interact_vy; /* ...at this speed, counts per ms */
+/* TLG_MOUSE_DPI (default 800): the interact key's mouse thresholds are set for an 800 DPI
+ * mouse and scale with the DPI, so a flick takes the same hand movement on any mouse (counts
+ * are raw: in-game sensitivity and the Windows pointer speed do not change them). An explicit
+ * TLG_INTERACT_* count or speed is taken as given, in counts. */
+static float mouse_dpi_scale(void) {
+    static float scale=0.0f;
+    if (scale<=0.0f) {
+        const char *e=getenv("TLG_MOUSE_DPI");
+        const float dpi=e && *e ? strtof(e,NULL) : 800.0f;
+        scale=dpi>=100.0f && dpi<=50000.0f ? dpi/800.0f : 1.0f;
+    }
+    return scale;
+}
 static float interact_moving_counts(void) {
     static float counts=-1.0f;
-    if (counts<0.0f) { const char *e=getenv("TLG_INTERACT_MOVING"); counts=15.0f; if (e && *e) counts=fmaxf(strtof(e,NULL),0.0f); }
+    if (counts<0.0f) { const char *e=getenv("TLG_INTERACT_MOVING"); counts=15.0f*mouse_dpi_scale(); if (e && *e) counts=fmaxf(strtof(e,NULL),0.0f); }
     return counts;
 }
 static uint32_t map_keys(const bool *k, uint32_t mouse);
@@ -983,6 +996,8 @@ static const InteractParams *interact_params(void) {
     if (!loaded) {
         loaded=true;
         p=interact_default_params();
+        p.threshold*=mouse_dpi_scale();
+        p.flick_speed*=mouse_dpi_scale();
         const char *e=getenv("TLG_INTERACT_COUNTS");
         if (e && *e) p.threshold=fmaxf(strtof(e,NULL),0.0f);
         e=getenv("TLG_INTERACT_HOLD_MS");
@@ -993,8 +1008,8 @@ static const InteractParams *interact_params(void) {
         if (e && *e=='0') p.swipe_hold=0;
         e=getenv("TLG_INTERACT_SWIPE_MS");
         if (e && *e && atoi(e)>0) p.swipe_us=(uint32_t)atoi(e)*1000u;
-        printf("Runtime: interact key: swipe after %.0f mouse counts, hold after %u ms, swipe %u ms\n",
-               p.threshold,p.hold_us/1000u,p.swipe_us/1000u);
+        printf("Runtime: interact key: swipe after %.0f mouse counts at %.1f counts/ms (mouse %.0f DPI), hold after %u ms, swipe %u ms\n",
+               p.threshold,p.flick_speed,800.0f*mouse_dpi_scale(),p.hold_us/1000u,p.swipe_us/1000u);
     }
     return &p;
 }
