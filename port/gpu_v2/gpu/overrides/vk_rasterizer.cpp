@@ -1,3 +1,4 @@
+#include <mutex>
 #include <shared_mutex>
 #include "../../../src/iss_native_resolution.h"
 #include "../../../src/iss_warning_budget.h"
@@ -2966,6 +2967,41 @@ struct DispatchCycles {
 };
 static DispatchCycles g_dispatch_cycles;
 
+// ISS_DISPATCH_TRACE=1 (diagnosis): each distinct compute dispatch (shader, group counts) once,
+// with the sizes of the images and buffers it binds. Finds passes sized for a smaller screen.
+static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
+    static const bool enabled = [] {
+        const char* p = std::getenv("ISS_DISPATCH_TRACE");
+        return p && *p == '1';
+    }();
+    if (!enabled || !pipeline) return;
+    const auto& info = pipeline->GetStage(Shader::SwStage::Compute);
+    const u64 key = info.pgm_hash ^ (u64(cs.dim_x) << 40) ^ (u64(cs.dim_y) << 20) ^ u64(cs.dim_z);
+    static std::mutex lock;
+    static std::unordered_set<u64> seen;
+    {
+        std::scoped_lock guard{lock};
+        if (seen.size() >= 800 || !seen.insert(key).second) return;
+    }
+    char line[2048];
+    int n = std::snprintf(line, sizeof(line), "DISPATCH_TRACE cs=%016llx groups=%ux%ux%u threads=%ux%ux%u",
+                          (unsigned long long)info.pgm_hash, cs.dim_x, cs.dim_y, cs.dim_z,
+                          cs.num_thread_x.full, cs.num_thread_y.full, cs.num_thread_z.full);
+    for (const auto& res : info.images) {
+        if (n <= 0 || n >= int(sizeof(line)) - 48) break;
+        const auto image = res.GetSharp(info);
+        n += std::snprintf(line + n, sizeof(line) - n, " img%s=%ux%u", res.is_written ? "W" : "R",
+                           unsigned(image.width) + 1, unsigned(image.height) + 1);
+    }
+    for (const auto& res : info.buffers) {
+        if (n <= 0 || n >= int(sizeof(line)) - 32) break;
+        const auto buffer = res.GetSharp(info);
+        n += std::snprintf(line + n, sizeof(line) - n, " buf%s=%u", res.is_written ? "W" : "R",
+                           buffer.GetSize());
+    }
+    std::fprintf(stderr, "%s\n", line);
+}
+
 void Rasterizer::DispatchDirect() {
     const iss::cp_path::Scope cp_path_scope{iss::cp_path::Dispatch};
     auto& dc = g_dispatch_cycles;
@@ -2992,6 +3028,7 @@ void Rasterizer::DispatchDirect() {
         dc.active = false;
         return;
     }
+    TraceDispatchOnce(pipeline, cs_program);
 
     // Prepare the complete SRT read set before a split packet can touch BindResources.
     // Startup still denies CP_SPLIT until reserve/seal/publish/record is wired for all kinds.
