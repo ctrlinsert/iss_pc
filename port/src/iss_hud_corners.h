@@ -34,9 +34,11 @@ static inline int iss_hud_corner_transform(float matrix[16],uint32_t width,uint3
  * wider than 16:9: the 1920x1080 canvas is spread across the whole width, so its shapes come out
  * wide. Narrow the element's own x axis back to 16:9 proportions and keep its position, which
  * may be anchored to an edge or projected from the world. Children follow their parent.
- * Top level = no owner, or an owner of the HUD/notice container types (not a widget). */
+ * Top level = no owner, or an owner of the HUD, notice or prompt/label container types (not a
+ * widget). The prompt/label container (0xcd03c0) holds the tutorial hints ("Use Right Stick"), whose
+ * text is centred on its origin, and labels placed from the world, so keeping the origin is right. */
 static inline int iss_ui_fit_top_level(uintptr_t owner,uintptr_t owner_vt){
-    return !owner || owner_vt==0xcdb7d0u || owner_vt==0xd6a390u;
+    return !owner || owner_vt==0xcdb7d0u || owner_vt==0xd6a390u || owner_vt==0xcd03c0u;
 }
 static inline int iss_ui_fit_transform(float matrix[16],uint32_t width,uint32_t height){
     if(!width || !height || (uint64_t)width*9u<=(uint64_t)height*16u)return 0;
