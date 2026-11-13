@@ -9,7 +9,20 @@
 static int near(float a, float b) { return fabsf(a-b)<0.01f; }
 
 int main(void) {
-    const InteractParams p=interact_default_params();
+    InteractParams p=interact_default_params();
+    /* Touch only by default: a tap and a hold never click (the click has its own key). */
+    {
+        InteractGesture h={0}; uint64_t t=1000000;
+        InteractOut q=interact_update(&h,&p,1,0,0,0,0,t);
+        for (int k=0;k<6;++k) { q=interact_update(&h,&p,k<1,0,0,0,0,t+=MS(25)); assert(!q.click); }
+        q=interact_update(&h,&p,0,0,0,0,0,t+=MS(500));
+        q=interact_update(&h,&p,1,0,0,0,0,t+=MS(10));
+        q=interact_update(&h,&p,1,0,0,0,0,t+=MS(300));
+        q=interact_update(&h,&p,1,0,0,0,0,t+=MS(100));
+        assert(h.state==INTERACT_HOLD && q.touch && !q.click);
+        q=interact_update(&h,&p,0,0,0,0,0,t+=MS(10));
+    }
+    p.clicks=1; /* the rest checks the clicks too */
     uint64_t now=1000000;
 
     /* Idle: nothing. */

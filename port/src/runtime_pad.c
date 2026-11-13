@@ -319,14 +319,14 @@ static ButtonMap key_map={{
     {SDL_SCANCODE_SPACE,BTN_CROSS}, {SDL_SCANCODE_LSHIFT,BTN_CIRCLE}, {SDL_SCANCODE_E,BTN_SQUARE},
     {SDL_SCANCODE_Q,BTN_TRIANGLE}, {SDL_SCANCODE_1,BTN_L1}, {SDL_SCANCODE_3,BTN_R1},
     {SDL_SCANCODE_R,BTN_L2}, {SDL_SCANCODE_F,BTN_R2}, {SDL_SCANCODE_Z,BTN_L3}, {SDL_SCANCODE_C,BTN_R3},
-    {SDL_SCANCODE_RETURN,BTN_OPTIONS}, {SDL_SCANCODE_TAB,CLICK_LEFT}, {SDL_SCANCODE_BACKSPACE,CLICK_RIGHT},
+    {SDL_SCANCODE_RETURN,BTN_OPTIONS}, {SDL_SCANCODE_TAB,CLICK_LEFT}, {SDL_SCANCODE_BACKSPACE,CLICK_RIGHT}, {SDL_SCANCODE_X,CLICK_LEFT},
     {SDL_SCANCODE_I,BTN_UP}, {SDL_SCANCODE_K,BTN_DOWN}, {SDL_SCANCODE_J,BTN_LEFT}, {SDL_SCANCODE_L,BTN_RIGHT},
     {MOUSE_LEFT,BTN_R2}, {MOUSE_RIGHT,BTN_L2}, {MOUSE_MIDDLE,BTN_R3},
     {SDL_SCANCODE_V,ACT_INTERACT}, {MOUSE_X2,ACT_INTERACT},
     {SDL_SCANCODE_T,ACT_TILT_RIGHT}, {SDL_SCANCODE_G,ACT_TILT_LEFT}, {SDL_SCANCODE_Y,ACT_SHAKE},
     {SDL_SCANCODE_W,ACT_LS_UP}, {SDL_SCANCODE_S,ACT_LS_DOWN}, {SDL_SCANCODE_A,ACT_LS_LEFT}, {SDL_SCANCODE_D,ACT_LS_RIGHT},
     {SDL_SCANCODE_UP,ACT_RS_UP}, {SDL_SCANCODE_DOWN,ACT_RS_DOWN}, {SDL_SCANCODE_LEFT,ACT_RS_LEFT}, {SDL_SCANCODE_RIGHT,ACT_RS_RIGHT},
-},34};
+},35};
 
 static char *trim(char *text) {
     while (*text==' ' || *text=='\t') ++text;
@@ -1028,6 +1028,7 @@ static uint32_t map_keys(const bool *k, uint32_t mouse) {
 }
 /* TLG_INTERACT_FLICK_SPEED (mouse counts per ms a swipe's flick must reach, default 1.5; 0: off),
  * TLG_INTERACT_SWIPE_HOLD=0 (lift the finger after a swipe even while the key is held),
+ * TLG_INTERACT_CLICK=1 (a tap also clicks the touchpad and a hold presses it, as before),
  * TLG_INTERACT_COUNTS (mouse counts that make a swipe, default 60; 0: the mouse never swipes),
  * TLG_INTERACT_HOLD_MS (default 250) and TLG_INTERACT_SWIPE_MS (default 250). */
 static const InteractParams *interact_params(void) {
@@ -1046,6 +1047,8 @@ static const InteractParams *interact_params(void) {
         if (e && *e) p.flick_speed=fmaxf(strtof(e,NULL),0.0f);
         e=getenv("TLG_INTERACT_SWIPE_HOLD");
         if (e && *e=='0') p.swipe_hold=0;
+        e=getenv("TLG_INTERACT_CLICK");
+        if (e && *e=='1') p.clicks=1;
         e=getenv("TLG_INTERACT_SWIPE_MS");
         if (e && *e && atoi(e)>0) p.swipe_us=(uint32_t)atoi(e)*1000u;
         printf("Runtime: interact key: swipe after %.0f mouse counts at %.1f counts/ms (mouse %.0f DPI), hold after %u ms, swipe %u ms\n",

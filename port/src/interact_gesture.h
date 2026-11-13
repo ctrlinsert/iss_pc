@@ -2,9 +2,11 @@
 /* The interact key (runtime_pad.c): one key for everything the DualShock 4 touchpad does with
  * one finger, so keyboard and mouse players need no chord.
  *
- *   - tap (released before the hold time, no motion): a touchpad click;
- *   - hold still past the hold time: the finger lands and the pad stays pressed while the key is
- *     held (absorbing/draining powers, "hold the touchpad" prompts);
+ *   - tap (released before the hold time, no motion): a brief touch;
+ *   - hold still past the hold time: the finger lands and stays while the key is held;
+ *   The touchpad's click (draining powers) has its own key (X, Tab, Backspace): the game uses it
+ *   only for that, and everything else reads only the finger. With `clicks` set (the old
+ *   behaviour) a tap also clicks and a hold keeps the pad pressed;
  *   - hold and move the mouse past the threshold, or press a direction (W/A/S/D, the arrows, a
  *     stick, also during a hold): a full swipe in that direction, played on its own (finger
  *     down, slide across the pad, lift). The direction snaps to up/down/left/right, as the game's
@@ -34,6 +36,7 @@ typedef struct {
     uint32_t swipe_us;/* how long the finger takes to cross the pad (default 250 ms) */
     int swipe_hold;   /* after a swipe, a still-held key keeps the finger at the end (default 1) */
     float flick_speed;/* a swipe needs one sample this fast, counts per ms (default 1.5; 0: off) */
+    int clicks;       /* a tap clicks the pad and a hold presses it (default 0: touch only) */
 } InteractParams;
 
 enum { INTERACT_IDLE, INTERACT_DECIDING, INTERACT_TAP, INTERACT_HOLD, INTERACT_SWIPE, INTERACT_SPENT };
@@ -63,7 +66,7 @@ typedef struct {
 } InteractOut;
 
 static inline InteractParams interact_default_params(void) {
-    return (InteractParams){60.0f,250000u,250000u,1,1.5f};
+    return (InteractParams){60.0f,250000u,250000u,1,1.5f,0};
 }
 
 /* Snaps a motion to its main axis: -1/0/+1 each, one of them 0. */
@@ -148,7 +151,7 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
     if (g->state==INTERACT_TAP) {
         if (t>=INTERACT_LEAD_US+INTERACT_CLICK_US+INTERACT_TAIL_US) { g->state=held ? INTERACT_SPENT : INTERACT_IDLE; o.owns=held; return o; }
         o.touch=1;
-        o.click=t>=INTERACT_LEAD_US && t<INTERACT_LEAD_US+INTERACT_CLICK_US;
+        o.click=p->clicks && t>=INTERACT_LEAD_US && t<INTERACT_LEAD_US+INTERACT_CLICK_US;
         o.owns=held;
         return o;
     }
@@ -183,7 +186,7 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
     }
     if (g->state==INTERACT_HOLD) {
         if (!held) { g->state=INTERACT_IDLE; return o; }
-        o.touch=1; o.click=t>=INTERACT_LEAD_US; o.owns=1;
+        o.touch=1; o.click=p->clicks && t>=INTERACT_LEAD_US; o.owns=1;
         return o;
     }
     /* INTERACT_SWIPE: rest at the start for the lead, slide, rest at the end for the tail. */
