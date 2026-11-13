@@ -242,7 +242,7 @@ The **Light glare (occlusion)** selector is on the launcher's **Play** screen (a
 
 ## Mouse
 
-The mouse works with or without a controller (its buttons add to the controller's). The game window captures the mouse while it has focus and the Insert menu is closed; **Esc releases it** (the cursor comes back) and **a click in the window captures it again** (that click is not a game button).
+The port's menu opens with **Insert or F1** (F1 for keyboards without Insert), or R3+L2 on a controller. The mouse works with or without a controller (its buttons add to the controller's). The game window captures the mouse while it has focus and the Insert menu is closed; **Esc releases it** (the cursor comes back) and **a click in the window captures it again** (that click is not a game button).
 
 **Camera and buttons:**
 
