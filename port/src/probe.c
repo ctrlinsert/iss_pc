@@ -980,10 +980,13 @@ static void install_iss_native_resolution(const char *app0,Segment *segments,uin
     snprintf(path,sizeof(path),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
     sfo_value(path,"TITLE_ID",serial,sizeof(serial),NULL);sfo_value(path,"APP_VER",version,sizeof(version),NULL);
     const int grow_exposure=iss_native_exposure_entries(plan.width,plan.height)>ISS_EXPOSURE_ORIGINAL_ENTRIES;
-    for(unsigned s=0;s<ISS_NATIVE_SITE_COUNT+2+(grow_exposure?ISS_EXPOSURE_SITE_COUNT:0);s++) {
+    const unsigned exposure_sites=grow_exposure?ISS_EXPOSURE_SITE_COUNT:0;
+    for(unsigned s=0;s<ISS_NATIVE_SITE_COUNT+2+exposure_sites+ISS_MAP_RT_SITE_COUNT;s++) {
         uint32_t at=s<ISS_NATIVE_SITE_COUNT ? iss_native_sites[s].offset : s==ISS_NATIVE_SITE_COUNT ? 0x58030c : 0x5802e6;
         unsigned length=s<ISS_NATIVE_SITE_COUNT ? iss_native_sites[s].length : s==ISS_NATIVE_SITE_COUNT ? sizeof(iss_native_projection) : sizeof(iss_native_aspect_width);
         if(s>=ISS_NATIVE_SITE_COUNT+2){at=iss_exposure_sites[s-ISS_NATIVE_SITE_COUNT-2].offset;length=5;}
+        if(s>=ISS_NATIVE_SITE_COUNT+2+exposure_sites){at=iss_map_rt_sites[s-ISS_NATIVE_SITE_COUNT-2-exposure_sites].offset;
+            length=iss_map_rt_sites[s-ISS_NATIVE_SITE_COUNT-2-exposure_sites].length;}
         int executable=0;
         for(uint64_t i=0;i<count;i++)if((segments[i].flags&1) && at>=segments[i].address &&
             at-segments[i].address<=segments[i].size && length<=segments[i].size-(at-segments[i].address))executable=1;

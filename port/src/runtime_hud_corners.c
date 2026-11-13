@@ -28,29 +28,6 @@ static void ui_layout_trace(const unsigned char *p,const void *output){
         (unsigned long)vt,(void*)owner,(unsigned long)owner_vt,hud32(p+0x4ec),hud32(p+0x4f0),hud32(p+0x4f4),
         (double)m[0],(double)m[4],(double)m[8],(double)m[1],(double)m[5],(double)m[9],(double)m[12],(double)m[13]);
 }
-/* TLG_UI_FIT=0 keeps the stretched top-level elements (iss_ui_fit_transform). Only in gameplay:
- * menus, loading and pause are shown at 16:9 by the presenter instead (iss_menu_aspect.h). */
-static void ui_fit(const unsigned char *p,uintptr_t owner,uintptr_t owner_vt,void *output,const IssNativePlan *plan){
-    static int enabled=-1; static atomic_uint told;
-    if(enabled<0){const char *e=getenv("TLG_UI_FIT");enabled=!(e && *e=='0');}
-    if(!enabled || !iss_ui_fit_top_level(owner,owner_vt) || runtime_menu_scene()!=ISS_MENU_SCENE_GAMEPLAY)return;
-    float matrix[16];memcpy(matrix,output,sizeof(matrix));
-    if(iss_ui_fit_own_3d(p[0x586],matrix))return;
-    /* TLG_UI_FIT_ANCHOR=0: narrow in place (the element's own origin), as before. */
-    static int anchored=-1;
-    if(anchored<0){const char *e=getenv("TLG_UI_FIT_ANCHOR");anchored=!(e && *e=='0');}
-    if(!(anchored ? iss_ui_fit_transform_anchored(matrix,plan->output_width,plan->output_height,hud32(p+0x4f4))
-                  : iss_ui_fit_transform(matrix,plan->output_width,plan->output_height)))return;
-    memcpy(output,matrix,sizeof(matrix));
-    if(atomic_fetch_add(&told,1)==0)fprintf(stderr,"UI_FIT top-level gameplay elements narrowed to 16:9 proportions (first: vt=+%#lx owner_vt=+%#lx)\n",
-        (unsigned long)((uintptr_t)hud64(p)-image_base),(unsigned long)owner_vt);
-}
-/* TLG_UI_FIT_ANY_VT=0: only the generic group class is fitted under the HUD/notice containers. */
-static int ui_fit_any_class(void){
-    static int on=-1;
-    if(on<0){const char *e=getenv("TLG_UI_FIT_ANY_VT");on=!(e && *e=='0');}
-    return on;
-}
 void __attribute__((ms_abi)) runtime_hud_corner_node(const void *widget,void *output){
     if(!image_base || runtime_native_status()!=1)return;
     const IssNativePlan *plan=runtime_native_plan();
@@ -62,21 +39,11 @@ void __attribute__((ms_abi)) runtime_hud_corner_node(const void *widget,void *ou
     // Inspect the parent only for the ordinary HUD group type. Other UI types
     // (including menu/map widgets) leave before touching parent data.
     if(vt==image_base+0xd74668u){
-        if(!owner)return ui_fit(p,owner,0,output,plan);
-        if(owner<0x1000000000ull || owner>=0x10000000000ull)return;
+        if(!owner || owner<0x1000000000ull || owner>=0x10000000000ull)return;
         owner_vt=(uintptr_t)hud64((const unsigned char*)owner)-image_base;
-    }else if(vt!=image_base+0xd795d0u || owner){
-        if(!owner)ui_fit(p,0,0,output,plan);
-        else if(ui_fit_any_class() && owner>=0x1000000000ull && owner<0x10000000000ull){
-            /* Other widget classes (images such as the objective star, panels, text) owned by the
-             * HUD or notice containers get the same top-level fit as the generic group class. */
-            const uintptr_t ovt=(uintptr_t)hud64((const unsigned char*)owner)-image_base;
-            if(iss_ui_fit_top_level(owner,ovt))ui_fit(p,owner,ovt,output,plan);
-        }
-        return;
-    }
+    }else if(vt!=image_base+0xd795d0u || owner)return;
     int kind=iss_hud_corner_kind(vt-image_base,owner_vt,hud32(p+0x4ec),hud32(p+0x4f0),hud32(p+0x4f4));
-    if(!kind){ui_fit(p,owner,owner_vt,output,plan);return;}
+    if(!kind)return;
     float matrix[16];memcpy(matrix,output,sizeof(matrix));
     unsigned inspect_bit=1u<<(unsigned)kind;
     if(!(atomic_fetch_or(&inspected,inspect_bit)&inspect_bit))fprintf(stderr,

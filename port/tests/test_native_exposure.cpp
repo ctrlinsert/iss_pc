@@ -17,12 +17,14 @@ int main(){
   unsigned need=((p.width+127)/128)*((p.height+71)/72);
   assert(iss_native_exposure_entries(p.width,p.height)>=need);
  }
- std::vector<unsigned char> original(0x600000,0xcc);
+ std::vector<unsigned char> original(0xb00000,0xcc);
  for(const auto&s:iss_native_sites)memcpy(original.data()+s.offset,s.before,s.length);
  memcpy(original.data()+0x58030c,iss_native_projection,sizeof(iss_native_projection));
  memcpy(original.data()+0x5802e6,iss_native_aspect_width,sizeof(iss_native_aspect_width));
  memcpy(original.data()+0x171310,iss_exposure_allocator,sizeof(iss_exposure_allocator));
  for(const auto&s:iss_exposure_sites)memcpy(original.data()+s.offset,s.before,5);
+ for(const auto&s:iss_map_rt_sites)memcpy(original.data()+s.offset,s.before,s.length);
+ memcpy(original.data()+ISS_MAP_RT_FLOAT_LOAD,iss_map_rt_float_load,sizeof(iss_map_rt_float_load));
  assert(iss_native_exposure_guard(original.data(),original.size()));
  auto check=[&](size_t at){auto b=original;b[at]^=1;auto before=b;assert(!iss_native_apply(b.data(),b.size(),"CUSA00223","01.07",{4,100,1}));assert(b==before);};
  for(unsigned i=0;i<sizeof(iss_exposure_allocator);i++)check(0x171310+i);
