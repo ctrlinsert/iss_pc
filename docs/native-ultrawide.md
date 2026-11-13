@@ -249,3 +249,13 @@ The game lays out its 2D menus on a 1920x1080 canvas, so on outputs wider than 1
 ## Gameplay prompts at 16:9 proportions
 
 Prompts, tutorials and notices are laid out on the same 1920x1080 canvas, so at 32:9 they came out about twice as wide. During gameplay, every top-level element (no owner, or owned by the HUD/notice containers 0xcdb7d0/0xd6a390) now has its x axis narrowed to 16:9 proportions while its position is kept, since positions may be edge-anchored or projected from the world. The minimap, karma and power meter keep their corner transform. `TLG_UI_FIT=0` turns it off. Untested in game at the time of writing; the first match logs `UI_FIT`.
+
+## Shadows and lights beyond the centre 16:9
+
+At 32:9, shadows and local lights end near the edges of the centre 16:9: hard vertical seams on walls, unlit sides and shadows that slide while panning. A scan of 1.07 found no 16:9 constant behind it, and the projection, unprojection and light-constant code all use the camera's own tangents. The remaining suspect is a secondary camera (culling or shadow) that is handed the 16:9 aspect while the port only refreshes the main camera.
+
+`ISS_CAMERA_ASPECT` hooks the camera aspect setter (0x581b70) when native rendering is on:
+
+- `trace` (default): logs each distinct caller, camera type and aspect once as `CAMERA_ASPECT … kept|would-fix`.
+- `fix`: a camera handed exactly 16:9, whose horizontal tangent follows its aspect, gets the output aspect instead (any ratio, wider or narrower; nothing changes at a 16:9 output). Experimental: cameras that render to 16:9 textures would be distorted.
+- `off`: no hook.
