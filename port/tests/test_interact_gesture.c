@@ -197,6 +197,19 @@ int main(void) {
         assert(h.state==INTERACT_IDLE);
     }
 
+    /* Velocity: a slow drift from a still press that adds up past the distance (0.4 counts/ms,
+     * 100 counts in 240 ms) is noise, not a flick: it holds. */
+    {
+        InteractGesture h={0};
+        uint64_t t=now+MS(20000);
+        o=interact_update(&h,&p,1,0,0,0,0,t);
+        for (int k=0;k<15;++k) o=interact_update(&h,&p,1,7,0,0,0,t+=MS(16));
+        assert(h.state==INTERACT_DECIDING || h.state==INTERACT_HOLD);
+        o=interact_update(&h,&p,1,0,0,0,0,t+=MS(20));
+        assert(h.state==INTERACT_HOLD);
+        o=interact_update(&h,&p,0,0,0,0,0,t+=MS(10));
+    }
+
     puts("PASS: interact gesture");
     return 0;
 }

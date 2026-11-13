@@ -33,6 +33,7 @@ typedef struct {
     uint32_t hold_us; /* how long the key must stay still to be a hold (default 250 ms) */
     uint32_t swipe_us;/* how long the finger takes to cross the pad (default 250 ms) */
     int swipe_hold;   /* after a swipe, a still-held key keeps the finger at the end (default 1) */
+    float flick_speed;/* a swipe needs one sample this fast, counts per ms (default 1.5; 0: off) */
 } InteractParams;
 
 enum { INTERACT_IDLE, INTERACT_DECIDING, INTERACT_TAP, INTERACT_HOLD, INTERACT_SWIPE, INTERACT_SPENT };
@@ -45,6 +46,8 @@ typedef struct {
     int id;           /* touch id of the current gesture, grows with each one */
     int mouse_off;    /* this press began with the mouse turning the camera: it stays the camera */
     float bvx, bvy;   /* ...at this speed (counts per ms); only a flick beyond it swipes */
+    float peak;       /* fastest sample while deciding, beyond the pan (counts per ms) */
+    uint64_t last;    /* time of the previous sample while deciding */
     int swiped;       /* the gesture was a swipe (SPENT keeps the mouse until release) */
 } InteractGesture;
 
@@ -57,7 +60,7 @@ typedef struct {
 } InteractOut;
 
 static inline InteractParams interact_default_params(void) {
-    return (InteractParams){60.0f,250000u,250000u,1};
+    return (InteractParams){60.0f,250000u,250000u,1,1.5f};
 }
 
 /* Snaps a motion to its main axis: -1/0/+1 each, one of them 0. */
@@ -85,6 +88,15 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
     InteractOut o={0,0,0.5f,0.5f,g->id,0,0};
     if (g->state==INTERACT_DECIDING) {
         g->ax+=mdx; g->ay+=mdy;
+        /* Velocity: a flick is a burst. Each sample's speed (beyond the pan, if any) is kept at
+         * its peak; a slow drift that adds up to the distance is not a flick. */
+        if (mdx!=0.0f || mdy!=0.0f) {
+            /* the first sample's motion arrived with the press: count it over one 8 ms poll */
+            const float dt=g->last && now>g->last ? (float)(now-g->last)/1000.0f : 8.0f;
+            const float sx=mdx-g->bvx*dt, sy=mdy-g->bvy*dt, v=sqrtf(sx*sx+sy*sy)/dt;
+            if (v>g->peak) g->peak=v;
+        }
+        g->last=now;
         /* Pressed while the camera turns: the steady panning is taken away, motion that carries
          * on in the pan's own direction never counts (a pan that speeds up is still a pan), and
          * what is left must be a flick of twice the usual size across or against the pan. So
@@ -102,7 +114,10 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
         }
         /* A hand that pans harder drifts sideways too: the flick must also outweigh the pan's
          * own growth (at least half of it), so drift on a fast pan is not a swipe. */
-        const int flick_clear=!g->mouse_off || sqrtf(fx*fx+fy*fy)>=0.5f*carried;
+        const float pan=sqrtf(g->bvx*g->bvx+g->bvy*g->bvy);
+        const float fast=p->flick_speed>0.5f*pan ? p->flick_speed : 0.5f*pan; /* beyond the pan, at least half its speed again */
+        const int flick_clear=(!g->mouse_off || sqrtf(fx*fx+fy*fy)>=0.5f*carried) &&
+                              (p->flick_speed<=0.0f || g->peak>=fast);
         const float need=g->mouse_off ? 2.0f*p->threshold : p->threshold;
         if (!held) interact_begin(g,INTERACT_TAP,now);
         else if (dir_x || dir_y) { interact_snap((float)dir_x,(float)dir_y,&g->dx,&g->dy); g->swiped=1; interact_begin(g,INTERACT_SWIPE,now); }
@@ -172,7 +187,7 @@ static inline InteractOut interact_update_ex(InteractGesture *g, const InteractP
     if (g->id<40) g->id=40;
     if (g->state==INTERACT_IDLE) {
         if (!held) return o;
-        g->ax=g->ay=0; g->dx=g->dy=0; g->swiped=0; g->mouse_off=mouse_moving!=0;
+        g->ax=g->ay=0; g->dx=g->dy=0; g->swiped=0; g->peak=0.0f; g->last=0; g->mouse_off=mouse_moving!=0;
         g->bvx=g->mouse_off ? vx : 0.0f; g->bvy=g->mouse_off ? vy : 0.0f;
         interact_begin(g,INTERACT_DECIDING,now); /* this sample's motion counts below */
         if (g->mouse_off) mdx=mdy=0.0f; /* ...unless it is the pan the press landed in */
