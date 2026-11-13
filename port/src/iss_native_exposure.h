@@ -16,8 +16,14 @@ static const IssExposureSite iss_exposure_sites[]={
  {0x172387,{0xbe,0xc4,9,0,0}}, {0x1723aa,{0xb9,0x71,2,0,0}}
 };
 static const unsigned char iss_exposure_allocator[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x54,0x53,0x49,0x89,0xfc};
+/* The largest scene the native patch accepts: 8K (7680x4320), so any current display, 7680x2160
+ * and 5120x2160 included, runs at 100% and above. Raised from the reference's 4K budget: the game
+ * buffers known to scale with the scene (per-tile light list, exposure grid) are sized from the
+ * plan; other fixed-size game buffers have not been audited past 4K, so very large scenes are
+ * experimental. */
+#define ISS_NATIVE_MAX_PIXELS (7680u*4320u)
 static inline uint32_t iss_native_exposure_entries(uint32_t width,uint32_t height){
- if(!width||!height||(uint64_t)width*height>3840u*2160u)return 0;
+ if(!width||!height||(uint64_t)width*height>ISS_NATIVE_MAX_PIXELS)return 0;
  uint64_t entries=(((uint64_t)width+127)/128)*(((uint64_t)height+71)/72);
  if(entries<=ISS_EXPOSURE_ORIGINAL_ENTRIES)return ISS_EXPOSURE_ORIGINAL_ENTRIES;
  entries=(entries+15)&~(uint64_t)15;

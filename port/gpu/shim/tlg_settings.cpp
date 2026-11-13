@@ -156,7 +156,11 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "frames_queued") {
         v.frames_queued = TlgGraphics::ParseFramesQueued(value.empty() ? -1 : i);
     } else if (key == "iss_native_output") {
-        v.iss_native_output = std::clamp(i,0,5);
+        v.iss_native_output = std::clamp(i,0,7); // ISS_NATIVE_PRESETS-1: 7 is the custom size
+    } else if (key == "iss_native_width") {
+        v.iss_native_width = std::clamp(i,0,15360);
+    } else if (key == "iss_native_height") {
+        v.iss_native_height = std::clamp(i,0,4320);
     } else if (key == "iss_native_percent") {
         v.iss_native_percent = std::clamp(i,25,200);
     } else if (key == "iss_native_hud_edges") {
@@ -383,6 +387,7 @@ void Save() {
     std::fprintf(file, "iss_native_output=%d\niss_native_percent=%d\niss_native_hud_edges=%d\n",
                  v.iss_native_output.load(),v.iss_native_percent.load(),int(v.iss_native_hud_edges.load()));
     std::fprintf(file, "iss_native_ui_16_9=%d\n",int(v.iss_native_ui_16_9.load()));
+    std::fprintf(file, "iss_native_width=%d\niss_native_height=%d\n",v.iss_native_width.load(),v.iss_native_height.load());
     std::fprintf(file, "iss_temporal=%d\niss_temporal_mode=%d\n", int(v.iss_temporal.load()), v.iss_temporal_mode.load());
     std::fprintf(file, "iss_temporal_backend=%d\ndlss_dll_dir=%s\n", v.iss_temporal_backend.load(), v.dlss_dll_dir.c_str());
     std::fprintf(file,"iss_power_switch_enabled=%d\niss_power_key_smoke=%d\niss_power_key_neon=%d\niss_power_key_video=%d\niss_power_key_concrete=%d\n",

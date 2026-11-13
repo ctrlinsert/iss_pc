@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include <utility>
 #include "../src/iss_native_resolution.h"
 #include <cassert>
 #include <cmath>
@@ -11,12 +12,14 @@
 static uint32_t read32(const unsigned char* p){uint32_t x;memcpy(&x,p,4);return x;}
 static uint64_t read64(const unsigned char* p){uint64_t x;memcpy(&x,p,8);return x;}
 static void fixture(std::vector<unsigned char>& image){
-    image.assign(0x600000,0xcc);
+    image.assign(0xb00000,0xcc);
     for(const auto& s:iss_native_sites)memcpy(image.data()+s.offset,s.before,s.length);
     memcpy(image.data()+0x58030c,iss_native_projection,sizeof(iss_native_projection));
     memcpy(image.data()+0x5802e6,iss_native_aspect_width,sizeof(iss_native_aspect_width));
     memcpy(image.data()+0x171310,iss_exposure_allocator,sizeof(iss_exposure_allocator));
     for(const auto& s:iss_exposure_sites)memcpy(image.data()+s.offset,s.before,5);
+    for(const auto& s:iss_map_rt_sites)memcpy(image.data()+s.offset,s.before,s.length);
+    memcpy(image.data()+ISS_MAP_RT_FLOAT_LOAD,iss_map_rt_float_load,sizeof(iss_map_rt_float_load));
 }
 // tests/native_resolution_cases.txt is shared with test_native_resolution_launcher.py (the launchers'
 // copy of this arithmetic): both must give the same answers.
@@ -50,9 +53,11 @@ int main(int argc,char** argv){
     FILE* legacy=tmpfile();assert(legacy);fputs("iss_native_ui_16_9=0\niss_native_hud_edges=1\n",legacy);rewind(legacy);
     assert(iss_native_config(legacy,&fresh)&&fresh.ui_16_9==0&&fresh.hud_edges==1);fclose(legacy);
     IssNativePlan p;
+    iss_native_set_custom(5120,2160);   // 5K2K: the custom slot runs the same checks as the presets
     for(int output=1;output<ISS_NATIVE_PRESETS;output++){
+        uint32_t ow,oh;assert(iss_native_output_size(output,&ow,&oh));
         assert(iss_native_plan({output,100,1},&p));
-        assert(p.width==iss_native_widths[output] && p.height==iss_native_heights[output]);
+        assert(p.width==ow && p.height==oh && p.output_width==ow);
         assert(p.ui_height==1080);
         const double aspect=double(p.output_width)/p.output_height;
         assert(std::abs(double(p.ui_width)/p.ui_height-aspect)<0.001);
@@ -64,7 +69,7 @@ int main(int argc,char** argv){
         assert(p.light_entries>=needed && p.light_entries>=0x320000 && p.light_entries%65536==0);
         for(int scale=25;scale<=200;scale++){
             bool ok=iss_native_plan({output,scale,1},&p);
-            if(ok){assert(!(p.width%2) && !(p.height%2));assert(uint64_t(p.width)*p.height<=8294400);}
+            if(ok){assert(!(p.width%2) && !(p.height%2));assert(uint64_t(p.width)*p.height<=ISS_NATIVE_MAX_PIXELS);}
             else assert(!p.width && !p.height);
         }
     }
@@ -72,7 +77,21 @@ int main(int argc,char** argv){
     assert(iss_native_plan({5,100,1},&p) && p.width==5120 && p.height==1440 && p.ui_width==3840 && p.light_entries==3735552);
     assert(iss_native_plan({4,100,1},&p) && p.light_entries==4194304);
     assert(iss_native_plan({3,50,1},&p) && p.width==1720 && p.height==720);
-    for(auto c:{IssNativeConfig{0,100,1},{6,100,1},{3,0,1},{3,201,1},{3,100,2},{5,200,1}})assert(!iss_native_plan(c,&p));
+    // 8K budget: 7680x2160 at 100%, 4K at 200% (exactly 8K); 7680x2160 at 150% is over it.
+    assert(iss_native_plan({6,100,1},&p) && p.width==7680 && p.height==2160 && p.ui_width==3840);
+    assert(iss_native_plan({4,200,1},&p) && p.width==7680 && p.height==4320);
+    assert(iss_native_plan({7,100,1},&p) && p.width==5120 && p.height==2160 && p.ui_width==2560);
+    iss_native_set_custom(7680,2160);assert(iss_native_plan({7,100,1},&p) && p.width==7680);
+    for(auto wh:{std::pair<unsigned,unsigned>{1920,1200},{5121,2160},{1024,576},{15362,4320},{0,2160},{3840,4322}}){
+        iss_native_set_custom(wh.first,wh.second);assert(!iss_native_plan({7,100,1},&p));   // 16:10, odd, small, large
+    }
+    for(auto c:{IssNativeConfig{0,100,1},{7,100,1},{8,100,1},{3,0,1},{3,201,1},{3,100,2},{6,150,1}})assert(!iss_native_plan(c,&p));
+    FILE* custom=tmpfile();assert(custom);fputs("iss_native_output=7\niss_native_width=3840\niss_native_height=1600\n",custom);rewind(custom);
+    {IssNativeConfig cc;assert(iss_native_config(custom,&cc) && cc.output==7);fclose(custom);
+     assert(iss_native_plan(cc,&p) && p.width==3840 && p.height==1600);}
+    custom=tmpfile();assert(custom);fputs("iss_native_width=20000\n",custom);rewind(custom);
+    {IssNativeConfig cc;assert(!iss_native_config(custom,&cc));fclose(custom);}
+    iss_native_set_custom(0,0);
     FILE* f=tmpfile();assert(f);fputs("iss_native_output=5\niss_native_percent=100\niss_native_hud_edges=0\n",f);rewind(f);
     IssNativeConfig c;assert(iss_native_config(f,&c) && c.output==5 && c.percent==100 && c.hud_edges==0);fclose(f);
     f=tmpfile();assert(f);fputs("iss_native_output=3\niss_native_percent=100oops\n",f);rewind(f);assert(!iss_native_config(f,&c));fclose(f);
@@ -104,11 +123,23 @@ int main(int argc,char** argv){
         image=original;image[0x5802e6+byte]^=1;auto before=image;
         assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{3,100,1}));assert(image==before);guards++;
     }
+    // The map render target sites and the float's reader refuse the same way.
+    for(const auto& s:iss_map_rt_sites)for(unsigned byte=0;byte<s.length;byte++){
+        image=original;image[s.offset+byte]^=1;auto before=image;
+        assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,100,1}));assert(image==before);guards++;
+    }
+    for(unsigned byte=0;byte<sizeof(iss_map_rt_float_load);byte++){
+        image=original;image[ISS_MAP_RT_FLOAT_LOAD+byte]^=1;auto before=image;
+        assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,100,1}));assert(image==before);guards++;
+    }
     image=original;
-    assert(!iss_native_apply(image.data(),image.size(),"CUSA00004","01.07",{3,100,1}));assert(image==original);
+    assert(!iss_native_apply(image.data(),image.size(),"CUSA00263","01.07",{3,100,1}));assert(image==original);
+    assert(!iss_native_apply(image.data(),image.size(),"CUSA00004","01.00",{3,100,1}));assert(image==original);
+    {auto eu=original;assert(iss_native_apply(eu.data(),eu.size(),"CUSA00004","01.07",{5,100,1})); /* EU 1.07 = same executable */
+     assert(read32(eu.data()+0x1eff4a)==5120 && read32(eu.data()+0x1eff51)==1440);}
     assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.00",{3,100,1}));assert(image==original);
     assert(!iss_native_apply(image.data(),100,"CUSA00223","01.07",{3,100,1}));assert(image==original);
-    assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,200,1}));assert(image==original);
+    assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{6,150,1}));assert(image==original);
     assert(iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,100,1}));
     assert(read32(image.data()+0x1eff4a)==5120 && read32(image.data()+0x1eff51)==1440);
     assert(read32(image.data()+0x1f0403)==3840 && read32(image.data()+0x1f03fb)==1080);
@@ -116,7 +147,13 @@ int main(int argc,char** argv){
     // Check every byte outside the patch plan, including the camera/karma sites.
     auto expected=original;IssNativeSite changes[ISS_NATIVE_SITE_COUNT];assert(iss_native_plan({5,100,1},&p));iss_native_changes(&p,changes);
     for(const auto& s:changes)memcpy(expected.data()+s.offset,s.after,s.length);
-    iss_native_exposure_write(expected.data(),iss_native_exposure_entries(p.width,p.height));assert(image==expected);
+    iss_native_exposure_write(expected.data(),iss_native_exposure_entries(p.width,p.height));
+    iss_map_rt_write(expected.data(),p.ui_width,p.ui_height);assert(image==expected);
+    // Real-width canvas (5120x1440 = 3840x1080): the map target follows the canvas, not 1920x1080.
+    {float f;memcpy(&f,image.data()+0xae5c9c,4);assert(f==3840.0f);}
+    assert(read64(image.data()+0x5a611b)==((uint64_t)1080<<32|3840));
+    assert(read32(image.data()+0x5a614b)==3840 && read32(image.data()+0x5a6181)==3841);
+    assert(read32(image.data()+0x5a6189)==1080 && read32(image.data()+0x5a61a4)==1081);
     runtime_native_publish(-1,"Refused",nullptr);assert(runtime_native_status()==-1 && runtime_native_safe_area()==1.0f);
     p.hud_edges=0;runtime_native_publish(1,"Active",&p);assert(runtime_native_safe_area()==0.5f);
     p.hud_edges=1;runtime_native_publish(1,"Active",&p);assert(runtime_native_safe_area()==1.0f);
@@ -131,6 +168,7 @@ int main(int argc,char** argv){
         assert(world_width==0x1eff4a&&world_height==0x1eff51);
         assert(read32(image.data()+world_width)==p.width&&read32(image.data()+world_height)==p.height);
         assert(read32(image.data()+0x1f0403)==1920&&read32(image.data()+0x1f03fb)==1080);
+        for(const auto& m:iss_map_rt_sites)assert(!memcmp(image.data()+m.offset,m.before,m.length));
     }
     f=tmpfile();assert(f);fputs("iss_native_ui_16_9=1\n",f);rewind(f);assert(iss_native_config(f,&c)&&c.ui_16_9==1);fclose(f);
     for(int output:{1,2,3,4,5}){
@@ -146,11 +184,18 @@ int main(int argc,char** argv){
     f=tmpfile();assert(f);fputs("iss_native_ui_16_9=3\n",f);rewind(f);assert(!iss_native_config(f,&c));fclose(f);
     // Optional local-only executable validation: parse PT_LOAD segments instead
     // of assuming file offsets equal virtual addresses. No executable is shipped.
+    /* Direct memory: retail up to 4K, more past it (7680x2160 crashed at 5056, ran at 6144). */
+    assert(iss_native_direct_memory_mb(1920,1080)==ISS_NATIVE_DMEM_RETAIL_MB);
+    assert(iss_native_direct_memory_mb(3840,2160)==ISS_NATIVE_DMEM_RETAIL_MB);
+    assert(iss_native_direct_memory_mb(7680,2160)>=6144 && iss_native_direct_memory_mb(7680,2160)%256==0);
+    assert(iss_native_direct_memory_mb(5120,2160)>ISS_NATIVE_DMEM_RETAIL_MB);
+    assert(iss_native_direct_memory_mb(7680,4320)<=16384 && iss_native_direct_memory_mb(7680,4320)>iss_native_direct_memory_mb(7680,2160));
+    assert(iss_native_direct_memory_mb(65535,65535)==16384);
     if(argc>1){
         std::ifstream stream(argv[1],std::ios::binary);assert(stream);
         std::vector<unsigned char> elf((std::istreambuf_iterator<char>(stream)),{});
         assert(elf.size()>64 && !memcmp(elf.data(),"\x7f" "ELF",4) && elf[4]==2);
-        std::vector<unsigned char> mapped(0x600000,0);
+        std::vector<unsigned char> mapped(0xb00000,0);
         uint64_t phoff=read64(elf.data()+32);uint16_t stride,n;memcpy(&stride,elf.data()+54,2);memcpy(&n,elf.data()+56,2);
         for(unsigned i=0;i<n;i++){
             auto at=phoff+uint64_t(i)*stride;assert(at+56<=elf.size());auto h=elf.data()+at;
@@ -160,6 +205,7 @@ int main(int argc,char** argv){
             size=std::min<uint64_t>(size,mapped.size()-va);memcpy(mapped.data()+va,elf.data()+off,size);
         }
         for(int output=1;output<ISS_NATIVE_PRESETS;output++){
+            if(output==ISS_NATIVE_CUSTOM)continue; /* no custom size is set here */
             auto copy=mapped;assert(iss_native_apply(copy.data(),copy.size(),"CUSA00223","01.07",{output,100,1}));
         }
         puts("Actual US ELF: all guarded patch plans accepted (no disk writes).");

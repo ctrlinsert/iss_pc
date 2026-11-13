@@ -39,6 +39,8 @@ inline constexpr int kExtraPrefs = sizeof(kExtraKeys) / sizeof(kExtraKeys[0]);
 struct Values {
     // Native scene dimensions, applied once at startup; independent of output upscaling.
     std::atomic<int> iss_native_output{0}, iss_native_percent{100};
+    /// The custom output (iss_native_output 7, ISS_NATIVE_CUSTOM in iss_native_resolution.h); 0 = unset.
+    std::atomic<int> iss_native_width{0}, iss_native_height{0};
     std::atomic<bool> iss_native_hud_edges{false};
     /// FSR 3.1 temporal upscaling of the inFAMOUS image (renderer v2, gpu_v2/gpu/iss_temporal_upscaler.h). Read
     /// per frame; with it off the renderer behaves as before. Needs the game hooks (src/iss_temporal_hook.h).

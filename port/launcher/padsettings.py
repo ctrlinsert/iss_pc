@@ -22,12 +22,15 @@ KEYBOARD_BUTTONS = (
     ('up', 'I', 'I'), ('left', 'J', 'J'), ('down', 'K', 'K'), ('right', 'L', 'L'),
     ('touchpad_left', 'TAB', 'Tab'), ('touchpad_right', 'BACKSPACE', 'Backspace'),
 )
-# Keys that are not remappable (read straight from the keyboard state in runtime_pad.c):
-# (id, keys). The sensor keys T/G/Y, the sticks and the extra touchpad gestures.
-FIXED_KEYS = (
-    ('left_stick', 'W A S D'), ('right_stick', '← ↑ → ↓'),
-    ('sensor_right', 'T'), ('sensor_left', 'G'), ('sensor_shake', 'Y'),
+# Host actions of the key map (ACT_* in runtime_pad.c, never seen by the game): (id, default keys).
+# interact: tap = touchpad click, hold = hold the touchpad, hold + mouse flick or a direction = swipe.
+KEYBOARD_ACTIONS = (
+    ('interact', ('V', 'Mouse X2')),
+    ('ls_up', ('W',)), ('ls_left', ('A',)), ('ls_down', ('S',)), ('ls_right', ('D',)),
+    ('rs_up', ('Up',)), ('rs_left', ('Left',)), ('rs_down', ('Down',)), ('rs_right', ('Right',)),
+    ('tilt_right', ('T',)), ('tilt_left', ('G',)), ('shake', ('Y',)),
 )
+HOST_ACTIONS = tuple(action for action, _ in KEYBOARD_ACTIONS)
 PS4_BUTTONS = ('cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'l2', 'r2', 'l3', 'r3', 'options',
                'touchpad', 'touchpad_left', 'touchpad_right', 'up', 'down', 'left', 'right')
 MOUSE_SOURCES = ('Mouse Left', 'Mouse Middle', 'Mouse Right', 'Mouse X1', 'Mouse X2',
@@ -66,7 +69,7 @@ def parse_key_map(spec):
             continue
         button, _, names = entry.partition('=')
         button, names = button.strip().lower(), names.strip()
-        if button not in PS4_BUTTONS:
+        if button not in PS4_BUTTONS and button not in HOST_ACTIONS:
             errors.append(('keymap_err_button', button))
             continue
         if names.lower() == 'none':
@@ -90,15 +93,22 @@ def parse_key_map(spec):
 
 
 def effective_keys(spec):
-    """{ps4 button: [keys]} for the remappable buttons: the default keyboard with the (valid)
-    entries of `spec` applied; an empty list is a button left without any key ("none")."""
+    """{ps4 button or host action: [keys]} for the remappable buttons and actions: the default
+    keyboard with the (valid) entries of `spec` applied; an empty list is a button left without any
+    key ("none"). A key bound to a button leaves the host action it had by default (as
+    apply_button_map does: r1=Mouse X2 takes X2 from interact)."""
     keys = {button: [name] for button, _, name in KEYBOARD_BUTTONS}
+    keys.update({action: list(names) for action, names in KEYBOARD_ACTIONS})
     keys['touchpad'] = keys['touchpad_left']          # alias in ps_names
     entries, _, _ = parse_key_map(spec)
     for button, names in entries:
         if button == 'touchpad':
             button = 'touchpad_left'
         keys[button] = list(names or [])
+        if button not in HOST_ACTIONS:
+            taken = {name.lower() for name in names or []}
+            for action in HOST_ACTIONS:
+                keys[action] = [name for name in keys[action] if name.lower() not in taken]
     return keys
 
 

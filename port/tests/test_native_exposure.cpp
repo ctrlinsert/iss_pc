@@ -9,24 +9,32 @@ int main(){
  assert(iss_native_exposure_entries(3440,1440)==625);
  assert(iss_native_exposure_entries(3840,2160)==912);
  assert(iss_native_exposure_entries(5120,1440)==800);
- assert(!iss_native_exposure_entries(0,1440));assert(!iss_native_exposure_entries(3840,2161));
+ assert(!iss_native_exposure_entries(0,1440));assert(!iss_native_exposure_entries(7680,4321));
+ iss_native_set_custom(15360,2160); /* the custom slot at the budget's edge */
+ assert(iss_native_exposure_entries(7680,4320)>=60*60);
  for(int preset=1;preset<ISS_NATIVE_PRESETS;preset++)for(int scale=25;scale<=200;scale++){
   IssNativePlan p;if(!iss_native_plan({preset,scale,1},&p))continue;
   unsigned need=((p.width+127)/128)*((p.height+71)/72);
   assert(iss_native_exposure_entries(p.width,p.height)>=need);
  }
- std::vector<unsigned char> original(0x600000,0xcc);
+ std::vector<unsigned char> original(0xb00000,0xcc);
  for(const auto&s:iss_native_sites)memcpy(original.data()+s.offset,s.before,s.length);
  memcpy(original.data()+0x58030c,iss_native_projection,sizeof(iss_native_projection));
  memcpy(original.data()+0x5802e6,iss_native_aspect_width,sizeof(iss_native_aspect_width));
  memcpy(original.data()+0x171310,iss_exposure_allocator,sizeof(iss_exposure_allocator));
  for(const auto&s:iss_exposure_sites)memcpy(original.data()+s.offset,s.before,5);
+ for(const auto&s:iss_map_rt_sites)memcpy(original.data()+s.offset,s.before,s.length);
+ memcpy(original.data()+ISS_MAP_RT_FLOAT_LOAD,iss_map_rt_float_load,sizeof(iss_map_rt_float_load));
  assert(iss_native_exposure_guard(original.data(),original.size()));
  auto check=[&](size_t at){auto b=original;b[at]^=1;auto before=b;assert(!iss_native_apply(b.data(),b.size(),"CUSA00223","01.07",{4,100,1}));assert(b==before);};
  for(unsigned i=0;i<sizeof(iss_exposure_allocator);i++)check(0x171310+i);
  for(const auto&s:iss_exposure_sites){for(unsigned i=0;i<5;i++)check(s.offset+i);assert(!iss_native_exposure_guard(original.data(),s.offset+4));}
  for(const char* version:{"01.00","01.08"}){auto b=original;assert(!iss_native_apply(b.data(),b.size(),"CUSA00223",version,{4,100,1}));assert(b==original);}
- auto b=original;assert(!iss_native_apply(b.data(),b.size(),"CUSA00004","01.07",{4,100,1}));assert(b==original);
+ auto b=original;assert(!iss_native_apply(b.data(),b.size(),"CUSA00263","01.07",{4,100,1}));assert(b==original);
+ /* EU CUSA00004 1.07 carries the same executable: the same bytes patch the same way. */
+ {auto eu=original,us=original;assert(iss_native_apply(eu.data(),eu.size(),"CUSA00004","01.07",{4,100,1}));
+  assert(iss_native_apply(us.data(),us.size(),"CUSA00223","01.07",{4,100,1}));assert(eu==us);}
+ {auto eu=original;assert(!iss_native_apply(eu.data(),eu.size(),"CUSA00004","01.00",{4,100,1}));assert(eu==original);}
  b=original;assert(iss_native_apply(b.data(),b.size(),"CUSA00223","01.07",{4,100,1}));
  auto expected=original;IssNativePlan p;assert(iss_native_plan({4,100,1},&p));IssNativeSite changes[ISS_NATIVE_SITE_COUNT];iss_native_changes(&p,changes);
  for(const auto&s:changes)memcpy(expected.data()+s.offset,s.after,s.length);

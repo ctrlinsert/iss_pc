@@ -1,3 +1,6 @@
+#include <mutex>
+#include <cmath>
+#include <cstring>
 #include <shared_mutex>
 #include "../../../src/iss_native_resolution.h"
 #include "../../../src/iss_warning_budget.h"
@@ -2966,6 +2969,155 @@ struct DispatchCycles {
 };
 static DispatchCycles g_dispatch_cycles;
 
+// ISS_DISPATCH_TRACE=1 (diagnosis): each distinct compute dispatch (shader, group counts) once,
+// with the sizes of the images and buffers it binds. Finds passes sized for a smaller screen.
+// Experiment: the shadow setup kernel 0e4ea3cd reads a 96-byte constant block holding
+// 1920 at +40 and a 16:9-looking view width at +0. ISS_SHADOW_SETUP_FIX: bit 1 writes the
+// scene width over the 1920, bit 2 scales +0 by scene aspect / (16/9). Diagnostic only.
+static void ShadowSetupExperiment(const ComputePipeline* pipeline) {
+    static const int mode = [] {
+        const char* p = std::getenv("ISS_SHADOW_SETUP_FIX");
+        return p ? std::atoi(p) : 0;
+    }();
+    if (!mode || !pipeline) return;
+    const auto& info = pipeline->GetStage(Shader::SwStage::Compute);
+    if (u32(info.pgm_hash) != 0x0e4ea3cdu || info.buffers.empty()) return;
+    const auto buffer = info.buffers[0].GetSharp(info);
+    u8* base = reinterpret_cast<u8*>(uintptr_t(u64(buffer.base_address)));
+    if (!base || buffer.GetSize() != 96) return;
+    const auto plan = *runtime_native_plan();
+    if (!plan.width || !plan.height) return;
+    u32 width_value;
+    std::memcpy(&width_value, base + 40, 4);
+    float view;
+    std::memcpy(&view, base, 4);
+    static std::atomic<u32> logged{0};
+    const float scale = (float(plan.width) / float(plan.height)) / (16.0f / 9.0f);
+    if ((mode & 1) && width_value == 1920u) std::memcpy(base + 40, &plan.width, 4);
+    if ((mode & 2) && view > 0.f && scale > 1.001f) {
+        const float scaled = view * scale;
+        std::memcpy(base, &scaled, 4);
+    }
+    if (logged.fetch_add(1) < 4)
+        std::fprintf(stderr, "SHADOW_SETUP_FIX mode=%d +40 %u -> %u, +0 %g -> %g\n", mode,
+                     width_value, (mode & 1) && width_value == 1920u ? plan.width : width_value,
+                     view, (mode & 2) && view > 0.f && scale > 1.001f ? view * scale : view);
+}
+
+static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
+    static const bool enabled = [] {
+        const char* p = std::getenv("ISS_DISPATCH_TRACE");
+        return p && *p == '1';
+    }();
+    if (!enabled || !pipeline) return;
+    const auto& info = pipeline->GetStage(Shader::SwStage::Compute);
+    // ISS_DISPATCH_DUMP=<hash>[,<hash>...] (low 32 bits, hex, up to 4) prints every read
+    // buffer of 8 KiB or less of those shaders as dwords (int/float), every 300th dispatch, 8 times.
+    static const std::array<u32, 4> dump_hashes = [] {
+        std::array<u32, 4> h{};
+        const char* p = std::getenv("ISS_DISPATCH_DUMP");
+        for (int i = 0; p && *p && i < 4; ++i) {
+            char* end = nullptr;
+            h[i] = u32(std::strtoul(p, &end, 16));
+            p = (end && *end == ',') ? end + 1 : nullptr;
+        }
+        return h;
+    }();
+    static std::atomic<u32> dump_calls[4]{};
+    int dump_slot = -1;
+    for (int i = 0; i < 4; ++i)
+        if (dump_hashes[i] && u32(info.pgm_hash) == dump_hashes[i]) dump_slot = i;
+    const u32 dump_hash = dump_slot >= 0 ? dump_hashes[dump_slot] : 0u;
+    if (dump_slot >= 0 && dump_calls[dump_slot].fetch_add(1) % 300 == 0 &&
+        dump_calls[dump_slot].load() < 300 * 8) {
+        char line[2048];
+        int n = 0;
+        int bi = 0;
+        for (const auto& res : info.buffers) {
+            const auto buffer = res.GetSharp(info);
+            const u32 size = buffer.GetSize();
+            const u8* base = reinterpret_cast<const u8*>(uintptr_t(u64(buffer.base_address)));
+            ++bi;
+            if (res.is_written || !base || size == 0 || size > 8192) continue;
+            for (u32 off = 0; off < size; off += 32) {
+                n = std::snprintf(line, sizeof(line), "DISPATCH_DUMP cs=%08x buf%d +%u:",
+                                  dump_hash, bi - 1, off);
+                for (u32 o = off; o < off + 32 && o + 4 <= size; o += 4) {
+                    u32 v;
+                    float f;
+                    std::memcpy(&v, base + o, 4);
+                    std::memcpy(&f, &v, 4);
+                    n += std::snprintf(line + n, sizeof(line) - n, " %u/%g", v, f);
+                }
+                std::fprintf(stderr, "%s\n", line);
+            }
+        }
+    }
+    const u64 key = info.pgm_hash ^ (u64(cs.dim_x) << 40) ^ (u64(cs.dim_y) << 20) ^ u64(cs.dim_z);
+    static std::mutex lock;
+    static std::unordered_set<u64> seen;
+    {
+        std::scoped_lock guard{lock};
+        if (seen.size() >= 800 || !seen.insert(key).second) return;
+    }
+    char line[2048];
+    int n = std::snprintf(line, sizeof(line), "DISPATCH_TRACE cs=%016llx groups=%ux%ux%u threads=%ux%ux%u",
+                          (unsigned long long)info.pgm_hash, cs.dim_x, cs.dim_y, cs.dim_z,
+                          cs.num_thread_x.full, cs.num_thread_y.full, cs.num_thread_z.full);
+    for (const auto& res : info.images) {
+        if (n <= 0 || n >= int(sizeof(line)) - 48) break;
+        const auto image = res.GetSharp(info);
+        n += std::snprintf(line + n, sizeof(line) - n, " img%s=%ux%u", res.is_written ? "W" : "R",
+                           unsigned(image.width) + 1, unsigned(image.height) + 1);
+    }
+    for (const auto& res : info.buffers) {
+        if (n <= 0 || n >= int(sizeof(line)) - 32) break;
+        const auto buffer = res.GetSharp(info);
+        n += std::snprintf(line + n, sizeof(line) - n, " buf%s=%u", res.is_written ? "W" : "R",
+                           buffer.GetSize());
+    }
+    std::fprintf(stderr, "%s\n", line);
+    // ISS_DISPATCH_SCAN=1 also scans each small read buffer (constants, light
+    // tables) for screen-size values, int, float or reciprocal, to find a cap.
+    static const bool scan = [] {
+        const char* p = std::getenv("ISS_DISPATCH_SCAN");
+        return p && *p == '1';
+    }();
+    if (!scan) return;
+    static const u32 wanted[] = {7680, 7679, 5760, 5759, 5120, 3840, 3839, 2560, 1920, 1919,
+                                 2160, 2159, 1440, 1080, 1079, 540, 480, 479, 360, 359,
+                                 320, 240, 239, 135, 134, 120, 119, 90, 68, 67};
+    int bi = 0;
+    for (const auto& res : info.buffers) {
+        const auto buffer = res.GetSharp(info);
+        const u32 size = buffer.GetSize();
+        const u8* base = reinterpret_cast<const u8*>(uintptr_t(u64(buffer.base_address)));
+        ++bi;
+        if (res.is_written || !base || size == 0 || size > 65536) continue;
+        n = std::snprintf(line, sizeof(line), "DISPATCH_SCAN cs=%016llx buf%d size=%u",
+                          (unsigned long long)info.pgm_hash, bi - 1, size);
+        int hits = 0;
+        for (u32 off = 0; off + 4 <= size && hits < 48; off += 4) {
+            u32 v;
+            std::memcpy(&v, base + off, 4);
+            float f;
+            std::memcpy(&f, &v, 4);
+            for (u32 w : wanted) {
+                const bool as_int = v == w;
+                const bool as_float = f == float(w);
+                const bool as_inv = w >= 120 && f != 0.f && std::fabs(f * float(w) - 1.f) < 1e-5f;
+                if (!as_int && !as_float && !as_inv) continue;
+                if (n < int(sizeof(line)) - 32)
+                    n += std::snprintf(line + n, sizeof(line) - n, " +%u=%s%u", off,
+                                       as_int ? "i" : as_float ? "f" : "1/", w);
+                ++hits;
+                break;
+            }
+        }
+        if (hits) std::fprintf(stderr, "%s\n", line);
+    }
+}
+
 void Rasterizer::DispatchDirect() {
     const iss::cp_path::Scope cp_path_scope{iss::cp_path::Dispatch};
     auto& dc = g_dispatch_cycles;
@@ -2992,6 +3144,8 @@ void Rasterizer::DispatchDirect() {
         dc.active = false;
         return;
     }
+    ShadowSetupExperiment(pipeline);
+    TraceDispatchOnce(pipeline, cs_program);
 
     // Prepare the complete SRT read set before a split packet can touch BindResources.
     // Startup still denies CP_SPLIT until reserve/seal/publish/record is wired for all kinds.
@@ -6256,6 +6410,53 @@ void Rasterizer::UpdateViewportScissorState() const {
         };
         viewports.push_back(empty_viewport);
         scissors.push_back(empty_scissor);
+    }
+
+    // Experiment ISS_SHADOW_SCISSOR_FULL=1: a 1024x1024 shadow-map viewport draws with a
+    // scissor fitted to the camera; open it to the whole map to see whether that fit is what
+    // drops shadows at the sides of a wide view. Diagnostic only.
+    static const bool shadow_scissor_full = [] {
+        const char* p = std::getenv("ISS_SHADOW_SCISSOR_FULL");
+        return p && *p == '1';
+    }();
+    if (shadow_scissor_full && viewports.size() == 1 && !regs.IsClipDisabled() &&
+        std::fabs(viewports[0].width) == 1024.f && std::fabs(viewports[0].height) == 1024.f &&
+        viewports[0].x == 0.f) {
+        scissors[0] = vk::Rect2D{{0, 0}, {1024, 1024}};
+    }
+
+    // ISS_VIEWPORT_TRACE=1: each distinct viewport/scissor pair, up to 400, to find a
+    // pass whose rectangle stops short of the scene (for example at 3/4 of the width).
+    static const bool vp_trace = [] {
+        const char* p = std::getenv("ISS_VIEWPORT_TRACE");
+        return p && *p == '1';
+    }();
+    if (vp_trace) {
+        static std::mutex vp_lock;
+        static std::unordered_set<u64> vp_seen;
+        const auto& v = viewports[0];
+        const auto& r = scissors[0];
+        const u64 key = (u64(u16(s32(v.x))) << 48) ^ (u64(u16(s32(v.width))) << 32) ^
+                        (u64(u16(s32(v.height))) << 16) ^ (u64(u16(r.offset.x)) << 40) ^
+                        (u64(u16(r.extent.width)) << 8) ^ u64(u16(r.extent.height)) ^
+                        (u64(u16(scsr.bottom_right_x)) << 24) ^ (u64(viewports.size()) << 60);
+        bool fresh = false;
+        {
+            std::scoped_lock guard{vp_lock};
+            fresh = vp_seen.size() < 400 && vp_seen.insert(key).second;
+        }
+        if (fresh)
+            std::fprintf(stderr,
+                         "VIEWPORT_TRACE n=%zu vp=%.1f,%.1f %.1fx%.1f scissor=%d,%d %ux%u "
+                         "screen_br=%d,%d window_br=%d,%d generic_br=%d,%d clipoff=%d ui_scale=%.3f\n",
+                         viewports.size(), v.x, v.y, v.width, v.height, r.offset.x, r.offset.y,
+                         r.extent.width, r.extent.height, int(regs.screen_scissor.bottom_right_x),
+                         int(regs.screen_scissor.bottom_right_y),
+                         int(regs.window_scissor.bottom_right_x),
+                         int(regs.window_scissor.bottom_right_y),
+                         int(regs.generic_scissor.bottom_right_x),
+                         int(regs.generic_scissor.bottom_right_y), int(regs.IsClipDisabled()),
+                         iss_ui_scale_x);
     }
 
     auto& dynamic_state = scheduler.GetDynamicState();

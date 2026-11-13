@@ -13,6 +13,9 @@ int runtime_power_wheel_gameplay(void);
 void runtime_power_wheel_status(IssPowerWheelStatus *out);
 void runtime_power_wheel_visual(int open,int choice);
 void runtime_power_wheel_visual_status(int *open,int *choice);
+/* What the game shows, for the 16:9 menu presentation (iss_menu_aspect.h), independent of the
+ * experimental power wheel: ISS_MENU_SCENE_* values. */
+int runtime_menu_scene(void);
 void tlggpu_power_wheel_settings(int *enabled,int keys[4],int *instant);
 #ifdef __cplusplus
 }

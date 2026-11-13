@@ -1,4 +1,8 @@
-/* Gameplay-only root transforms observed in CUSA00223 1.07. */
+/* Gameplay-only root transforms observed in CUSA00223 1.07, for the 1920x1080 UI canvas
+ * (iss_native_ui_16_9=1) only. The game re-lays out these three every frame (layout 0x564cf0,
+ * anchored by their PEG property at +0x4f4), so narrowing the layout result is safe for them.
+ * Their owner class 0xcdb7d0 is the hero object, not a HUD root. With the real-width canvas
+ * (iss_native_ui_16_9=0, the default) the game anchors them itself and this is not used. */
 #ifndef ISS_HUD_CORNERS_H
 #define ISS_HUD_CORNERS_H
 #include <stdint.h>

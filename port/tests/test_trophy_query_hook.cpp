@@ -13,7 +13,8 @@ int main(){
  std::vector<unsigned char> b(ISS_TROPHY_QUERY_SITE+sizeof(iss_trophy_query_signature));
  memcpy(b.data()+ISS_TROPHY_QUERY_SITE,iss_trophy_query_signature,sizeof(iss_trophy_query_signature));
  assert(iss_trophy_query_valid(b.data(),b.size(),"CUSA00223","01.07"));
- assert(!iss_trophy_query_valid(b.data(),b.size(),"CUSA00004","01.07"));
+ assert(iss_trophy_query_valid(b.data(),b.size(),"CUSA00004","01.07")); /* EU 1.07: same executable */
+ assert(!iss_trophy_query_valid(b.data(),b.size(),"CUSA00263","01.07"));
  assert(!iss_trophy_query_valid(b.data(),b.size(),"CUSA00223","01.00"));
  assert(!iss_trophy_query_valid(b.data(),b.size()-1,"CUSA00223","01.07"));
  for(size_t i=0;i<sizeof(iss_trophy_query_signature);i++){

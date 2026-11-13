@@ -2,7 +2,7 @@
 
 Status: **experimental Windows Renderer v2 candidate**, not installed over the normal launcher.
 Target source: HayatoG/iss_pc `developer`, pinned at `c8915d95f48421cf489708a35fa4e58e7f93c7f1`.
-Target game: **CUSA00223 / APP_VER 01.07**. Other regions are refused even if some offsets match.
+Target game: **APP_VER 01.07 of CUSA00223 (US) or CUSA00004 (EU)**, whose 1.07 executables are identical (unwrapped ELF SHA-256 below; see [CUSA00004_CAMERA.md](CUSA00004_CAMERA.md)). Other titles and versions are refused, and every patched instruction is still byte-verified, so an EU dump with different code is refused too.
 Local ELF SHA-256: `b3afd173a379f83e1e408e71fdef22b78f93092d332b79decd48a18a08bfc605`.
 
 ## Source research, rather than release-note assumptions
@@ -20,7 +20,7 @@ The actual game patches are in [`src/common/memory_patcher.cpp`](https://github.
 | [a053075a](https://github.com/axylpup/shadPS4/commit/a053075aae3d9f2a6f4f335d34afa20ab9ec3dfd) | Centered HUD default because a full-width minimap was reported clipped. | Both placements selectable. Edge placement is experimental at each aspect; centered is the fallback choice. |
 | [160de347](https://github.com/axylpup/shadPS4/commit/160de34701e1859b5e52e377ee98333e289fc78c) | Keep UI coordinates at 1080 logical lines, independent of physical render height, avoiding oversized UI. | Reused. Logical width is the exact selected aspect times 1080: 2580 for 3440×1440; 3840 for 5120×1440. |
 | [850d128a](https://github.com/axylpup/shadPS4/commit/850d128a63f8a1878edb6b5d8120e425f2b9b870) | Redirect projection builder's 2.0 constant to 2/k for displays narrower than 16:9. | Not needed for the offered 16:9–32:9 presets. No narrow-screen or camera-FOV constant patch imported. |
-| [6ec09476](https://github.com/axylpup/shadPS4/commit/6ec09476c83bffc2d3b198d9b0d20fb57252e728) | Screen percentage derives scene pixels from the monitor reference, saved in render-size.ini. | Adapted to selected output presets and tlg.ini. 100% is exact output pixels. Other percentages round to even pixels. Requests above the 4K pixel budget are refused, never silently reduced. |
+| [6ec09476](https://github.com/axylpup/shadPS4/commit/6ec09476c83bffc2d3b198d9b0d20fb57252e728) | Screen percentage derives scene pixels from the monitor reference, saved in render-size.ini. | Adapted to selected output presets and tlg.ini. 100% is exact output pixels. Other percentages round to even pixels. Requests above the pixel budget (now 8K, 33,177,600 pixels) are refused, never silently reduced. |
 | [63692218](https://github.com/axylpup/shadPS4/commit/6369221821def1f88bd3bc64a869e8616bc1ee68) | Expand both allocation and descriptor record count of the game's per-tile light list. Each 16×16 tile needs 128 uint16 indices. Original 0x320000 entries cover only 25,600 tiles. Unwritten end markers can hang forward-light shaders. | Reused, independently disassembled in US 1.07. Both capacity sites are mandatory parts of the same all-or-nothing transaction as resolution/HUD changes. |
 | [54c1b399](https://github.com/axylpup/shadPS4/commit/54c1b39910b250275214bac1e16f183a1250b0ac) | Live resize via sceGnmSubmitDone, game mode-toggle option byte, render-size confirmation table, boot allocation headroom and retries. | Not imported. Scale selection requires restart, so allocations are created once at the selected dimensions. |
 | [cc569952](https://github.com/axylpup/shadPS4/commit/cc56995255d1b61a2dc41c2c27a47246ad5b0ed6) | Texture-cache purge after first frame at a new live size prevents stale lighting/history/photo-mode shadows when returning to an old size. Files: texture_cache.cpp/.h, memory_patcher.cpp/.h. | Emulator/cache-specific. No live resizing offered, so no broad cache-purge policy transplanted into Renderer v2. |
@@ -62,7 +62,7 @@ The candidate logs `NATIVE_SCENE_TARGETS color+depth=... viewport=...` when an a
 
 Insert → **Native rendering** is visible without advanced mode. Select output resolution, 25–200% render scale, and edge/centered HUD. Close and relaunch the game to apply. No live resize or dynamic-resolution algorithm is added.
 
-Presets: original/off, 1920×1080, 2560×1440, 3440×1440, 3840×2160, 5120×1440. Maximum scene pixel count is 8,294,400, following the reference's final native-4K limit. For example 5120×1440 at 200% is refused; 100% remains exactly 5120×1440. Aspect names such as “21:9” are not substituted for the panel's actual 43:18 ratio.
+Presets: original/off, 1920×1080, 2560×1440, 3440×1440, 3840×2160, 5120×1440, 7680×2160, and **Custom** (output 7): any even size from 1280×720 to 15360×4320 that is 16:9 or wider, such as 5120×2160 ("5K2K") or 2560×1080. Set it with `iss_native_width` / `iss_native_height` in tlg.ini, or in the game menu (Insert → Native rendering → Custom), whose **Match this display** button reads the size of the display the game window is on. Maximum scene pixel count is 33,177,600 (8K, 7680×4320), raised from the reference's native-4K limit of 8,294,400. For example 7680×2160 at 150% is refused; 100% remains exactly 7680×2160. The lighting list and the exposure grid grow with the scene; other fixed-size game buffers have not been audited past 4K, so scenes above 3840×2160 are experimental until tested. Aspect names such as “21:9” are not substituted for the panel's actual 43:18 ratio.
 
 Settings in the active user folder's tlg.ini (ISS_CONFIG/TLG_CONFIG):
 
@@ -72,7 +72,7 @@ iss_native_percent=100
 iss_native_hud_edges=1
 ```
 
-Output index 3 is 3440×1440; 5 is 5120×1440; 4 is native 4K; 0 disables the feature. Use a matching desktop resolution and Borderless for pixel-matched display output. A smaller host window will still downsample the native scene; the menu reports both guest and window sizes. External resolution XML patches must be disabled; conflicts refuse the native transaction.
+Output index 3 is 3440×1440; 5 is 5120×1440; 4 is native 4K; 6 is 7680×2160; 7 is the custom size (add `iss_native_width=5120` and `iss_native_height=2160`, for example); 0 disables the feature. Use a matching desktop resolution and Borderless for pixel-matched display output. A smaller host window will still downsample the native scene; the menu reports both guest and window sizes. External resolution XML patches must be disabled; conflicts refuse the native transaction.
 
 Camera speed and pitch hooks remain the developer versions byte-for-byte. The existing tested Karma Switcher, shard accounting, persistent original state, assisted-purchase rollback and backup UI have been ported forward. Experimental all-powers grants are excluded. Existing overlay scaling/cursor fixes and borderless Fullscreen compatibility behavior are retained. No controller mappings, stick processing, story progression or collectibles are changed by native rendering.
 
@@ -237,3 +237,64 @@ cache-disabled startup is not proof of a cache cause or a general crash fix.
 Normal installation and public ZIP still contain the previous map/menu version;
 this HUD candidate has not been installed, packaged or uploaded. GitHub work is
 stopped by user instruction.
+
+## Direct memory at large sizes
+
+The game sizes its heaps from `sceKernelGetDirectMemorySize`, which defaults to the retail 5056 MiB. Above about 5120x2160 that runs out: at 7680x2160 the light-list allocation returned NULL and the game crashed in `memset`. With a native plan larger than 3840x2160, the runtime now raises direct memory before the pool is created, by 160 bytes per scene pixel beyond 4K, rounded up to 256 MiB (6400 MiB at 7680x2160, 9216 MiB at 7680x4320). A larger `TLG_DMEM_MB` still wins. On Windows this memory is committed, so the page file must be able to back it.
+
+## Menus at 16:9 outside gameplay
+
+The game lays out its 2D menus on a 1920x1080 canvas, so on outputs wider than 16:9 the title screen, main menu, loading screens and pause menu were stretched. The presenter now shows the frame at a centered 16:9 whenever the game is not in gameplay. The scene is sampled on the game's camera thread without the experimental power wheel: no camera update yet (logos, title), no player character (menus, loading, pre-rendered movies), or the game's pause counter set (pause menu, map). Gameplay and in-engine cutscenes keep the full Hor+ picture. `ISS_EXPERIMENTAL_PAUSE_PRESENTATION=0` turns it off. `TLG_UI_LAYOUT_TRACE=1` logs each widget kind once (`UI_LAYOUT`), to find menu roots for a per-widget fix later.
+
+## Gameplay prompts at 16:9 proportions
+
+Prompts, tutorials and notices are laid out on the same 1920x1080 canvas, so at 32:9 they came out about twice as wide. During gameplay, every top-level element (no owner, or owned by the HUD/notice containers 0xcdb7d0/0xd6a390) now has its x axis narrowed to 16:9 proportions while its position is kept, since positions may be edge-anchored or projected from the world. The minimap, karma and power meter keep their corner transform. `TLG_UI_FIT=0` turns it off. Untested in game at the time of writing; the first match logs `UI_FIT`.
+
+## Lights past 3200 pixels wide (tiled lighting planes)
+
+At 7680x2160, local lights and their shadows were wrong on the right side of the screen and in the bottom rows: a soft dark band from about x=5760, worst on nearby surfaces, changing with the camera angle. It is not an aspect problem. The scene's lighting compute pass works in 16-pixel tiles and reads two tables of world-space boundary planes from a per-frame constant block: one plane per tile column at +0x120 and one per tile row at +0xdb0. The block (0x16ac40, 0x15c0 bytes) holds 201 column and 129 row planes, enough for 200x128 tiles: 3200x2048, which covers the PS4 Pro's 3200x1800 mode. The filler (0x16a4e0) writes cols+1 and rows+1 planes regardless, so a wider scene overwrites the row table and runs past the block, and the shader reads row planes, then other data, as column planes.
+
+`src/iss_native_light_tiles.h` sizes both tables from the scene at startup: column planes = ceil(W/16)+1, row planes = ceil(H/16)+1 (never fewer than retail), the row table directly after the column table, and the block large enough for both. The four instructions are checked byte for byte first. The recompiler moves the lighting shader's row-table offset (a single literal, `light_tiles_patch.h`) to match; the shader cache stores that variant under its own binary version. `TLG_LIGHT_TILES=0` keeps the retail tables for comparison. The log reports the layout as `Native lighting tiles: …`.
+
+Diagnostics used to find it: `ISS_DISPATCH_TRACE=1` (each distinct compute dispatch with its image and buffer sizes), `ISS_DISPATCH_SCAN=1`, `ISS_DISPATCH_DUMP=<hash>[,…]`, `ISS_VIEWPORT_TRACE=1`, and the camera aspect hook below.
+
+### Camera aspect hook (diagnostic)
+
+At 32:9, shadows and local lights end near the edges of the centre 16:9: hard vertical seams on walls, unlit sides and shadows that slide while panning. A scan of 1.07 found no 16:9 constant behind it, and the projection, unprojection and light-constant code all use the camera's own tangents. Every camera turned out to take the render size already; the cause was the tile plane tables above.
+
+`ISS_CAMERA_ASPECT` hooks the camera aspect setter (0x581b70) when native rendering is on:
+
+- `trace` (default): logs each distinct caller, camera type and aspect once as `CAMERA_ASPECT … kept|would-fix`.
+- `fix`: a camera handed exactly 16:9, whose horizontal tangent follows its aspect, gets the output aspect instead (any ratio, wider or narrower; nothing changes at a 16:9 output). Experimental: cameras that render to 16:9 textures would be distorted.
+- `off`: no hook.
+
+### Real-width UI canvas again, with the map target fixed (2026-11-13)
+
+A static audit of the stretched gameplay UI on the 1920x1080 canvas (mode 1) found:
+
+- The tutorial hint, the banner (SUSPECTS RESCUED), the objective text and the district status
+  are data-defined widgets owned by the HUD message manager. They are laid out when created
+  (load, or after a cutscene) and the result is cached; only some HUD pieces (the karma and
+  power meters, the minimap) are laid out again every frame. A fix applied at layout time and
+  gated on the current scene is therefore wrong for those four by construction.
+- The owner classes the per-widget fit keyed on are world objects (the hero, props,
+  collectibles, the interact prompt), not HUD roots. That fit, its any-class variant, the
+  3D-prompt skip and the gameplay scene gate are removed. The three corner groups stay for
+  mode 1 only; they are laid out every frame, so narrowing their layout result is sound.
+- The game's layout already anchors every widget to the edges of the canvas it is given
+  (canvas width and height, and the safe margins, read on every layout). With the real-width
+  canvas (`iss_native_ui_16_9=0`) no per-widget correction is needed.
+- The pause-map distortion that ruled out mode 0 has one cause: the map render target (shared
+  by the HUD minimap and the pause map) is sized for a 1920x1080 canvas, from a literal
+  1920.0 and 0x780 x 0x438 caps, while its sampler divides the canvas width by the allocated
+  width. `src/iss_native_map_rt.h` sizes it from the canvas instead (six guarded sites; the
+  float has a single reader). Mode 2 failed for the same reason: the bug tracks the canvas
+  width, not its aspect.
+- The presenter's 16:9 menu fit now applies only to a 16:9 canvas. On the real-width canvas
+  the menus fill the screen at their own anchors, and full-screen movies are already
+  pillarboxed by the game's movie quad.
+
+Still to confirm in game on the real-width canvas: the map, text wrapping (the auto-wrap width
+reads the canvas width), the menu cursor's look rate, menu backdrops, and the menu slowdown
+seen in October, for which no code-side cause was found. The default stays mode 1 until then.
+Live output changes need a restart in mode 0.

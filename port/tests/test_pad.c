@@ -6,6 +6,7 @@
 int runtime_mouse_aim_installed(void) { return 0; }
 int runtime_power_wheel_gameplay(void) { return 1; }
 void runtime_power_wheel_status(IssPowerWheelStatus *out){memset(out,0,sizeof(*out));}
+int runtime_menu_scene(void){return ISS_MENU_SCENE_GAMEPLAY;}
 void runtime_power_wheel_request(int index){(void)index;}
 void runtime_power_wheel_visual(int open,int choice){(void)open;(void)choice;}
 void tlggpu_power_wheel_settings(int *enabled,int keys[4],int *instant){*enabled=0;*instant=0;memset(keys,0,4*sizeof(*keys));}
@@ -90,7 +91,7 @@ int main(void) {
     for(int available=0;available<2;available++){
         direct_available=available;
         PadData d={0};d.right_x=76;d.right_y=201;d.timestamp=1000000;
-        sample_mouse(&d,false,NULL);d.timestamp+=16000;sample_mouse(&d,false,NULL);
+        sample_mouse(&d,false,NULL,0);d.timestamp+=16000;sample_mouse(&d,false,NULL,0);
         assert(d.right_x==76&&d.right_y==201&&observed_dx==120&&observed_dy==-80);
     }
     assert(motion_calls==4);memset(&supplied_mouse,0,sizeof(supplied_mouse));memset(&supplied_settings,0,sizeof(supplied_settings));
