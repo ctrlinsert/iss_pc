@@ -40,6 +40,12 @@ static inline int iss_hud_corner_transform(float matrix[16],uint32_t width,uint3
 static inline int iss_ui_fit_top_level(uintptr_t owner,uintptr_t owner_vt){
     return !owner || owner_vt==0xcdb7d0u || owner_vt==0xd6a390u || owner_vt==0xcd03c0u;
 }
+/* A widget that keeps its own 3D transform (trs byte [w+0x586], as the compact world-space swipe
+ * prompts) is projected later by the perspective camera, whose aspect is already the output's: it
+ * was never stretched, so it is left alone. A z term in its x or y row says the same. */
+static inline int iss_ui_fit_own_3d(uint8_t trs,const float matrix[16]){
+    return trs!=0 || fabsf(matrix[8])>0.01f || fabsf(matrix[9])>0.01f;
+}
 static inline int iss_ui_fit_transform(float matrix[16],uint32_t width,uint32_t height){
     if(!width || !height || (uint64_t)width*9u<=(uint64_t)height*16u)return 0;
     float ratio=(16.0f*(float)height)/(9.0f*(float)width);
