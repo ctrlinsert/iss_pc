@@ -205,6 +205,7 @@ int main(int argc,char** argv){
             size=std::min<uint64_t>(size,mapped.size()-va);memcpy(mapped.data()+va,elf.data()+off,size);
         }
         for(int output=1;output<ISS_NATIVE_PRESETS;output++){
+            if(output==ISS_NATIVE_CUSTOM)continue; /* no custom size is set here */
             auto copy=mapped;assert(iss_native_apply(copy.data(),copy.size(),"CUSA00223","01.07",{output,100,1}));
         }
         puts("Actual US ELF: all guarded patch plans accepted (no disk writes).");
