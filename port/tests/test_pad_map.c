@@ -102,7 +102,7 @@ int main(void) {
     const uint32_t mleft=1u<<(MOUSE_LEFT-MOUSE_SOURCE), mright=1u<<(MOUSE_RIGHT-MOUSE_SOURCE);
 #define ONLY(code) (memset(kb,0,sizeof(kb)),kb[code]=true)
     ONLY(SDL_SCANCODE_RETURN); assert(menu_keys(kb,0)==BTN_CROSS && map_keys(kb,0)==BTN_OPTIONS);
-    ONLY(SDL_SCANCODE_ESCAPE); assert(menu_keys(kb,0)==BTN_CIRCLE && map_keys(kb,0)==0);
+    ONLY(SDL_SCANCODE_ESCAPE); assert(menu_keys(kb,0)==BTN_CIRCLE && map_keys(kb,0)==BTN_OPTIONS); /* pause in gameplay */
     ONLY(SDL_SCANCODE_Q); assert(menu_keys(kb,0)==BTN_L2 && map_keys(kb,0)==BTN_TRIANGLE);
     ONLY(SDL_SCANCODE_E); assert(menu_keys(kb,0)==BTN_R2);
     ONLY(SDL_SCANCODE_TAB); assert(menu_keys(kb,0)==BTN_R2 && map_keys(kb,0)==CLICK_LEFT);

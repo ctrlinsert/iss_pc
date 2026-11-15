@@ -324,14 +324,14 @@ static ButtonMap key_map={{
     {SDL_SCANCODE_SPACE,BTN_CROSS}, {SDL_SCANCODE_LSHIFT,BTN_CIRCLE}, {SDL_SCANCODE_E,BTN_SQUARE},
     {SDL_SCANCODE_Q,BTN_TRIANGLE}, {SDL_SCANCODE_1,BTN_L1}, {SDL_SCANCODE_3,BTN_R1},
     {SDL_SCANCODE_R,BTN_L2}, {SDL_SCANCODE_F,BTN_R2}, {SDL_SCANCODE_Z,BTN_L3}, {SDL_SCANCODE_C,BTN_R3},
-    {SDL_SCANCODE_RETURN,BTN_OPTIONS}, {SDL_SCANCODE_TAB,CLICK_LEFT}, {SDL_SCANCODE_BACKSPACE,CLICK_RIGHT}, {SDL_SCANCODE_X,CLICK_LEFT},
+    {SDL_SCANCODE_RETURN,BTN_OPTIONS}, {SDL_SCANCODE_ESCAPE,BTN_OPTIONS}, {SDL_SCANCODE_TAB,CLICK_LEFT}, {SDL_SCANCODE_BACKSPACE,CLICK_RIGHT}, {SDL_SCANCODE_X,CLICK_LEFT},
     {SDL_SCANCODE_I,BTN_UP}, {SDL_SCANCODE_K,BTN_DOWN}, {SDL_SCANCODE_J,BTN_LEFT}, {SDL_SCANCODE_L,BTN_RIGHT},
     {MOUSE_LEFT,BTN_R2}, {MOUSE_RIGHT,BTN_L2}, {MOUSE_MIDDLE,BTN_R3},
     {SDL_SCANCODE_V,ACT_INTERACT}, {MOUSE_X2,ACT_INTERACT},
     {SDL_SCANCODE_T,ACT_TILT_RIGHT}, {SDL_SCANCODE_G,ACT_TILT_LEFT}, {SDL_SCANCODE_Y,ACT_SHAKE},
     {SDL_SCANCODE_W,ACT_LS_UP}, {SDL_SCANCODE_S,ACT_LS_DOWN}, {SDL_SCANCODE_A,ACT_LS_LEFT}, {SDL_SCANCODE_D,ACT_LS_RIGHT},
     {SDL_SCANCODE_UP,ACT_RS_UP}, {SDL_SCANCODE_DOWN,ACT_RS_DOWN}, {SDL_SCANCODE_LEFT,ACT_RS_LEFT}, {SDL_SCANCODE_RIGHT,ACT_RS_RIGHT},
-},35};
+},36};
 /* The menu keys, used while the game shows a menu (title and main menus, loading, pause; see
  * iss_menu_mouse_scene): Enter / Space / left click select (cross), Esc / Backspace / right click
  * go back (circle), Q / E and Shift+Tab / Tab change tabs (L2 / R2: the pause tabs), F and R are
@@ -811,6 +811,12 @@ static float interact_moving_counts(void) {
     return counts;
 }
 static uint32_t map_keys(const bool *k, uint32_t mouse);
+/* The menu keys (menu_map) are on unless TLG_MENU_KEYS=0. */
+static bool menu_keys_on(void) {
+    static int on=-1;
+    if (on<0) { const char *e=getenv("TLG_MENU_KEYS"); on=!(e && *e=='0'); }
+    return on;
+}
 static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_t acts) {
     TlgGpuMouse m;
     tlggpu_mouse_take(&m);
@@ -887,9 +893,12 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
         interact_mouse.dx+=cdx; interact_mouse.dy+=cdy;
         if ((deciding && !interact_mouse_moving && !interact_no_swipe) || interact_out.owns_mouse) m.dx=m.dy=0; /* else the camera keeps it too */
     }
-    /* Touchpad mode: the mode key (a keyboard key or a mouse button). */
+    /* Touchpad mode: the mode key (a keyboard key or a mouse button). Not in the game's menus
+     * while the menu keys are on: there the mouse buttons are the menu's (the thumb buttons go
+     * left / right), and the mode comes back on leaving the menu if it was toggled on. */
+    const bool menu_mouse=menu_keys_on() && iss_menu_mouse_scene(runtime_menu_scene());
     bool key_down=false;
-    for (int i=0;i<pad_mode_cfg.key_count;++i) {
+    for (int i=0;i<pad_mode_cfg.key_count && !menu_mouse;++i) {
         const int source=pad_mode_cfg.keys[i];
         key_down|=source>=MOUSE_SOURCE ? source<MOUSE_SOURCE_END && (raw>>(source-MOUSE_SOURCE) & 1)
                                        : source<SDL_SCANCODE_COUNT && k && k[source];
@@ -907,6 +916,7 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
             }
             pad_mode=toggled;
         } else pad_mode=key_down;
+        if (menu_mouse) pad_mode=false;
     }
     key_was_down=key_down;
     if (pad_mode!=mouse_pad.active) {
@@ -1236,11 +1246,13 @@ static void sample_host(PadData *d) {
     uint32_t mouse=sample_mouse(d,can_aiming(early),k,early); /* adds to the right stick */
     last_mouse=mouse;
     uint32_t menu_buttons=0;
-    static int menu_layer=-1; /* the menu keys (menu_map); TLG_MENU_KEYS=0: off */
-    if (menu_layer<0) { const char *e=getenv("TLG_MENU_KEYS"); menu_layer=!(e && *e=='0'); }
+    const bool menu_layer=menu_keys_on();
     const bool in_menu=!mouse_pad.active && iss_menu_mouse_scene(runtime_menu_scene());
     const bool menu=menu_layer && in_menu;
-    atomic_store(&menu_keys_active,menu && map_has_source(&menu_map,SDL_SCANCODE_ESCAPE));
+    /* Esc is the game's (pause in gameplay, back in menus) while a binding has it; otherwise the
+     * window takes it to free the mouse. */
+    atomic_store(&menu_keys_active,menu ? map_has_source(&menu_map,SDL_SCANCODE_ESCAPE)
+                                        : map_has_source(&key_map,SDL_SCANCODE_ESCAPE));
     static bool filtered_keys[SDL_SCANCODE_COUNT];
     menu_latch_update(menu,k,mouse);
     memcpy(filtered_keys,k,sizeof(filtered_keys));

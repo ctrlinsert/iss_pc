@@ -257,7 +257,7 @@ The port's menu opens with **Insert or F1** (F1 for keyboards without Insert), o
 | Wheel | in the game's menus, one item up or down per notch; free in gameplay (see `ISS_KEY_MAP`) |
 | Sensor on (sensor mode, T or G) | the mouse points the graffiti spray can instead of turning the camera |
 
-**Menu keys** (title and main menus, loading, pause; experimental, the game's prompts still show the PS4 buttons): **Enter**, **Space** or **left click** select (cross); **Esc**, **Backspace** or **right click** go back (circle; Esc keeps the mouse here); **Q / E** and **Shift+Tab / Tab** change tabs (L2 / R2); **F** is triangle (Options and Saves), **R** square (Abandon Mission); the **arrows** and the **wheel** move (d-pad); with the mouse alone, the **thumb buttons** (back = left, forward = right) go side to side, for option values and sliders; **P** is OPTIONS. Other keys keep their gameplay job (WASD the left stick, 1 / 3 L1 / R1). A key held when a menu opens or closes does nothing until released. `TLG_MENU_KEY_MAP` or tlg.ini `menu_key_map` remap them (the `ISS_KEY_MAP` syntax, `Shift+` names a Shift chord); `TLG_MENU_KEYS=0` turns them off (then `TLG_MENU_MOUSE` applies as before).
+**Menu keys** (title and main menus, loading, pause; experimental, the game's prompts still show the PS4 buttons): **Enter**, **Space** or **left click** select (cross); **Esc**, **Backspace** or **right click** go back (circle). In gameplay **Esc** opens the pause menu (OPTIONS); the mouse stays captured, and Alt+Tab or the Insert/F1 menu free it. Touchpad mode (Left Ctrl / X1) is off in menus; **Q / E** and **Shift+Tab / Tab** change tabs (L2 / R2); **F** is triangle (Options and Saves), **R** square (Abandon Mission); the **arrows** and the **wheel** move (d-pad); with the mouse alone, the **thumb buttons** (back = left, forward = right) go side to side, for option values and sliders; **P** is OPTIONS. Other keys keep their gameplay job (WASD the left stick, 1 / 3 L1 / R1). A key held when a menu opens or closes does nothing until released. `TLG_MENU_KEY_MAP` or tlg.ini `menu_key_map` remap them (the `ISS_KEY_MAP` syntax, `Shift+` names a Shift chord); `TLG_MENU_KEYS=0` turns them off (then `TLG_MENU_MOUSE` applies as before).
 
 **Touchpad mode:** hold **Left Ctrl** or the mouse's **X1 side button**. While the mode is on the camera does not turn: mouse motion moves a virtual finger over the touchpad (a small pad in the bottom-left corner of the screen shows where it is) and the buttons become the finger:
 
@@ -302,7 +302,7 @@ The Insert menu's **Controls** tab has the mouse camera settings, and the launch
 | 1 | L1 | 3 | R1 |
 | R | L2 | F | R2 |
 | Z | L3 | C | R3 |
-| Enter | Options | X or Tab / Backspace | touchpad click (left / right) |
+| Enter or Esc | Options (Esc: pause; in menus, back) | X or Tab / Backspace | touchpad click (left / right) |
 | I / K / J / L | d-pad (up / down / left / right) | T / G / Y | simulated sensor mode (see below) |
 | V / Mouse X2 | **interact** (touchpad: see below) | | |
 
@@ -694,7 +694,7 @@ O menu Insert, aba **Controle**, tem os ajustes da câmera do mouse, e a tela **
 | 1 | L1 | 3 | R1 |
 | R | L2 | F | R2 |
 | Z | L3 | C | R3 |
-| Enter | Options | Tab / Backspace | clique do touchpad (esquerdo / direito) |
+| Enter / Esc | Options | Tab / Backspace | clique do touchpad (esquerdo / direito) |
 | I / K / J / L | direcional (cima / baixo / esquerda / direita) | T / G / Y | modo sensor simulado (veja abaixo) |
 
 **Remapear:** `ISS_KEY_MAP` (ou o campo avançado da tela **Controles**) troca teclas e botões do mouse: `"cross=Q,r2=Mouse Left|F"`. Os botões são `cross`, `circle`, `square`, `triangle`, `l1`, `r1`, `l2`, `r2`, `l3`, `r3`, `options`, `up`, `down`, `left`, `right`, `touchpad_left`, `touchpad_right`. Estas teclas também se remapeiam: `interact`, `tilt_right`, `tilt_left`, `shake` (sensor) e as teclas dos analógicos `ls_up`, `ls_down`, `ls_left`, `ls_right`, `rs_up`, `rs_down`, `rs_left`, `rs_right` (as `rs_` também miram a lata de spray e guiam o deslizar com Tab). Uma tecla ligada a um botão deixa a ação que tinha por padrão (`r1=Mouse X2` tira o X2 do interagir).
