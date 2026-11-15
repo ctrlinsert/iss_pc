@@ -62,6 +62,7 @@ typedef struct {
 typedef struct {uint32_t offset; unsigned length; unsigned char before[17], after[17];} IssNativeSite;
 #include "iss_native_sites.inc"
 #include "iss_native_map_rt.h"
+#include "iss_native_movie.h"
 /* Logical screen width/height are used by the camera's aspect division. Guard
  * the actual US instructions too, rather than trusting a serial or EU offsets. */
 static const unsigned char iss_native_projection[] = {
@@ -237,9 +238,10 @@ static inline int iss_native_apply(unsigned char *image,uint64_t size,const char
         const IssNativeSite *s=sites+i;
         if(s->offset>size || s->length>size-s->offset || memcmp(image+s->offset,s->before,s->length))return 0;
     }
-    if(!iss_map_rt_check(image,size))return 0;
+    if(!iss_map_rt_check(image,size) || !iss_movie_check(image,size))return 0;
     for(unsigned i=0;i<ISS_NATIVE_SITE_COUNT;i++)memcpy(image+sites[i].offset,sites[i].after,sites[i].length);
     iss_map_rt_write(image,plan.ui_width,plan.ui_height);
+    iss_movie_write(image,plan.ui_width,plan.ui_height);
     if(exposure_entries>ISS_EXPOSURE_ORIGINAL_ENTRIES)iss_native_exposure_write(image,exposure_entries);
     return 1;
 }
