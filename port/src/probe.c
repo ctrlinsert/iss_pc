@@ -16,6 +16,7 @@
 #include "damage_hook.h"
 #include "view_hook.h"
 #include "iss_temporal_hook.h"
+#include "iss_native_render_hook.h"
 #include "iss_camera_hook.h"
 #include "iss_mouse_aim.h"
 #include "iss_trophies.h"
@@ -805,6 +806,36 @@ static void install_iss_temporal(const char *app0, Segment *segments, uint64_t c
     }
     protect(stubs, page_size, 5);
     puts("Temporal upscaling: game hooks ready (they run the game's own code until the renderer reports ready)");
+}
+/* Native renderer, game side (src/iss_native_render_hook.h): markers around effect draws. Only
+ * when ISS_NATIVE_RENDER names a pass; otherwise the image keeps its bytes. */
+static int iss_native_render_requested(void) {
+    const char *env = getenv("ISS_NATIVE_RENDER");
+    if (!env || !*env) return 0;
+    return strcmp(env, "0") && strcmp(env, "off") && strcmp(env, "none");
+}
+static void install_iss_native_render(const char *app0, Segment *segments, uint64_t count, uint64_t size) {
+    if (!iss_native_render_requested()) return;
+    char path[4096], serial[32] = "", version[32] = "";
+    snprintf(path, sizeof(path), "%s/sce_sys/param.sfo", app0 ? app0 : ".");
+    sfo_value(path, "TITLE_ID", serial, sizeof(serial), NULL);
+    sfo_value(path, "APP_VER", version, sizeof(version), NULL);
+    if (!iss_title_107(serial, version)) {
+        printf("Native renderer: game hooks unavailable (title '%s', version '%s'; needs CUSA00223 or CUSA00004 01.07)\n", serial, version);
+        return;
+    }
+    for (int i = 0; i < ISS_NR_SITE_COUNT; ++i)
+        if (!mapped(segments, count, iss_nr_sites[i].at, ISS_NR_SITE_LENGTH)) {
+            puts("Native renderer: game hooks unavailable (hook outside the executable segments)");
+            return;
+        }
+    unsigned char *stubs = allocate(page_size);
+    if (!iss_nr_install_hooks(image, size, stubs)) {
+        puts("Native renderer: game hooks unavailable (code differs, or the stubs are out of reach of the image)");
+        return;
+    }
+    protect(stubs, page_size, 5);
+    printf("Native renderer: game hooks ready (%d effect draw calls bracketed)\n", ISS_NR_SITE_COUNT);
 }
 /* The renderer's side of src/iss_temporal.h. */
 int iss_temporal_installed(void) { return iss_temporal_state.installed; }
@@ -1780,6 +1811,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_stat_multipliers(app0, segments, ns, size);
     if (gpu_enabled) install_view_tuning(segments, ns, size);
     if (gpu_enabled) install_iss_temporal(app0, segments, ns, size);
+    if (gpu_enabled) install_iss_native_render(app0, segments, ns, size);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif

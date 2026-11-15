@@ -12,7 +12,7 @@ namespace {
 
 // The pass implementations, by pass number. A pass without one is declined ("not implemented"),
 // so a hook can land before its pass and be checked with ISS_NATIVE_RENDER=probe.
-constexpr std::array<RunFn, kPassCount> kRun = {nullptr, nullptr};
+constexpr std::array<RunFn, kPassCount> kRun = {nullptr, nullptr, nullptr, nullptr};
 
 struct PassStats {
     u64 begins{}, ran{}, declined{}, blocked{};

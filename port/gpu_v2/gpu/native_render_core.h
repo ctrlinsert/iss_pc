@@ -93,12 +93,17 @@ enum class Pass : u32 {
     /// Diagnostic: bracketed spans are scanned and reported, nothing native runs and nothing is
     /// dropped. Lets a new hook be checked before its pass exists.
     Probe = 1,
+    /// CFxCopyTexture: a full-screen copy (frame capture). Payload: source T# (8), mode.
+    Copy = 2,
+    /// CFxFXAA: the anti-aliasing pass in FXAA mode. Payload: source T# (8), has-second, second T# (8).
+    Fxaa = 3,
     Count,
 };
 inline constexpr u32 kPassCount = static_cast<u32>(Pass::Count);
 static_assert(kPassCount <= 64, "the switch mask is 64 bits");
 
-inline constexpr std::array<std::string_view, kPassCount> kPassNames = {"none", "probe"};
+inline constexpr std::array<std::string_view, kPassCount> kPassNames = {"none", "probe", "copy",
+                                                                        "fxaa"};
 
 inline std::string_view PassName(u32 pass) {
     return pass < kPassCount ? kPassNames[pass] : std::string_view{"unknown"};

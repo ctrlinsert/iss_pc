@@ -56,7 +56,10 @@ natively, declined, was blocked, and how many draws and dispatches it replaced.
 | Stage | State |
 | --- | --- |
 | Markers, span check, switch, fallback, command processor suppression | done (`native_render_core.h`, `native_render.cpp`, `liverpool.cpp`) |
-| Game hooks bracketing the post chain | next, from a static study of the post chain |
-| First native post pass | after the hooks |
+| Game hooks: the post chain's FXAA and texture-copy draws bracketed (`src/iss_native_render_hook.h`, installed only when `ISS_NATIVE_RENDER` is set) | done; check in game with `ISS_NATIVE_RENDER=probe ISS_NATIVE_RENDER_LOG=1` |
+| Native copy pass (`copy`), to prove the plumbing: must match the engine pixel for pixel | next |
+| Native FXAA (`fxaa`), written from the public FXAA 3.11 algorithm | after the copy |
 
-Unit tests: `port/tests/test_native_render.cpp` (ctest `native_render`).
+Unit tests: `port/tests/test_native_render.cpp` and `test_native_render_hook.cpp` (ctest `native_render`,
+`native_render_hook`; the hook test also checks the sites against the real eboot when `ISS_TEST_EBOOT_ELF`
+names the unwrapped 1.07 ELF).
