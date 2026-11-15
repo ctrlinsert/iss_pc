@@ -19,6 +19,7 @@
 #include "iss_mouse_aim.h"
 #include "iss_trophies.h"
 #include "trophy_query_hook.h"
+#include "iss_stream_busy.h"
 #include "iss_camera_pitch_hook.h"
 #include "gpu/tlggpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
@@ -1054,6 +1055,17 @@ static void install_iss_camera_speed(const char *app0, Segment *segments, uint64
     printf("Camera speed: horizontal %.3gx, vertical %.3gx (angular limits; adaptive gain unchanged)\n",pan,tilt);
 }
 
+static void install_iss_stream_busy(Segment *segments,uint64_t count,uint64_t size){
+    const char *opt=getenv("TLG_STREAM_BUSY");if(opt&&!strcmp(opt,"0")){puts("Preview streams: busy-at-dequeue fix off (TLG_STREAM_BUSY=0)");return;}
+    int executable=0;
+    for(uint64_t i=0;i<count;i++)if((segments[i].flags&1)&&segments[i].address<=ISS_STREAM_BUSY_LOCK_LEA&&
+        ISS_STREAM_BUSY_SITE+sizeof(iss_stream_busy_site_bytes)<=segments[i].address+segments[i].size)executable=1;
+    if(!executable||!iss_stream_busy_valid(image,size)){puts("Preview streams: code guard mismatch; busy-at-dequeue fix not installed");return;}
+    unsigned char *stub=allocate(page_size);
+    iss_stream_busy_stub(stub,(uintptr_t)image);protect(stub,page_size,5);
+    iss_stream_busy_site(image+ISS_STREAM_BUSY_SITE,(uintptr_t)stub);
+    puts("Preview streams: marked busy at dequeue (skill tree preview race closed)");
+}
 static void install_iss_trophies(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     const char *opt=getenv("ISS_TROPHIES_PER_SAVE");if(!opt||strcmp(opt,"1"))return;
     char path[4096],title[32]="",version[32]="";
@@ -1723,6 +1735,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_iss_pitch_safeguard(app0, segments, ns, size);
     if (gpu_enabled) install_iss_mouse_aim(app0, segments, ns, size);
     if (gpu_enabled) install_iss_trophies(app0, segments, ns, size);
+    install_iss_stream_busy(segments, ns, size);
     if (gpu_enabled) install_iss_karma(app0, segments, ns, size, karma_before_runtime_rewrites);
     protect(traps, round_page((import_count + 1) * 32), 5);
     if (trace_stubs) protect(trace_stubs, round_page((import_count + 1) * TRACE_STUB_SIZE), 5);
