@@ -29,6 +29,10 @@ static_assert(ISS_NR_HEADER_WORDS == nr::kHeaderWords && ISS_NR_MAX_PAYLOAD == n
 static_assert(ISS_NR_PASS_COPY == static_cast<unsigned>(nr::Pass::Copy));
 static_assert(ISS_NR_PASS_FXAA == static_cast<unsigned>(nr::Pass::Fxaa));
 static_assert(ISS_NR_COPY_PAYLOAD <= ISS_NR_MAX_PAYLOAD && ISS_NR_FXAA_PAYLOAD <= ISS_NR_MAX_PAYLOAD);
+static_assert(ISS_NR_PASS_POSTBLEND == static_cast<unsigned>(nr::Pass::PostBlend));
+static_assert(ISS_NR_PASS_SMAA == static_cast<unsigned>(nr::Pass::Smaa));
+static_assert(ISS_NR_POSTBLEND_PAYLOAD <= ISS_NR_MAX_PAYLOAD && ISS_NR_SMAA_PAYLOAD <= ISS_NR_MAX_PAYLOAD);
+static_assert(ISS_NR_SITE_COUNT <= ISS_NR_MAX_SITES);
 
 namespace {
 
@@ -122,6 +126,72 @@ ISS_NATIVE_RENDER_ABI void GameFxaa(void* effect, unsigned char* ctx, uint64_t r
                            uint64_t(uintptr_t(src)), uint64_t(uintptr_t(second)), r9};
     std::memcpy(seen.args, a, sizeof(a));
     Emit(ctx);
+}
+
+float seen_value = 0;
+
+ISS_NATIVE_RENDER_ABI void GamePostBlend(void* effect, unsigned char* ctx, const void* a, const void* b,
+                                         const void* c, float value) {
+    ++seen.calls;
+    const uint64_t x[5] = {uint64_t(uintptr_t(effect)), uint64_t(uintptr_t(ctx)), uint64_t(uintptr_t(a)),
+                           uint64_t(uintptr_t(b)), uint64_t(uintptr_t(c))};
+    std::memcpy(seen.args, x, sizeof(x));
+    seen_value = value;
+    Emit(ctx);
+}
+
+ISS_NATIVE_RENDER_ABI void GameSmaa(void* manager, unsigned char* ctx, uint64_t rdx, const unsigned char* image,
+                                    uint64_t r8, const void* second) {
+    ++seen.calls;
+    const uint64_t x[6] = {uint64_t(uintptr_t(manager)), uint64_t(uintptr_t(ctx)), rdx,
+                           uint64_t(uintptr_t(image)), r8, uint64_t(uintptr_t(second))};
+    std::memcpy(seen.args, x, sizeof(x));
+    Emit(ctx);
+}
+
+void TestSlotWrappers() {
+    iss_nr_state = {};
+    iss_nr_state.postblend = &GamePostBlend;
+    iss_nr_state.smaa = &GameSmaa;
+    iss_nr_state.active = 1;
+    const uint32_t ta[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    const uint32_t tc[8] = {9, 10, 11, 12, 13, 14, 15, 16};
+    {
+        // PostBlend, second slot empty (the second chain passes 0): every argument and the float
+        // reach the game's routine; the payload has the bound flags and the float's bits.
+        FakeContext f(256);
+        seen = {};
+        iss_nr_postblend_wrapper(reinterpret_cast<void*>(0x10), f.ctx, ta, nullptr, tc, 0.625f);
+        CHECK(seen.calls == 1 && seen_value == 0.625f);
+        CHECK(seen.args[2] == uint64_t(uintptr_t(ta)) && seen.args[3] == 0 && seen.args[4] == uint64_t(uintptr_t(tc)));
+        nr::Marker begin;
+        CHECK(nr::ParseMarker(f.buffer.data(), f.Written(), begin));
+        CHECK(begin.pass == ISS_NR_PASS_POSTBLEND && begin.payload_words == ISS_NR_POSTBLEND_PAYLOAD);
+        CHECK(begin.payload[0] == 1 && std::memcmp(begin.payload + 1, ta, 32) == 0);
+        CHECK(begin.payload[9] == 0 && begin.payload[10] == 0 && begin.payload[17] == 0);
+        CHECK(begin.payload[18] == 1 && std::memcmp(begin.payload + 19, tc, 32) == 0);
+        float value;
+        std::memcpy(&value, begin.payload + 27, 4);
+        CHECK(value == 0.625f);
+        const uint32_t* after = f.buffer.data() + 1 + ISS_NR_HEADER_WORDS + ISS_NR_POSTBLEND_PAYLOAD;
+        CHECK(nr::ScanSpan(after, f.buffer.data() + f.Written(), begin).verdict == nr::Scan::Ok);
+    }
+    {
+        // SMAA: the input is an image object; its T# sits at +0xb4.
+        unsigned char object[0x100]{};
+        std::memcpy(object + ISS_NR_IMAGE_TSHARP, ta, 32);
+        FakeContext f(256);
+        seen = {};
+        iss_nr_smaa_wrapper(reinterpret_cast<void*>(0x20), f.ctx, 0x30, object, 0x40, tc);
+        CHECK(seen.calls == 1 && seen.args[2] == 0x30 && seen.args[3] == uint64_t(uintptr_t(object)));
+        CHECK(seen.args[4] == 0x40 && seen.args[5] == uint64_t(uintptr_t(tc)));
+        nr::Marker begin;
+        CHECK(nr::ParseMarker(f.buffer.data(), f.Written(), begin));
+        CHECK(begin.pass == ISS_NR_PASS_SMAA && begin.payload_words == ISS_NR_SMAA_PAYLOAD);
+        CHECK(begin.payload[0] == 1 && std::memcmp(begin.payload + 1, ta, 32) == 0);
+        CHECK(begin.payload[9] == 1 && std::memcmp(begin.payload + 10, tc, 32) == 0);
+    }
+    iss_nr_state = {};
 }
 
 void TestWrappers() {
@@ -271,8 +341,10 @@ int TestRealEboot() {
         CHECK(mem.data() + s.at + 5 + rel == stubs + i * ISS_NR_STUB_BYTES);
         uintptr_t to;
         std::memcpy(&to, stubs + i * ISS_NR_STUB_BYTES + 6, 8);
-        const uintptr_t expected = s.pass == ISS_NR_PASS_FXAA ? uintptr_t(&iss_nr_fxaa_wrapper)
-                                                              : uintptr_t(&iss_nr_copy_wrapper);
+        const uintptr_t expected = s.pass == ISS_NR_PASS_FXAA        ? uintptr_t(&iss_nr_fxaa_wrapper)
+                                   : s.pass == ISS_NR_PASS_POSTBLEND ? uintptr_t(&iss_nr_postblend_wrapper)
+                                   : s.pass == ISS_NR_PASS_SMAA      ? uintptr_t(&iss_nr_smaa_wrapper)
+                                                                     : uintptr_t(&iss_nr_copy_wrapper);
         CHECK(to == expected);
         // Only the call's displacement changed.
         CHECK(std::memcmp(mem.data() + s.at + 5, image.data() + s.at + 5, 16) == 0);
@@ -288,6 +360,7 @@ int main() {
     TestWriter();
     TestWrappers();
     TestSitesAndReport();
+    TestSlotWrappers();
     const int real = TestRealEboot();
     if (failures) {
         std::printf("native_render_hook: %d failure(s)\n", failures);

@@ -117,6 +117,22 @@ void TestSpanOk() {
     CHECK(r.resume == dcb.At(end + 1 + kHeaderWords));
     CHECK(r.draws == 2 && r.dispatches == 1);
     CHECK(r.target_writes == 1); // 0x318 is CB_COLOR0_BASE
+    CHECK(r.ps_address == 0);
+}
+
+void TestPixelShader() {
+    Dcb dcb;
+    dcb.Mark(kBegin, kProbe, 3);
+    dcb.Packet(0x76, {0x08, 0x00123456u, 0x12}); // SPI_SHADER_PGM_LO/HI_PS
+    dcb.Draw();
+    dcb.Packet(0x76, {0x07, 0, 0x00ABCDEFu});     // a second program, LO only (HI 0)
+    dcb.Mark(kEnd, kProbe, 3);
+    CHECK(ScanFrom(dcb, 0).ps_address == 0xABCDEF00ull);
+    Dcb first;
+    first.Mark(kBegin, kProbe, 3);
+    first.Packet(0x76, {0x08, 0x00123456u, 0x12});
+    first.Mark(kEnd, kProbe, 3);
+    CHECK(ScanFrom(first, 0).ps_address == ((0x12ull << 40) | (0x123456ull << 8)));
 }
 
 void TestTargetWrites() {
@@ -238,6 +254,7 @@ int main() {
     TestSwitches();
     TestSpanOk();
     TestTargetWrites();
+    TestPixelShader();
     TestTexture();
     TestSpanUnsafe();
     TestSpanBroken();

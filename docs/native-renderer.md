@@ -59,7 +59,9 @@ call site and markers written, so a marker that is written but never reaches the
 | --- | --- |
 | Markers, span check, switch, fallback, command processor suppression | done (`native_render_core.h`, `native_render.cpp`, `liverpool.cpp`) |
 | Game hooks: the post chain's FXAA and texture-copy draws bracketed (`src/iss_native_render_hook.h`, installed only when `ISS_NATIVE_RENDER` is set) | done; check in game with `ISS_NATIVE_RENDER=probe ISS_NATIVE_RENDER_LOG=1` |
-| Native copy pass (`copy`), to prove the plumbing: must match the engine pixel for pixel | next |
+| Hooks around PostBlend and SMAA T2x, the per-frame passes (the first probe runs showed FXAA and the copy are not per frame: the default anti-aliasing is SMAA T2x) | done; probe to confirm |
+| First native pass: PostBlend | next, after a static study of its inputs |
+| Native copy pass (`copy`): frame capture only | later |
 | Native FXAA (`fxaa`), written from the public FXAA 3.11 algorithm | after the copy |
 
 Unit tests: `port/tests/test_native_render.cpp` and `test_native_render_hook.cpp` (ctest `native_render`,

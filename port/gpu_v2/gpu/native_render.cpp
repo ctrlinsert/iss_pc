@@ -15,7 +15,7 @@ namespace {
 
 // The pass implementations, by pass number. A pass without one is declined ("not implemented"),
 // so a hook can land before its pass and be checked with ISS_NATIVE_RENDER=probe.
-constexpr std::array<RunFn, kPassCount> kRun = {nullptr, nullptr, nullptr, nullptr};
+constexpr std::array<RunFn, kPassCount> kRun = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
 
 struct PassStats {
     u64 begins{}, ran{}, declined{}, blocked{};
@@ -63,7 +63,8 @@ void LogSpan(PassStats& stats, const Marker& begin, const SpanResult& span, cons
                  span.draws, span.dispatches, int(verdict.size()), verdict.data());
     if (span.verdict == Scan::Unsafe)
         std::fprintf(stderr, " opcode=%02x word=%08x", span.bad_opcode, span.bad_word);
-    std::fprintf(stderr, " target_writes=%u -> %s\n", span.target_writes, outcome);
+    std::fprintf(stderr, " target_writes=%u ps=%010llx -> %s\n", span.target_writes,
+                 (unsigned long long)span.ps_address, outcome);
 }
 
 /// The images a pass would use: the source T#s of the payload and colour target 0 at BEGIN.
@@ -74,12 +75,27 @@ void LogImages(PassStats& stats, const Marker& begin, const AmdGpu::Regs& regs) 
                      (unsigned long long)t.address, t.width, t.height, t.data_format, t.num_format,
                      t.type);
     };
-    std::fprintf(stderr, "NATIVE_RENDER images seq=%u", begin.sequence);
-    if (begin.payload_words >= 8) print("src", DecodeTexture(begin.payload));
+    std::fprintf(stderr, "NATIVE_RENDER images pass=%.*s seq=%u", int(PassName(begin.pass).size()),
+                 PassName(begin.pass).data(), begin.sequence);
+    // Passes whose payload is image slots (bound, T#): print the bound ones.
+    const bool slots = begin.pass == static_cast<u32>(Pass::PostBlend) ||
+                       begin.pass == static_cast<u32>(Pass::Smaa);
+
+    if (!slots && begin.payload_words >= 8) print("src", DecodeTexture(begin.payload));
     if (begin.pass == static_cast<u32>(Pass::Copy) && begin.payload_words >= 9)
         std::fprintf(stderr, " mode=%d", int(begin.payload[8]));
     if (begin.pass == static_cast<u32>(Pass::Fxaa) && begin.payload_words >= 17 && begin.payload[8])
         print("second", DecodeTexture(begin.payload + 9));
+    if (slots) {
+        static constexpr const char* kSlot[3] = {"slot0", "slot1", "slot2"};
+        for (u32 i = 0; i < 3 && 9 * i + 9 <= begin.payload_words; ++i)
+            if (begin.payload[9 * i]) print(kSlot[i], DecodeTexture(begin.payload + 9 * i + 1));
+        if (begin.pass == static_cast<u32>(Pass::PostBlend) && begin.payload_words >= 28) {
+            float value;
+            std::memcpy(&value, begin.payload + 27, 4);
+            std::fprintf(stderr, " value=%g", value);
+        }
+    }
     const auto& cb = regs.color_buffers[0];
     if (cb) {
         std::fprintf(stderr, " cb0=%010llx pitch=%u height=%u fmt=%u/%u", (unsigned long long)cb.Address(),

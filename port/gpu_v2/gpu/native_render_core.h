@@ -97,13 +97,19 @@ enum class Pass : u32 {
     Copy = 2,
     /// CFxFXAA: the anti-aliasing pass in FXAA mode. Payload: source T# (8), has-second, second T# (8).
     Fxaa = 3,
+    /// CFxPostBlend: the colour composite before anti-aliasing, every frame. Payload: three image
+    /// slots (bound, T# 8), then the routine's float argument.
+    PostBlend = 4,
+    /// CFxSmaa: SMAA T2x, the game's default anti-aliasing, every frame. Payload: the input image
+    /// (bound, T# 8), the optional second image (bound, T# 8).
+    Smaa = 5,
     Count,
 };
 inline constexpr u32 kPassCount = static_cast<u32>(Pass::Count);
 static_assert(kPassCount <= 64, "the switch mask is 64 bits");
 
-inline constexpr std::array<std::string_view, kPassCount> kPassNames = {"none", "probe", "copy",
-                                                                        "fxaa"};
+inline constexpr std::array<std::string_view, kPassCount> kPassNames = {
+    "none", "probe", "copy", "fxaa", "postblend", "smaa"};
 
 inline std::string_view PassName(u32 pass) {
     return pass < kPassCount ? kPassNames[pass] : std::string_view{"unknown"};
@@ -179,7 +185,14 @@ struct SpanResult {
     /// A pass that takes its destination from the registers at BEGIN declines when it is not 0:
     /// the engine changed its target inside the span.
     u32 target_writes{};
+    /// The last pixel shader address the span set (SPI_SHADER_PGM_LO/HI_PS; 0 when none): which
+    /// engine shader the pass draws with, for matching a probe span to a shader dump.
+    u64 ps_address{};
 };
+
+/// SPI_SHADER_PGM_LO_PS / _HI_PS, SH register offsets.
+inline constexpr u32 kPsProgramLo = 0x08;
+inline constexpr u32 kPsProgramHi = 0x09;
 
 /// The colour target registers (CB_COLOR0_BASE .. CB_COLOR7_*), context register offsets.
 inline constexpr u32 kColorTargetFirst = 0x318;
@@ -251,8 +264,19 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin) 
             ok = true;
             break;
         }
+        case 0x76: { // SET_SH_REG
+            const u32 first = p[1] & 0xFFFF;
+            const u32 count = body - 1;
+            if (first <= kPsProgramLo && kPsProgramLo < first + count) {
+                const u64 lo = p[2 + kPsProgramLo - first];
+                u64 hi = 0;
+                if (kPsProgramHi < first + count) hi = p[2 + kPsProgramHi - first] & 0xFF;
+                r.ps_address = (lo << 8) | (hi << 40);
+            }
+            ok = true;
+            break;
+        }
         case 0x68: // SET_CONFIG_REG
-        case 0x76: // SET_SH_REG
         case 0x79: // SET_UCONFIG_REG
         case 0x2A: // INDEX_TYPE
         case 0x2F: // NUM_INSTANCES
