@@ -37,14 +37,17 @@ def make_sfo(entries):
 
 
 class TranslationTests(unittest.TestCase):
-    def test_every_key_has_both_languages(self):
+    def test_every_key_has_english_and_any_portuguese_is_filled(self):
+        # New strings are English only; existing ones keep their Portuguese (the translator falls back).
         for key, entry in STRINGS.items():
-            self.assertEqual({'en', 'pt'}, set(entry), key)
-            self.assertTrue(entry['en'].strip() and entry['pt'].strip(), key)
+            self.assertIn('en', entry, key)
+            self.assertLessEqual(set(entry), {'en', 'pt'}, key)
+            self.assertTrue(entry['en'].strip() and entry.get('pt', 'x').strip(), key)
 
     def test_placeholders_match_between_languages(self):
         for key, entry in STRINGS.items():
-            self.assertEqual(placeholders(entry['en']), placeholders(entry['pt']), key)
+            if 'pt' in entry:
+                self.assertEqual(placeholders(entry['en']), placeholders(entry['pt']), key)
 
     def test_no_key_hides_a_tk_key_with_other_placeholders(self):
         tk = logic.tk_text()
