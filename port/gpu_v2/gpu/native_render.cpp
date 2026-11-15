@@ -2,6 +2,7 @@
 #include "native_render.h"
 
 #include <array>
+#include <chrono>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -28,7 +29,7 @@ struct State {
     bool log{};
     std::array<PassStats, kPassCount> stats{};
     u32 current{}; ///< the pass whose span is being dropped (0: none)
-    u64 reports{};
+    std::chrono::steady_clock::time_point last_report{std::chrono::steady_clock::now()};
     State() {
         switches = ParseSwitches(std::getenv("ISS_NATIVE_RENDER"));
         const char* log_env = std::getenv("ISS_NATIVE_RENDER_LOG");
@@ -156,7 +157,10 @@ void NoteDropped(bool dispatch) {
 
 void Report() {
     auto& s = GetState();
-    if (!s.switches.mask || ++s.reports % 600 != 0) return;
+    if (!s.switches.mask) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now - s.last_report < std::chrono::seconds(10)) return;
+    s.last_report = now;
     for (u32 p = 1; p < kPassCount; ++p) {
         const auto& st = s.stats[p];
         if (!st.begins) continue;

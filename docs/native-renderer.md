@@ -36,8 +36,10 @@ temporal upscaler redirects the UI to output-size images.
 | `ISS_NATIVE_RENDER=probe` | Diagnostic: every bracketed span is checked and reported, nothing runs natively and nothing is dropped. For checking a new hook before its pass exists. |
 | `ISS_NATIVE_RENDER_LOG=1` | Prints the first spans of each pass (`NATIVE_RENDER span pass=... draws=... scan=...`) and why a pass declined. |
 
-Every 600 BEGIN markers the log has one `NATIVE_RENDER report` line per pass: how often it ran
-natively, declined, was blocked, and how many draws and dispatches it replaced.
+At most every 10 seconds (on a BEGIN) the log has one `NATIVE_RENDER report` line per pass: how
+often it ran natively, declined, was blocked, and how many draws and dispatches it replaced. The
+game side adds `NATIVE_RENDER hooks` at the first bracketed call and every 1024 after: calls per
+call site and markers written, so a marker that is written but never reaches the renderer shows.
 
 ## Rules for every pass
 

@@ -814,6 +814,18 @@ static int iss_native_render_requested(void) {
     if (!env || !*env) return 0;
     return strcmp(env, "0") && strcmp(env, "off") && strcmp(env, "none");
 }
+/* How often the game reaches the bracketed draws (first call, then every 1024): compared with the
+ * renderer's NATIVE_RENDER report, it tells whether markers are written but not seen. */
+static void iss_native_render_hook_report(void) {
+    fprintf(stderr, "NATIVE_RENDER hooks: calls=%u markers_written=%u not_written=%u sites:", iss_nr_state.sequence,
+            iss_nr_state.written, iss_nr_state.failed);
+    for (int i = 0; i < ISS_NR_SITE_COUNT && i < ISS_NR_MAX_SITES; ++i)
+        fprintf(stderr, " %s@%#x=%u", iss_nr_sites[i].pass == ISS_NR_PASS_FXAA ? "fxaa" : "copy",
+                (unsigned)iss_nr_sites[i].at, iss_nr_state.site_calls[i]);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+}
+
 static void install_iss_native_render(const char *app0, Segment *segments, uint64_t count, uint64_t size) {
     if (!iss_native_render_requested()) return;
     char path[4096], serial[32] = "", version[32] = "";
@@ -835,6 +847,7 @@ static void install_iss_native_render(const char *app0, Segment *segments, uint6
         return;
     }
     protect(stubs, page_size, 5);
+    iss_nr_state.report = iss_native_render_hook_report;
     printf("Native renderer: game hooks ready (%d effect draw calls bracketed)\n", ISS_NR_SITE_COUNT);
 }
 /* The renderer's side of src/iss_temporal.h. */

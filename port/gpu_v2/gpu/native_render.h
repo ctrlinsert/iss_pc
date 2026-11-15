@@ -59,7 +59,7 @@ const u32* OnBegin(const Services& services, const u32* packet, const u32* limit
 /// Command processor, a draw or dispatch dropped inside a native span.
 void NoteDropped(bool dispatch);
 
-/// Periodic report (OnBegin calls it: every 600 BEGIN markers).
+/// Periodic report (OnBegin calls it: at most every 10 seconds).
 void Report();
 
 } // namespace iss::native_render

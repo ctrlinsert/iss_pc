@@ -103,7 +103,12 @@ typedef struct IssNrState {
     volatile uint32_t written, failed; /* markers written / not written (no room) */
     IssNrCopyFn copy;
     IssNrFxaaFn fxaa;
+    void (*report)(void); /* optional: called every ISS_NR_REPORT_EVERY bracketed calls */
+    const unsigned char *image;
+    volatile uint32_t site_calls[ISS_NR_MAX_SITES]; /* calls per entry of iss_nr_sites */
 } IssNrState;
+
+enum { ISS_NR_REPORT_EVERY = 1024 };
 
 static IssNrState iss_nr_state;
 
@@ -142,7 +147,19 @@ static inline int iss_nr_write_marker(unsigned char *ctx, uint32_t kind, uint32_
 }
 
 static inline uint32_t iss_nr_next_sequence(void) {
-    return __atomic_add_fetch(&iss_nr_state.sequence, 1, __ATOMIC_RELAXED);
+    const uint32_t seq = __atomic_add_fetch(&iss_nr_state.sequence, 1, __ATOMIC_RELAXED);
+    if (iss_nr_state.report && (seq == 1 || seq % ISS_NR_REPORT_EVERY == 0)) iss_nr_state.report();
+    return seq;
+}
+
+/* Counts a call by its call site (the return address is the instruction after the game's call). */
+static inline void iss_nr_note_site(const void *return_address) {
+    if (!iss_nr_state.image) return;
+    for (int i = 0; i < ISS_NR_SITE_COUNT && i < ISS_NR_MAX_SITES; ++i)
+        if ((const unsigned char *)return_address == iss_nr_state.image + iss_nr_sites[i].at + 5) {
+            __atomic_add_fetch(&iss_nr_state.site_calls[i], 1, __ATOMIC_RELAXED);
+            return;
+        }
 }
 
 static inline void iss_nr_count(int ok) {
@@ -159,6 +176,7 @@ static ISS_NATIVE_RENDER_ABI void iss_nr_copy_wrapper(void *effect, unsigned cha
                                                       uint64_t s1) {
     int open = 0;
     uint32_t seq = 0;
+    iss_nr_note_site(__builtin_return_address(0));
     if (iss_nr_state.active && src) {
         uint32_t payload[ISS_NR_COPY_PAYLOAD];
         memcpy(payload, src, 32);
@@ -175,6 +193,7 @@ static ISS_NATIVE_RENDER_ABI void iss_nr_fxaa_wrapper(void *effect, unsigned cha
                                                       const void *src, const void *second, uint64_t r9) {
     int open = 0;
     uint32_t seq = 0;
+    iss_nr_note_site(__builtin_return_address(0));
     if (iss_nr_state.active && src) {
         uint32_t payload[ISS_NR_FXAA_PAYLOAD];
         memset(payload, 0, sizeof(payload));
@@ -220,6 +239,7 @@ static inline int iss_nr_install_hooks(unsigned char *image, uint64_t size, unsi
                                       (int64_t)(intptr_t)(site + 5));
         memcpy(site + 1, &rel, 4);
     }
+    iss_nr_state.image = image;
     iss_nr_state.installed = 1;
     iss_nr_state.active = 1;
     return 1;

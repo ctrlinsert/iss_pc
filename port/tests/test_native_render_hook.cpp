@@ -181,6 +181,27 @@ void TestWrappers() {
     iss_nr_state.active = 0;
 }
 
+int reports = 0;
+void CountReport() { ++reports; }
+
+void TestSitesAndReport() {
+    // Calls are counted by the return address: the instruction after the game's call.
+    static unsigned char fake_image[1];
+    iss_nr_state = {};
+    iss_nr_state.image = fake_image;
+    iss_nr_note_site(fake_image + iss_nr_sites[1].at + 5);
+    iss_nr_note_site(fake_image + iss_nr_sites[1].at + 5);
+    iss_nr_note_site(fake_image + iss_nr_sites[0].at + 5);
+    iss_nr_note_site(fake_image + iss_nr_sites[0].at + 4); // not a site
+    CHECK(iss_nr_state.site_calls[0] == 1 && iss_nr_state.site_calls[1] == 2);
+    for (int i = 2; i < ISS_NR_SITE_COUNT; ++i) CHECK(iss_nr_state.site_calls[i] == 0);
+    // The report runs at the first call, then every ISS_NR_REPORT_EVERY.
+    iss_nr_state.report = &CountReport;
+    for (int i = 0; i < 2 * ISS_NR_REPORT_EVERY; ++i) iss_nr_next_sequence();
+    CHECK(reports == 3);
+    iss_nr_state = {};
+}
+
 // The real eboot: segments placed at their virtual addresses, as the loader does.
 std::vector<unsigned char> LoadElf(const char* path) {
     std::vector<unsigned char> file;
@@ -266,6 +287,7 @@ int TestRealEboot() {
 int main() {
     TestWriter();
     TestWrappers();
+    TestSitesAndReport();
     const int real = TestRealEboot();
     if (failures) {
         std::printf("native_render_hook: %d failure(s)\n", failures);
