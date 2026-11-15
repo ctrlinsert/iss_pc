@@ -30,6 +30,11 @@ int main(){
  assert(iss_menu_scene_fit(ISS_MENU_SCENE_STARTING)&&iss_menu_scene_fit(ISS_MENU_SCENE_NO_HERO)&&iss_menu_scene_fit(ISS_MENU_SCENE_PAUSED)&&iss_menu_scene_fit(ISS_MENU_SCENE_MOVIE));
  assert(iss_menu_presentation_fit(7680,2160,iss_menu_scene_fit(ISS_MENU_SCENE_NO_HERO)));
  assert(!iss_menu_presentation_fit(3840,2160,iss_menu_scene_fit(ISS_MENU_SCENE_PAUSED)));
+ // Gameplay elements: x axis narrowed to 16:9 proportions, position kept; 16:9 output untouched.
+ assert(iss_ui_fit_top_level(0,0)&&iss_ui_fit_top_level(5,0xcdb7d0)&&iss_ui_fit_top_level(5,0xd6a390)&&!iss_ui_fit_top_level(5,0xd74668));
+ {float m[16]={1,0,0,0,0,1,0,0,0,0,1,0,674,476,0,0};assert(iss_ui_fit_transform(m,7680,2160));
+  assert(fabsf(m[0]-0.5f)<0.0001f&&m[5]==1&&m[12]==674&&m[13]==476);
+  float n[16]={1,0,0,0,0,1,0,0,0,0,1,0,674,476,0,0};assert(!iss_ui_fit_transform(n,3840,2160)&&n[0]==1);}
  nodes[0]={0xcdfc10,0,1870,1020,0};nodes[1]={0xd74668,1,0,0,0};nodes[2]={0xd795d0,2,0,0,0};
  assert(iss_menu_member(1,reader,nullptr));assert(iss_menu_member(3,reader,nullptr));
  auto original=nodes[0];for(unsigned f=0;f<4;f++){nodes[0]=original;if(f==0)nodes[0].vtable++;if(f==1)nodes[0].width++;if(f==2)nodes[0].height++;if(f==3)nodes[0].flags++;assert(!iss_menu_member(3,reader,nullptr));}nodes[0]=original;
