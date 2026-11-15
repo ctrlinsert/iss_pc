@@ -952,7 +952,9 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
         /* Mouse camera input never enters the legacy right-stick emulator.
          * If the guarded direct hook is unavailable, leave controller axes
          * untouched and do not silently revive old mouse settings. */
-        runtime_mouse_aim_motion(m.dx,m.dy,in.sensitivity,in.invert_y,1);
+        /* In the game's menus (pause, map, title) the mouse turns no camera: the pause map's own
+         * camera crept in zoom from leftover motion. Menu mouse support drives them deliberately. */
+        runtime_mouse_aim_motion(m.dx,m.dy,in.sensitivity,in.invert_y,!iss_menu_mouse_scene(runtime_menu_scene()));
     }
     if(aiming_can || pad_mode)runtime_mouse_aim_motion(0,0,in.sensitivity,in.invert_y,0);
     if (!aiming_can || pad_mode) { mouse_shake_reset(&mouse_shake); mouse_shaking=0; }

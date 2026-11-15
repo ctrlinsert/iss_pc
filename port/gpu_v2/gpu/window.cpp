@@ -171,6 +171,8 @@ bool WindowSDL::HandleMouse(const SDL_Event& event) {
         }
         return false;
     case SDL_EVENT_MOUSE_MOTION:
+        // The first motion after a capture is the pointer's jump into relative mode.
+        if (mouse_captured && SDL_GetTicksNS() - mouse_capture_ns < 100000000ull) return true;
         if (mouse_captured) {
             std::scoped_lock lock{mouse_mutex};
             mouse_state.dx += event.motion.xrel;
@@ -183,6 +185,11 @@ bool WindowSDL::HandleMouse(const SDL_Event& event) {
         const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
         if (!down && (mouse_swallow & bit)) {
             mouse_swallow &= ~bit;
+            return true;
+        }
+        // The click that focused the window (or is held as it is captured) is not a game button.
+        if (down && mouse_captured && SDL_GetTicksNS() - mouse_capture_ns < 300000000ull) {
+            mouse_swallow |= bit;
             return true;
         }
         if (!mouse_captured) {
@@ -237,6 +244,11 @@ void WindowSDL::UpdateMouseCapture() {
     }
     if (want != mouse_captured) {
         mouse_captured = want;
+        if (want) {
+            mouse_capture_ns = SDL_GetTicksNS();
+            float x, y;
+            mouse_swallow |= SDL_GetMouseState(&x, &y) & 0x1f; // buttons already down: their release too
+        }
         wheel_x = wheel_y = 0.0f;
         std::scoped_lock lock{mouse_mutex};
         mouse_state = TlgGpuMouse{};
