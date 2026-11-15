@@ -80,7 +80,7 @@ class Translator:
     def __call__(self, key, **fmt):
         if key in self.strings:
             entry = self.strings[key]
-            text = entry['pt'] if self.pt() else entry['en']
+            text = entry.get('pt', entry['en']) if self.pt() else entry['en']  # new strings are English only
         elif key in self.tk:
             en, pt = self.tk[key]
             text = pt if self.pt() else en

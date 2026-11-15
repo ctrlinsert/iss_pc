@@ -28,6 +28,9 @@ namespace Gdiplus { using std::min; using std::max; }
 #include "common/logging/log.h"
 #include "runtime_timeline.h"
 #include "sdl_window.h"
+
+// runtime_pad.c: a key binding has Esc (pause in gameplay, back in menus), so Esc keeps the mouse.
+extern "C" int runtime_pad_menu_keys_active(void);
 #include "tlg_graphics.h"
 #include "tlg_overlay.h"
 #include "tlg_settings.h"
@@ -160,13 +163,17 @@ bool WindowSDL::HandleMouse(const SDL_Event& event) {
         focused = mouse_test_start != 0; // the test runs unattended
         return false;
     case SDL_EVENT_KEY_DOWN:
-        // Esc is free in the game's layout; the menu (open) and the text/save boxes take it first.
-        if (event.key.key == SDLK_ESCAPE && !event.key.repeat && mouse_captured) {
+        // Esc is the game's while a key binding has it (pause in gameplay, back in menus) and the
+        // mouse stays; Alt+Tab or the Insert/F1 menu free it. Unbound, Esc frees the mouse. The
+        // port menu and the text/save boxes take Esc first.
+        if (event.key.key == SDLK_ESCAPE && !event.key.repeat && mouse_captured && !runtime_pad_menu_keys_active()) {
             mouse_released = true;
             return true;
         }
         return false;
     case SDL_EVENT_MOUSE_MOTION:
+        // The first motion after a capture is the pointer's jump into relative mode.
+        if (mouse_captured && SDL_GetTicksNS() - mouse_capture_ns < 100000000ull) return true;
         if (mouse_captured) {
             std::scoped_lock lock{mouse_mutex};
             mouse_state.dx += event.motion.xrel;
@@ -179,6 +186,11 @@ bool WindowSDL::HandleMouse(const SDL_Event& event) {
         const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
         if (!down && (mouse_swallow & bit)) {
             mouse_swallow &= ~bit;
+            return true;
+        }
+        // The click that focused the window (or is held as it is captured) is not a game button.
+        if (down && mouse_captured && SDL_GetTicksNS() - mouse_capture_ns < 300000000ull) {
+            mouse_swallow |= bit;
             return true;
         }
         if (!mouse_captured) {
@@ -233,6 +245,11 @@ void WindowSDL::UpdateMouseCapture() {
     }
     if (want != mouse_captured) {
         mouse_captured = want;
+        if (want) {
+            mouse_capture_ns = SDL_GetTicksNS();
+            float x, y;
+            mouse_swallow |= SDL_GetMouseState(&x, &y) & 0x1f; // buttons already down: their release too
+        }
         wheel_x = wheel_y = 0.0f;
         std::scoped_lock lock{mouse_mutex};
         mouse_state = TlgGpuMouse{};

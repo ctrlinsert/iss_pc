@@ -50,6 +50,7 @@ private:
     // not released with Esc. Window thread only.
     bool focused{}, mouse_captured{}, mouse_released{};
     u32 mouse_swallow{}; ///< buttons whose release belongs to the click that took the mouse
+    u64 mouse_capture_ns{}; ///< when the mouse was last captured: the focusing click and the warp are not game input
     float wheel_x{}, wheel_y{};
     u64 mouse_test_start{}, mouse_test_last{}; ///< TLG_MOUSE_TEST: synthetic motion and clicks
     bool HandleMouse(const SDL_Event& event);

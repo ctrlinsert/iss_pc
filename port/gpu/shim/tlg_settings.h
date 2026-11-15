@@ -189,6 +189,8 @@ struct Values {
     std::atomic<int> iss_power_keys[4]{62,63,64,65}; // SDL F5/F6/F7/F8
     std::atomic<bool> iss_power_instant{true};
     std::atomic<float> iss_power_glow{2.04f};
+    /// Menu key remap (TLG_MENU_KEY_MAP syntax, runtime_pad.c menu_map); written by Load only, read once.
+    std::string menu_key_map;
 };
 
 Values& Get();

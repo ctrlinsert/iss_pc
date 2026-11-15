@@ -5,6 +5,8 @@
 // runtime_mouse_aim.c (the native aim hook) needs the guest; pad tests run without it.
 int runtime_mouse_aim_installed(void) { return 0; }
 void runtime_power_wheel_status(IssPowerWheelStatus *out){memset(out,0,sizeof(*out));}
+int runtime_menu_scene(void){return ISS_MENU_SCENE_GAMEPLAY;}
+void runtime_input_trace_flush(void){}
 void runtime_power_wheel_request(int index){(void)index;}
 void runtime_power_wheel_visual(int open,int choice){(void)open;(void)choice;}
 void tlggpu_power_wheel_settings(int *enabled,int keys[4],int *instant){*enabled=0;*instant=0;memset(keys,0,4*sizeof(*keys));}
@@ -70,5 +72,66 @@ int main(void) {
     ButtonMap sides=key_map;
     assert(apply_button_map(&sides,"touchpad_right=Delete",true)==1);
     assert(pressed_by(&sides,SDL_SCANCODE_BACKSPACE)==0 && pressed_by(&sides,SDL_SCANCODE_DELETE)==CLICK_RIGHT);
+    /* Host actions: the interact key, tilt/shake and the stick keys have defaults and remap. */
+    assert(pressed_by(&key_map,SDL_SCANCODE_V)==ACT_INTERACT && pressed_by(&key_map,MOUSE_X2)==ACT_INTERACT);
+    assert(pressed_by(&key_map,SDL_SCANCODE_T)==ACT_TILT_RIGHT && pressed_by(&key_map,SDL_SCANCODE_Y)==ACT_SHAKE);
+    assert(pressed_by(&key_map,SDL_SCANCODE_W)==ACT_LS_UP && pressed_by(&key_map,SDL_SCANCODE_LEFT)==ACT_RS_LEFT);
+    ButtonMap acts=key_map;
+    assert(apply_button_map(&acts,"interact=E|Mouse X1,tilt_right=Q,ls_up=Up,rs_up=I",true)==4);
+    assert(pressed_by(&acts,SDL_SCANCODE_V)==0 && pressed_by(&acts,MOUSE_X2)==0);
+    assert(pressed_by(&acts,SDL_SCANCODE_E)==(BTN_SQUARE|ACT_INTERACT) && pressed_by(&acts,MOUSE_X1)==ACT_INTERACT);
+    assert(pressed_by(&acts,SDL_SCANCODE_T)==0 && pressed_by(&acts,SDL_SCANCODE_Q)==(BTN_TRIANGLE|ACT_TILT_RIGHT));
+    assert(pressed_by(&acts,SDL_SCANCODE_W)==0 && pressed_by(&acts,SDL_SCANCODE_UP)==ACT_LS_UP && pressed_by(&acts,SDL_SCANCODE_I)==(BTN_UP|ACT_RS_UP));
+    /* A source the player binds to a button leaves its default host action: r1=Mouse X2 takes X2
+     * away from interact, and V stays. */
+    ButtonMap x2=key_map;
+    assert(apply_button_map(&x2,"r1=Mouse X2",true)==1);
+    assert(pressed_by(&x2,MOUSE_X2)==BTN_R1 && pressed_by(&x2,SDL_SCANCODE_V)==ACT_INTERACT);
+    /* A button binding after an interact one still wins the source. */
+    ButtonMap both=key_map;
+    assert(apply_button_map(&both,"interact=V|Mouse X2,r1=Mouse X2",true)==2);
+    assert(pressed_by(&both,MOUSE_X2)==BTN_R1);
+    /* The gamepad takes interact too. */
+    ButtonMap padi=pad_map;
+    assert(apply_button_map(&padi,"interact=paddle1",false)==1);
+    assert(pressed_by(&padi,SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1)==ACT_INTERACT);
+
+    /* The menu keys (menu_map): Enter / left click select, Esc / right click go back, Q / E and
+     * Shift+Tab / Tab are the pause tabs (L2 / R2), F / R triangle / square, arrows the d-pad. */
+    static bool kb[SDL_SCANCODE_COUNT];
+    const uint32_t mleft=1u<<(MOUSE_LEFT-MOUSE_SOURCE), mright=1u<<(MOUSE_RIGHT-MOUSE_SOURCE);
+#define ONLY(code) (memset(kb,0,sizeof(kb)),kb[code]=true)
+    ONLY(SDL_SCANCODE_RETURN); assert(menu_keys(kb,0)==BTN_CROSS && map_keys(kb,0)==BTN_OPTIONS);
+    ONLY(SDL_SCANCODE_ESCAPE); assert(menu_keys(kb,0)==BTN_CIRCLE && map_keys(kb,0)==BTN_OPTIONS); /* pause in gameplay */
+    ONLY(SDL_SCANCODE_Q); assert(menu_keys(kb,0)==BTN_L2 && map_keys(kb,0)==BTN_TRIANGLE);
+    ONLY(SDL_SCANCODE_E); assert(menu_keys(kb,0)==BTN_R2);
+    ONLY(SDL_SCANCODE_TAB); assert(menu_keys(kb,0)==BTN_R2 && map_keys(kb,0)==CLICK_LEFT);
+    ONLY(SDL_SCANCODE_TAB); kb[SDL_SCANCODE_LSHIFT]=true; assert(menu_keys(kb,0)==BTN_L2); /* not circle (Shift) */
+    ONLY(SDL_SCANCODE_F); assert(menu_keys(kb,0)==BTN_TRIANGLE && map_keys(kb,0)==BTN_R2);
+    ONLY(SDL_SCANCODE_R); assert(menu_keys(kb,0)==BTN_SQUARE);
+    ONLY(SDL_SCANCODE_LSHIFT); assert(menu_keys(kb,0)==0); /* circle moved to Esc */
+    ONLY(SDL_SCANCODE_UP); assert(menu_keys(kb,0)==BTN_UP && map_keys(kb,0)==ACT_RS_UP);
+    ONLY(SDL_SCANCODE_W); assert(menu_keys(kb,0)==ACT_LS_UP); /* untouched gameplay keys stay */
+    ONLY(SDL_SCANCODE_1); assert(menu_keys(kb,0)==BTN_L1);
+    ONLY(SDL_SCANCODE_P); assert(menu_keys(kb,0)==BTN_OPTIONS);
+    memset(kb,0,sizeof(kb));
+    assert(menu_keys(kb,mleft)==BTN_CROSS && menu_keys(kb,mright)==BTN_CIRCLE && map_keys(kb,mleft)==BTN_R2);
+    assert(menu_keys(kb,1u<<(WHEEL_DOWN-MOUSE_SOURCE))==BTN_DOWN);
+    /* Side to side with the mouse: the thumb buttons (X2 is not interact here). */
+    assert(menu_keys(kb,1u<<(MOUSE_X1-MOUSE_SOURCE))==BTN_LEFT && menu_keys(kb,1u<<(MOUSE_X2-MOUSE_SOURCE))==BTN_RIGHT);
+    /* Remapped: Shift+names parse; cross=Space only. */
+    ButtonMap saved=menu_map;
+    assert(apply_button_map(&menu_map,"cross=Space,l2=Shift+Q",true)==2);
+    ONLY(SDL_SCANCODE_RETURN); assert(menu_keys(kb,0)==0);
+    ONLY(SDL_SCANCODE_Q); assert(menu_keys(kb,0)==0); kb[SDL_SCANCODE_LSHIFT]=true; assert(menu_keys(kb,0)==BTN_L2);
+    menu_map=saved;
+    /* A menu key held when the menu opens stays silent until released (the Enter that paused). */
+    ONLY(SDL_SCANCODE_RETURN);
+    menu_latch_update(false,kb,0); menu_latch_update(true,kb,mleft);
+    assert(menu_latch.keys[SDL_SCANCODE_RETURN] && menu_latch.mouse==mleft);
+    memset(kb,0,sizeof(kb)); menu_latch_update(true,kb,0);
+    assert(!menu_latch.keys[SDL_SCANCODE_RETURN] && !menu_latch.mouse);
+    ONLY(SDL_SCANCODE_W); menu_latch_update(false,kb,0); assert(!menu_latch.keys[SDL_SCANCODE_W]); /* gameplay-only keys */
+#undef ONLY
     puts("PASS: pad and key maps");
 }
