@@ -21,6 +21,7 @@
 #include "iss_aim_assist.h"
 #include "iss_trophies.h"
 #include "trophy_query_hook.h"
+#include "iss_stream_busy.h"
 #include "iss_camera_pitch_hook.h"
 #include "gpu/tlggpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
@@ -55,6 +56,7 @@ static int entered_game;
 static int gpu_enabled;
 static unsigned cpu_missing_sets; /* CPU_SET_* the host lacks; the guest code needs them rewritten */
 static IsaTable *isa_table; /* rewritten sites (--isa-rewrite); the fault handlers and the report read it */
+static unsigned char *near_patch_page; /* within rel32 reach of the image, see main */
 #ifndef _WIN32
 static uintptr_t guest_code_end; /* end of the image and its stub areas (emulation, red zone); TLG_CLOBBER_RED_ZONE */
 #endif
@@ -1124,6 +1126,26 @@ static void install_iss_camera_speed(const char *app0, Segment *segments, uint64
     printf("Camera speed: horizontal %.3gx, vertical %.3gx (angular limits; adaptive gain unchanged)\n",pan,tilt);
 }
 
+static void install_iss_stream_busy(Segment *segments,uint64_t count,uint64_t size){
+    const char *opt=getenv("TLG_STREAM_BUSY");if(opt&&!strcmp(opt,"0")){puts("Preview streams: busy fix off (TLG_STREAM_BUSY=0)");return;}
+    int executable=0,kill_executable=0;
+    for(uint64_t i=0;i<count;i++){
+        if(!(segments[i].flags&1))continue;
+        if(segments[i].address<=ISS_STREAM_BUSY_LOCK_LEA&&ISS_STREAM_BUSY_SITE+sizeof(iss_stream_busy_site_bytes)<=segments[i].address+segments[i].size)executable=1;
+        if(segments[i].address<=ISS_STREAM_KILL_DISPATCH&&ISS_STREAM_KILL_DISPATCH+sizeof(iss_stream_kill_dispatch_bytes)<=segments[i].address+segments[i].size)kill_executable=1;
+    }
+    /* Both parts or neither: busy at dequeue without the kill path's check still crashes. */
+    if(!executable||!kill_executable||!iss_stream_busy_valid(image,size)||!iss_stream_kill_valid(image,size)||!near_patch_page){
+        puts("Preview streams: code guard mismatch; busy fix not installed");return;
+    }
+    unsigned char *stub=allocate(page_size);
+    iss_stream_busy_stub(stub,(uintptr_t)image);protect(stub,page_size,5);
+    iss_stream_kill_stub(near_patch_page,(uintptr_t)image);
+    if(!iss_stream_kill_table(image,(uintptr_t)near_patch_page)){puts("Preview streams: patch page out of reach; busy fix not installed");return;}
+    protect(near_patch_page,page_size,5);
+    iss_stream_busy_site(image+ISS_STREAM_BUSY_SITE,(uintptr_t)stub);
+    puts("Preview streams: marked busy at dequeue; kills of a busy stream deferred (skill tree preview race closed)");
+}
 static void install_iss_trophies(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     const char *opt=getenv("ISS_TROPHIES_PER_SAVE");if(!opt||strcmp(opt,"1"))return;
     char path[4096],title[32]="",version[32]="";
@@ -1753,7 +1775,9 @@ int main(int argc, char **argv) {
     }
     const char *live_option=getenv("ISS_NATIVE_LIVE_RESIZE");
     size_t live_data_size=iss_native_live_option(live_option)?page_size:0;
-    image = allocate(round_page(size) + stub_area + red_zone_area + live_data_size);
+    /* One page after everything else for patch stubs that rel32 jump tables point at. */
+    image = allocate(round_page(size) + stub_area + red_zone_area + live_data_size + page_size);
+    near_patch_page = image + round_page(size) + stub_area + red_zone_area + live_data_size;
     if(live_data_size)native_live_cells=image+round_page(size)+stub_area+red_zone_area;
     unsigned char *stubs = image + round_page(size);
 #ifndef _WIN32
@@ -1890,6 +1914,7 @@ int main(int argc, char **argv) {
     install_iss_touch_reads(app0, segments, ns, size);
     install_iss_input_trace(app0, segments, ns, size);
     if (gpu_enabled) install_iss_trophies(app0, segments, ns, size);
+    install_iss_stream_busy(segments, ns, size);
     if (gpu_enabled) install_iss_karma(app0, segments, ns, size, karma_before_runtime_rewrites);
     protect(traps, round_page((import_count + 1) * 32), 5);
     if (trace_stubs) protect(trace_stubs, round_page((import_count + 1) * TRACE_STUB_SIZE), 5);
