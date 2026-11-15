@@ -7,6 +7,7 @@
 #include "runtime.h"
 #include "iss_karma.h"
 #include "iss_prompt_icons.h"
+#include "iss_menu_script.h"
 #include "gpu/tlggpu.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -282,6 +283,7 @@ static int64_t do_open(const char *guest,int flags,int mode) {
     pthread_mutex_unlock(&lock);
     if(karma_save_file(&files[fd]))iss_karma_save_open(fd,(flags&3)!=0,(uint64_t)s.st_size);
     if(files[fd].prompts)iss_prompt_icons_open(fd,path); /* button prompt icons (iss_prompt_icons.h) */
+    if(!dir && !(flags&3))runtime_game_menu_open(fd,guest); /* game menu rows (runtime_game_menu.c) */
     if (runtime_verbose()) {
         static unsigned verbose_opens;
         const unsigned n=__atomic_fetch_add(&verbose_opens,1,__ATOMIC_RELAXED);
@@ -315,6 +317,7 @@ static int64_t do_close(int fd) {
     if (f->host>=0) close(f->host);
     if(karma_save_file(f))iss_karma_save_close(fd);
     if(f->prompts)iss_prompt_icons_close(fd);
+    runtime_game_menu_close(fd);
     free_listing(f->dir);
     pthread_mutex_destroy(&f->io);
     *f=(File){0};
@@ -446,7 +449,7 @@ static int64_t do_read(int fd,void *buffer,uint64_t size) {
         pthread_mutex_unlock(&f->io);
     } else n=full_io(h,buffer,size,-1);
 #else
-    if(fd>=3&&(karma_save_file(get(fd))||(get(fd)&&get(fd)->prompts)))karma_offset=host_lseek(h,0,SEEK_CUR);
+    if(fd>=3&&(karma_save_file(get(fd))||(get(fd)&&get(fd)->prompts)||runtime_game_menu_file(fd)))karma_offset=host_lseek(h,0,SEEK_CUR);
     ssize_t n=full_io(h,buffer,size,-1);
 #endif
     if (n<0) { int e=errno; log_read_problem("read",fd,size,-1,n,e); return -e; }
@@ -454,6 +457,7 @@ static int64_t do_read(int fd,void *buffer,uint64_t size) {
     karma_trace_io(fd,"read",karma_offset,n);
     if(n>0&&karma_save_file(get(fd)))iss_karma_save_part(fd,buffer,karma_offset,n,0);
     if(n>0&&fd>=3&&get(fd)&&get(fd)->prompts)iss_prompt_icons_part(fd,buffer,karma_offset,n);
+    if(n>0&&runtime_game_menu_file(fd))runtime_game_menu_part(fd,buffer,karma_offset,n);
     return n;
 }
 static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
@@ -465,6 +469,7 @@ static int64_t do_pread(int fd,void *buffer,uint64_t size,int64_t offset) {
     karma_trace_io(fd,"pread",offset,n);
     if(n>0&&karma_save_file(get(fd)))iss_karma_save_part(fd,buffer,offset,n,0);
     if(n>0&&fd>=3&&get(fd)&&get(fd)->prompts)iss_prompt_icons_part(fd,buffer,offset,n);
+    if(n>0&&runtime_game_menu_file(fd))runtime_game_menu_part(fd,buffer,offset,n);
     return n;
 }
 #ifdef _WIN32

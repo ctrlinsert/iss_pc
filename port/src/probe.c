@@ -16,6 +16,8 @@
 #include "view_hook.h"
 #include "iss_temporal_hook.h"
 #include "iss_camera_hook.h"
+#include "iss_menu_vm_hook.h"
+#include "iss_menu_script.h"
 #include "iss_mouse_aim.h"
 #include "iss_trophies.h"
 #include "trophy_query_hook.h"
@@ -1054,6 +1056,41 @@ static void install_iss_camera_speed(const char *app0, Segment *segments, uint64
     printf("Camera speed: horizontal %.3gx, vertical %.3gx (angular limits; adaptive gain unchanged)\n",pan,tilt);
 }
 
+/* Opt-in (ISS_GAME_MENU=1) prototype: new rows in the game's own Options menu. Extra script
+ * opcodes reach runtime_game_menu.c through the interpreter's error path (iss_menu_vm_hook.h);
+ * the Options script is patched only once this hook is in place. */
+static void install_iss_game_menu(const char *app0, Segment *segments, uint64_t count, uint64_t size) {
+    const char *option = getenv("ISS_GAME_MENU");
+    if (!option || strcmp(option, "1")) return;
+    char path[4096], serial[32] = "", version[32] = "";
+    snprintf(path, sizeof(path), "%s/sce_sys/param.sfo", app0 ? app0 : ".");
+    sfo_value(path, "TITLE_ID", serial, sizeof(serial), NULL);
+    sfo_value(path, "APP_VER", version, sizeof(version), NULL);
+    int executable = 0;
+    for (uint64_t i = 0; i < count; ++i)
+        if ((segments[i].flags & 1) && segments[i].address <= ISS_MENU_VM_DISPATCH &&
+            ISS_MENU_VM_ERROR + 16 - segments[i].address <= segments[i].size) executable = 1;
+    if (!iss_camera_title_supported(serial, version) || !executable || !iss_menu_vm_signature(image, size)) {
+        puts("Game menu: disabled (title/version or script interpreter signature mismatch)");
+        return;
+    }
+    unsigned char *stub = allocate(page_size);
+    const int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + ISS_MENU_VM_ERROR + 5);
+    if (delta < INT32_MIN || delta > INT32_MAX) {
+        puts("Game menu: disabled (hook outside relative-jump range)");
+        return;
+    }
+    if (iss_menu_vm_build_stub(stub, (uintptr_t)runtime_game_menu_vm_op, (uintptr_t)image) > page_size)
+        fail("game menu stub overflow");
+    protect(stub, page_size, 5);
+    const int32_t relative = (int32_t)delta;
+    image[ISS_MENU_VM_ERROR] = 0xe9;
+    memcpy(image + ISS_MENU_VM_ERROR + 1, &relative, 4);
+    memset(image + ISS_MENU_VM_ERROR + 5, 0x90, sizeof(iss_menu_vm_error) - 5);
+    runtime_game_menu_enable();
+    puts("Game menu: script hook ready (Options gets new rows when core_common loads)");
+}
+
 static void install_iss_trophies(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     const char *opt=getenv("ISS_TROPHIES_PER_SAVE");if(!opt||strcmp(opt,"1"))return;
     char path[4096],title[32]="",version[32]="";
@@ -1720,6 +1757,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_iss_hud_corners(app0, segments, ns, size);
     if (gpu_enabled) install_iss_hud_trace(app0, segments, ns, size);
     if (gpu_enabled) install_iss_camera_speed(app0, segments, ns, size);
+    if (gpu_enabled) install_iss_game_menu(app0, segments, ns, size);
     if (gpu_enabled) install_iss_pitch_safeguard(app0, segments, ns, size);
     if (gpu_enabled) install_iss_mouse_aim(app0, segments, ns, size);
     if (gpu_enabled) install_iss_trophies(app0, segments, ns, size);
