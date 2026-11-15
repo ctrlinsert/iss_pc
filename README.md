@@ -244,7 +244,7 @@ The **Light glare (occlusion)** selector is on the launcher's **Play** screen (a
 
 The port's menu opens with **Insert or F1** (F1 for keyboards without Insert), or R3+L2 on a controller. The mouse works with or without a controller (its buttons add to the controller's). The game window captures the mouse while it has focus and the Insert menu is closed; **Esc releases it** (the cursor comes back) and **a click in the window captures it again** (that click is not a game button).
 
-**Camera and buttons:**
+**Camera and buttons** (the buttons do the same in the game's menus, so the right and left buttons page the pause tabs like L2 and R2; `TLG_MENU_MOUSE=clicks` makes left confirm and right go back in menus instead, which the game's prompts do not show):
 
 | Mouse | In the game |
 |---|---|
@@ -252,7 +252,8 @@ The port's menu opens with **Insert or F1** (F1 for keyboards without Insert), o
 | Left button | R2 (use the power / shoot) |
 | Right button | L2 (aim) |
 | Middle button | R3 |
-| Side buttons X1 / X2 and the wheel | free (see `ISS_KEY_MAP`); X1 is also a touchpad-mode key |
+| Side buttons X1 / X2 | free (see `ISS_KEY_MAP`); X1 is also a touchpad-mode key |
+| Wheel | in the game's menus, one item up or down per notch; free in gameplay (see `ISS_KEY_MAP`) |
 | Sensor on (sensor mode, T or G) | the mouse points the graffiti spray can instead of turning the camera |
 
 **Touchpad mode:** hold **Left Ctrl** or the mouse's **X1 side button**. While the mode is on the camera does not turn: mouse motion moves a virtual finger over the touchpad (a small pad in the bottom-left corner of the screen shows where it is) and the buttons become the finger:

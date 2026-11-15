@@ -1161,10 +1161,10 @@ static void sample_host(PadData *d) {
     last_mouse=mouse;
     uint32_t menu_buttons=0;
     {
-        static int menu_mouse=-1;
-        if (menu_mouse<0) { const char *e=getenv("TLG_MENU_MOUSE"); menu_mouse=!(e && *e=='0'); }
+        static int menu_mouse=-1; /* 0 off, 1 the wheel, 2 the wheel and the clicks (iss_menu_mouse.h) */
+        if (menu_mouse<0) { const char *e=getenv("TLG_MENU_MOUSE"); menu_mouse=e && *e=='0' ? 0 : e && !strcmp(e,"clicks") ? 2 : 1; }
         if (menu_mouse && !mouse_pad.active && iss_menu_mouse_scene(runtime_menu_scene()))
-            menu_buttons=iss_menu_mouse_buttons(&mouse,MOUSE_LEFT-MOUSE_SOURCE,MOUSE_RIGHT-MOUSE_SOURCE,
+            menu_buttons=iss_menu_mouse_buttons(&mouse,menu_mouse==2,MOUSE_LEFT-MOUSE_SOURCE,MOUSE_RIGHT-MOUSE_SOURCE,
                 WHEEL_UP-MOUSE_SOURCE,WHEEL_DOWN-MOUSE_SOURCE,BTN_CROSS,BTN_CIRCLE,BTN_UP,BTN_DOWN);
     }
     /* The interact key held with the right mouse button: two fingers pressing both ends of the
