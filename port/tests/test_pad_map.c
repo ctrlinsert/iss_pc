@@ -94,5 +94,41 @@ int main(void) {
     ButtonMap padi=pad_map;
     assert(apply_button_map(&padi,"interact=paddle1",false)==1);
     assert(pressed_by(&padi,SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1)==ACT_INTERACT);
+
+    /* The menu keys (menu_map): Enter / left click select, Esc / right click go back, Q / E and
+     * Shift+Tab / Tab are the pause tabs (L2 / R2), F / R triangle / square, arrows the d-pad. */
+    static bool kb[SDL_SCANCODE_COUNT];
+    const uint32_t mleft=1u<<(MOUSE_LEFT-MOUSE_SOURCE), mright=1u<<(MOUSE_RIGHT-MOUSE_SOURCE);
+#define ONLY(code) (memset(kb,0,sizeof(kb)),kb[code]=true)
+    ONLY(SDL_SCANCODE_RETURN); assert(menu_keys(kb,0)==BTN_CROSS && map_keys(kb,0)==BTN_OPTIONS);
+    ONLY(SDL_SCANCODE_ESCAPE); assert(menu_keys(kb,0)==BTN_CIRCLE && map_keys(kb,0)==0);
+    ONLY(SDL_SCANCODE_Q); assert(menu_keys(kb,0)==BTN_L2 && map_keys(kb,0)==BTN_TRIANGLE);
+    ONLY(SDL_SCANCODE_E); assert(menu_keys(kb,0)==BTN_R2);
+    ONLY(SDL_SCANCODE_TAB); assert(menu_keys(kb,0)==BTN_R2 && map_keys(kb,0)==CLICK_LEFT);
+    ONLY(SDL_SCANCODE_TAB); kb[SDL_SCANCODE_LSHIFT]=true; assert(menu_keys(kb,0)==BTN_L2); /* not circle (Shift) */
+    ONLY(SDL_SCANCODE_F); assert(menu_keys(kb,0)==BTN_TRIANGLE && map_keys(kb,0)==BTN_R2);
+    ONLY(SDL_SCANCODE_R); assert(menu_keys(kb,0)==BTN_SQUARE);
+    ONLY(SDL_SCANCODE_LSHIFT); assert(menu_keys(kb,0)==0); /* circle moved to Esc */
+    ONLY(SDL_SCANCODE_UP); assert(menu_keys(kb,0)==BTN_UP && map_keys(kb,0)==ACT_RS_UP);
+    ONLY(SDL_SCANCODE_W); assert(menu_keys(kb,0)==ACT_LS_UP); /* untouched gameplay keys stay */
+    ONLY(SDL_SCANCODE_1); assert(menu_keys(kb,0)==BTN_L1);
+    ONLY(SDL_SCANCODE_P); assert(menu_keys(kb,0)==BTN_OPTIONS);
+    memset(kb,0,sizeof(kb));
+    assert(menu_keys(kb,mleft)==BTN_CROSS && menu_keys(kb,mright)==BTN_CIRCLE && map_keys(kb,mleft)==BTN_R2);
+    assert(menu_keys(kb,1u<<(WHEEL_DOWN-MOUSE_SOURCE))==BTN_DOWN);
+    /* Remapped: Shift+names parse; cross=Space only. */
+    ButtonMap saved=menu_map;
+    assert(apply_button_map(&menu_map,"cross=Space,l2=Shift+Q",true)==2);
+    ONLY(SDL_SCANCODE_RETURN); assert(menu_keys(kb,0)==0);
+    ONLY(SDL_SCANCODE_Q); assert(menu_keys(kb,0)==0); kb[SDL_SCANCODE_LSHIFT]=true; assert(menu_keys(kb,0)==BTN_L2);
+    menu_map=saved;
+    /* A menu key held when the menu opens stays silent until released (the Enter that paused). */
+    ONLY(SDL_SCANCODE_RETURN);
+    menu_latch_update(false,kb,0); menu_latch_update(true,kb,mleft);
+    assert(menu_latch.keys[SDL_SCANCODE_RETURN] && menu_latch.mouse==mleft);
+    memset(kb,0,sizeof(kb)); menu_latch_update(true,kb,0);
+    assert(!menu_latch.keys[SDL_SCANCODE_RETURN] && !menu_latch.mouse);
+    ONLY(SDL_SCANCODE_W); menu_latch_update(false,kb,0); assert(!menu_latch.keys[SDL_SCANCODE_W]); /* gameplay-only keys */
+#undef ONLY
     puts("PASS: pad and key maps");
 }

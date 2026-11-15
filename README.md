@@ -244,7 +244,7 @@ The **Light glare (occlusion)** selector is on the launcher's **Play** screen (a
 
 The port's menu opens with **Insert or F1** (F1 for keyboards without Insert), or R3+L2 on a controller. The mouse works with or without a controller (its buttons add to the controller's). The game window captures the mouse while it has focus and the Insert menu is closed; **Esc releases it** (the cursor comes back) and **a click in the window captures it again** (that click is not a game button).
 
-**Camera and buttons** (the buttons do the same in the game's menus, so the right and left buttons page the pause tabs like L2 and R2; `TLG_MENU_MOUSE=clicks` makes left confirm and right go back in menus instead, which the game's prompts do not show):
+**Camera and buttons** (in the game's menus the menu keys take over: left click selects, right click goes back, the wheel moves; see **Menu keys** below):
 
 | Mouse | In the game |
 |---|---|
@@ -255,6 +255,8 @@ The port's menu opens with **Insert or F1** (F1 for keyboards without Insert), o
 | Side buttons X1 / X2 | free (see `ISS_KEY_MAP`); X1 is also a touchpad-mode key |
 | Wheel | in the game's menus, one item up or down per notch; free in gameplay (see `ISS_KEY_MAP`) |
 | Sensor on (sensor mode, T or G) | the mouse points the graffiti spray can instead of turning the camera |
+
+**Menu keys** (title and main menus, loading, pause; experimental, the game's prompts still show the PS4 buttons): **Enter**, **Space** or **left click** select (cross); **Esc**, **Backspace** or **right click** go back (circle; Esc keeps the mouse here); **Q / E** and **Shift+Tab / Tab** change tabs (L2 / R2); **F** is triangle (Options and Saves), **R** square (Abandon Mission); the **arrows** and the **wheel** move (d-pad); **P** is OPTIONS. Other keys keep their gameplay job (WASD the left stick, 1 / 3 L1 / R1). A key held when a menu opens or closes does nothing until released. `TLG_MENU_KEY_MAP` or tlg.ini `menu_key_map` remap them (the `ISS_KEY_MAP` syntax, `Shift+` names a Shift chord); `TLG_MENU_KEYS=0` turns them off (then `TLG_MENU_MOUSE` applies as before).
 
 **Touchpad mode:** hold **Left Ctrl** or the mouse's **X1 side button**. While the mode is on the camera does not turn: mouse motion moves a virtual finger over the touchpad (a small pad in the bottom-left corner of the screen shows where it is) and the buttons become the finger:
 

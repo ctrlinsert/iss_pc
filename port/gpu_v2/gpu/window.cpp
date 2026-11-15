@@ -28,6 +28,9 @@ namespace Gdiplus { using std::min; using std::max; }
 #include "common/logging/log.h"
 #include "runtime_timeline.h"
 #include "sdl_window.h"
+
+// runtime_pad.c: a game menu is up and the menu keys bind Esc (back), so Esc keeps the mouse.
+extern "C" int runtime_pad_menu_keys_active(void);
 #include "tlg_graphics.h"
 #include "tlg_overlay.h"
 #include "tlg_settings.h"
@@ -161,7 +164,8 @@ bool WindowSDL::HandleMouse(const SDL_Event& event) {
         return false;
     case SDL_EVENT_KEY_DOWN:
         // Esc is free in the game's layout; the menu (open) and the text/save boxes take it first.
-        if (event.key.key == SDLK_ESCAPE && !event.key.repeat && mouse_captured) {
+        // In the game's own menus it is the menu keys' Back, and the mouse stays.
+        if (event.key.key == SDLK_ESCAPE && !event.key.repeat && mouse_captured && !runtime_pad_menu_keys_active()) {
             mouse_released = true;
             return true;
         }

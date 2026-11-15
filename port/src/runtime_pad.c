@@ -18,6 +18,7 @@
 #include <math.h>
 #include <string.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <time.h>
 #include <SDL3/SDL.h>
 #include "iss_mouse_aim.h"
@@ -299,6 +300,9 @@ static const struct { const char *name; uint32_t ps; } ps_names[]={
  * the wheel directions (pulses, see sample_mouse). */
 enum { MOUSE_SOURCE=0x10000, MOUSE_LEFT=MOUSE_SOURCE, MOUSE_MIDDLE, MOUSE_RIGHT, MOUSE_X1, MOUSE_X2,
        WHEEL_UP, WHEEL_DOWN, WHEEL_LEFT, WHEEL_RIGHT, MOUSE_SOURCE_END };
+/* "Shift+<name>": the source only while a Shift key is held. The same source without the flag
+ * then counts only while Shift is up (Tab = next tab, Shift+Tab = previous tab). */
+enum { SOURCE_SHIFT=0x40000000 };
 static const struct { const char *name; int source; } mouse_names[]={
     {"Mouse Left",MOUSE_LEFT}, {"Mouse Middle",MOUSE_MIDDLE}, {"Mouse Right",MOUSE_RIGHT},
     {"Mouse X1",MOUSE_X1}, {"Mouse X2",MOUSE_X2}, {"Wheel Up",WHEEL_UP}, {"Wheel Down",WHEEL_DOWN},
@@ -328,6 +332,23 @@ static ButtonMap key_map={{
     {SDL_SCANCODE_W,ACT_LS_UP}, {SDL_SCANCODE_S,ACT_LS_DOWN}, {SDL_SCANCODE_A,ACT_LS_LEFT}, {SDL_SCANCODE_D,ACT_LS_RIGHT},
     {SDL_SCANCODE_UP,ACT_RS_UP}, {SDL_SCANCODE_DOWN,ACT_RS_DOWN}, {SDL_SCANCODE_LEFT,ACT_RS_LEFT}, {SDL_SCANCODE_RIGHT,ACT_RS_RIGHT},
 },35};
+/* The menu keys, used while the game shows a menu (title and main menus, loading, pause; see
+ * iss_menu_mouse_scene): Enter / Space / left click select (cross), Esc / Backspace / right click
+ * go back (circle), Q / E and Shift+Tab / Tab change tabs (L2 / R2: the pause tabs), F and R are
+ * triangle (Options and Saves) and square (Abandon Mission), the arrows and the wheel move (d-pad),
+ * P is OPTIONS. A PS4 button bound here is pressed only by its menu keys while a menu is up, and a
+ * key bound here does only its menu job; every other key keeps its gameplay binding (WASD still
+ * moves the left stick, 1 / 3 are still L1 / R1). TLG_MENU_KEY_MAP or tlg.ini menu_key_map
+ * remap it (the TLG_KEY_MAP syntax); TLG_MENU_KEYS=0 turns it off. */
+static ButtonMap menu_map={{
+    {SDL_SCANCODE_RETURN,BTN_CROSS}, {SDL_SCANCODE_KP_ENTER,BTN_CROSS}, {SDL_SCANCODE_SPACE,BTN_CROSS}, {MOUSE_LEFT,BTN_CROSS},
+    {SDL_SCANCODE_ESCAPE,BTN_CIRCLE}, {SDL_SCANCODE_BACKSPACE,BTN_CIRCLE}, {MOUSE_RIGHT,BTN_CIRCLE},
+    {SDL_SCANCODE_F,BTN_TRIANGLE}, {SDL_SCANCODE_R,BTN_SQUARE},
+    {SDL_SCANCODE_Q,BTN_L2}, {SDL_SCANCODE_E,BTN_R2}, {SDL_SCANCODE_TAB,BTN_R2}, {SDL_SCANCODE_TAB|SOURCE_SHIFT,BTN_L2},
+    {SDL_SCANCODE_UP,BTN_UP}, {SDL_SCANCODE_DOWN,BTN_DOWN}, {SDL_SCANCODE_LEFT,BTN_LEFT}, {SDL_SCANCODE_RIGHT,BTN_RIGHT},
+    {WHEEL_UP,BTN_UP}, {WHEEL_DOWN,BTN_DOWN},
+    {SDL_SCANCODE_P,BTN_OPTIONS},
+},21};
 
 static char *trim(char *text) {
     while (*text==' ' || *text=='\t') ++text;
@@ -339,6 +360,10 @@ static char *trim(char *text) {
 /* A source name: a key (or mouse button) for the keyboard map, a gamepad button otherwise; -1
  * when the name is unknown. */
 static int source_from_name(const char *name, bool keyboard) {
+    if (keyboard && !SDL_strncasecmp(name,"Shift+",6) && name[6]) {
+        const int base=source_from_name(name+6,true);
+        return base<0 ? -1 : base|SOURCE_SHIFT;
+    }
     if (!keyboard) {
         const SDL_GamepadButton b=SDL_GetGamepadButtonFromString(name);
         return b>SDL_GAMEPAD_BUTTON_INVALID ? (int)b : -1;
@@ -404,12 +429,14 @@ static void load_button_maps(void) {
     if (loaded) return;
     loaded=true;
     const int pad=apply_button_map(&pad_map,getenv("TLG_PAD_MAP"),false);
-    /* TLG_KEY_MAP wins over tlg.ini's key_map. */
+    /* TLG_KEY_MAP wins over tlg.ini's key_map, TLG_MENU_KEY_MAP over its menu_key_map. */
     const char *env=getenv("TLG_KEY_MAP");
     TlgGpuInputSettings in;
     tlggpu_input_settings(&in);
     const int keys=apply_button_map(&key_map,env && *env ? env : in.key_map,true);
-    if (pad || keys) printf("Runtime: pad map: %d gamepad and %d keyboard buttons remapped\n",pad,keys);
+    const char *menu_env=getenv("TLG_MENU_KEY_MAP");
+    const int menu=apply_button_map(&menu_map,menu_env && *menu_env ? menu_env : in.menu_key_map,true);
+    if (pad || keys || menu) printf("Runtime: pad map: %d gamepad, %d keyboard and %d menu buttons remapped\n",pad,keys,menu);
 }
 
 /* Motion (orientation quaternion, acceleration in g, angular velocity in rad/s; axes as SDL's:
@@ -1009,16 +1036,60 @@ static bool pad_only(SDL_Gamepad *g) {
 }
 /* What the keyboard map presses (PS4 buttons, click sources and host actions) for these keys and
  * mouse source bits (sample_mouse). */
-static uint32_t map_keys(const bool *k, uint32_t mouse) {
+static bool map_has_source(const ButtonMap *map, int source) {
+    for (size_t i=0;i<map->count;++i) if (map->entries[i].source==source) return true;
+    return false;
+}
+/* Whether a map entry's source is down (SOURCE_SHIFT: see the enum). */
+static bool source_down(const ButtonMap *map, const bool *k, uint32_t mouse, int source) {
+    const int base=source & ~SOURCE_SHIFT;
+    const bool down=base>=MOUSE_SOURCE ? base<MOUSE_SOURCE_END && (mouse>>(base-MOUSE_SOURCE) & 1)
+                                       : base>=0 && base<SDL_SCANCODE_COUNT && k[base];
+    if (!down) return false;
+    const bool shift=k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT];
+    if (source & SOURCE_SHIFT) return shift;
+    return !shift || !map_has_source(map,base|SOURCE_SHIFT);
+}
+static uint32_t map_bits(const ButtonMap *map, const bool *k, uint32_t mouse) {
     uint32_t bits=0;
+    for (size_t i=0;i<map->count;++i)
+        if (source_down(map,k,mouse,map->entries[i].source)) bits|=map->entries[i].ps;
+    return bits;
+}
+static uint32_t map_keys(const bool *k, uint32_t mouse) { return map_bits(&key_map,k,mouse); }
+/* The menu layer (menu_map): the menu keys, plus each gameplay binding whose key and PS4 button
+ * the menu map leaves alone. */
+static uint32_t menu_keys(const bool *k, uint32_t mouse) {
+    uint32_t bits=map_bits(&menu_map,k,mouse), moved=0;
+    for (size_t i=0;i<menu_map.count;++i) moved|=menu_map.entries[i].ps;
     for (size_t i=0;i<key_map.count;++i) {
-        const int source=key_map.entries[i].source;
-        const bool down=source>=MOUSE_SOURCE ? source<MOUSE_SOURCE_END && (mouse>>(source-MOUSE_SOURCE) & 1)
-                                             : source<SDL_SCANCODE_COUNT && k[source];
-        if (down) bits|=key_map.entries[i].ps;
+        const ButtonSource e=key_map.entries[i];
+        const int base=e.source & ~SOURCE_SHIFT;
+        if ((e.ps & moved) || map_has_source(&menu_map,base) || map_has_source(&menu_map,base|SOURCE_SHIFT)) continue;
+        if (source_down(&key_map,k,mouse,e.source)) bits|=e.ps;
     }
     return bits;
 }
+/* Keys and mouse buttons the menu map binds that were already down when a menu opened or closed
+ * stay silent until released: the Enter that opened the pause menu (OPTIONS) does not also pick
+ * its first item, the left click that was shooting does not select. */
+static struct { bool menu; uint8_t keys[SDL_SCANCODE_COUNT]; uint32_t mouse; } menu_latch;
+static void menu_latch_update(bool menu, const bool *k, uint32_t mouse) {
+    const uint32_t buttons=(1u<<(WHEEL_UP-MOUSE_SOURCE))-1; /* not the wheel: its notches are pulses */
+    if (menu!=menu_latch.menu) {
+        menu_latch.menu=menu;
+        for (size_t i=0;i<menu_map.count;++i) {
+            const int base=menu_map.entries[i].source & ~SOURCE_SHIFT;
+            if (base>=MOUSE_SOURCE) { if (base<MOUSE_SOURCE_END) menu_latch.mouse|=mouse & buttons & (1u<<(base-MOUSE_SOURCE)); }
+            else if (base>=0 && base<SDL_SCANCODE_COUNT && k[base]) menu_latch.keys[base]=1;
+        }
+    }
+    for (int i=0;i<SDL_SCANCODE_COUNT;++i) if (menu_latch.keys[i] && !k[i]) menu_latch.keys[i]=0;
+    menu_latch.mouse&=mouse;
+}
+/* sample_host: the menu layer is in use (window.cpp: Esc goes back instead of freeing the mouse). */
+static _Atomic int menu_keys_active;
+int runtime_pad_menu_keys_active(void) { return atomic_load(&menu_keys_active); }
 /* TLG_INTERACT_FLICK_SPEED (mouse counts per ms a swipe's flick must reach, default 1.5; 0: off),
  * TLG_INTERACT_SWIPE_HOLD=0 (lift the finger after a swipe even while the key is held),
  * TLG_INTERACT_CLICK=1 (a tap also clicks the touchpad and a hold presses it, as before),
@@ -1160,21 +1231,34 @@ static void sample_host(PadData *d) {
     uint32_t mouse=sample_mouse(d,can_aiming(early),k,early); /* adds to the right stick */
     last_mouse=mouse;
     uint32_t menu_buttons=0;
-    {
-        static int menu_mouse=-1; /* 0 off, 1 the wheel, 2 the wheel and the clicks (iss_menu_mouse.h) */
+    static int menu_layer=-1; /* the menu keys (menu_map); TLG_MENU_KEYS=0: off */
+    if (menu_layer<0) { const char *e=getenv("TLG_MENU_KEYS"); menu_layer=!(e && *e=='0'); }
+    const bool in_menu=!mouse_pad.active && iss_menu_mouse_scene(runtime_menu_scene());
+    const bool menu=menu_layer && in_menu;
+    atomic_store(&menu_keys_active,menu && map_has_source(&menu_map,SDL_SCANCODE_ESCAPE));
+    static bool filtered_keys[SDL_SCANCODE_COUNT];
+    menu_latch_update(menu,k,mouse);
+    memcpy(filtered_keys,k,sizeof(filtered_keys));
+    for (int i=0;i<SDL_SCANCODE_COUNT;++i) if (menu_latch.keys[i]) filtered_keys[i]=false;
+    k=filtered_keys;
+    mouse&=~menu_latch.mouse;
+    if (!menu_layer && in_menu) {
+        /* Without the menu keys: the wheel still moves the selection (iss_menu_mouse.h);
+         * TLG_MENU_MOUSE=clicks also makes the clicks select / go back, TLG_MENU_MOUSE=0 neither. */
+        static int menu_mouse=-1;
         if (menu_mouse<0) { const char *e=getenv("TLG_MENU_MOUSE"); menu_mouse=e && *e=='0' ? 0 : e && !strcmp(e,"clicks") ? 2 : 1; }
-        if (menu_mouse && !mouse_pad.active && iss_menu_mouse_scene(runtime_menu_scene()))
+        if (menu_mouse)
             menu_buttons=iss_menu_mouse_buttons(&mouse,menu_mouse==2,MOUSE_LEFT-MOUSE_SOURCE,MOUSE_RIGHT-MOUSE_SOURCE,
                 WHEEL_UP-MOUSE_SOURCE,WHEEL_DOWN-MOUSE_SOURCE,BTN_CROSS,BTN_CIRCLE,BTN_UP,BTN_DOWN);
     }
     /* The interact key held with the right mouse button: two fingers pressing both ends of the
      * touchpad (lifting the car off Reggie), as Tab + Backspace do (play_two_finger). */
     uint32_t two_fingers=0;
-    if ((map_keys(k,mouse) & ACT_INTERACT) && (mouse>>(MOUSE_RIGHT-MOUSE_SOURCE) & 1)) {
+    if (!menu && (map_keys(k,mouse) & ACT_INTERACT) && (mouse>>(MOUSE_RIGHT-MOUSE_SOURCE) & 1)) {
         mouse&=~(1u<<(MOUSE_RIGHT-MOUSE_SOURCE));
         two_fingers=CLICK_LEFT|CLICK_RIGHT;
     }
-    const uint32_t keys=map_keys(k,mouse)|menu_buttons|two_fingers, acts=keys & ACT_ALL;
+    const uint32_t keys=(menu ? menu_keys(k,mouse) : map_keys(k,mouse))|menu_buttons|two_fingers, acts=keys & ACT_ALL;
     update_aim_assist(pad_input,keys!=0 || mouse!=0 || power_mouse_dx!=0 || power_mouse_dy!=0);
     d->buttons|=keys & ~(uint32_t)ACT_ALL;
     if (d->buttons & BTN_L2) d->l2=255;
