@@ -117,6 +117,12 @@ int main(void) {
     memset(kb,0,sizeof(kb));
     assert(menu_keys(kb,mleft)==BTN_CROSS && menu_keys(kb,mright)==BTN_CIRCLE && map_keys(kb,mleft)==BTN_R2);
     assert(menu_keys(kb,1u<<(WHEEL_DOWN-MOUSE_SOURCE))==BTN_DOWN);
+    /* Side to side with the mouse: wheel tilt, Shift + wheel, thumb buttons (X2 is not interact here). */
+    assert(menu_keys(kb,1u<<(WHEEL_LEFT-MOUSE_SOURCE))==BTN_LEFT && menu_keys(kb,1u<<(WHEEL_RIGHT-MOUSE_SOURCE))==BTN_RIGHT);
+    assert(menu_keys(kb,1u<<(MOUSE_X1-MOUSE_SOURCE))==BTN_LEFT && menu_keys(kb,1u<<(MOUSE_X2-MOUSE_SOURCE))==BTN_RIGHT);
+    kb[SDL_SCANCODE_LSHIFT]=true;
+    assert(menu_keys(kb,1u<<(WHEEL_UP-MOUSE_SOURCE))==BTN_LEFT && menu_keys(kb,1u<<(WHEEL_DOWN-MOUSE_SOURCE))==BTN_RIGHT);
+    kb[SDL_SCANCODE_LSHIFT]=false;
     /* Remapped: Shift+names parse; cross=Space only. */
     ButtonMap saved=menu_map;
     assert(apply_button_map(&menu_map,"cross=Space,l2=Shift+Q",true)==2);
