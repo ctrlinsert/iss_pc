@@ -346,20 +346,20 @@ The game asks for the motion sensor and the touchpad in many scenes: graffiti, a
 **Aim assist follows the device you use:** the game's aim assist (it has no menu option) is **off while you play with keyboard and mouse** and turns **on by itself as soon as a controller is used** (a button, a trigger or a stick), then off again at the next key or mouse input. `TLG_AIM_ASSIST=on` keeps the original assist always on; `TLG_AIM_ASSIST=off` keeps it always off.
 
 **Touchpad on a controller without one:**
-- **View/Select/Back** is the touchpad click (right side; with L1 held, the left side). Holding the button holds the touchpad.
-- **Hold View/Select and move the right stick** to swipe a finger from the middle of the touchpad. A quick tap without moving still clicks.
+- **View/Select/Back** is the touchpad click (right side; with L1 held, the left side). Holding the button holds the touchpad (draining), and the right stick keeps turning the camera meanwhile.
+- **Swipes need View held: hold View/Select and flick the right stick** in the asked direction. The stick alone never swipes, so turning the camera in a fight cannot start a prompt. The port sees when the game shows a swipe prompt: only then does View put a finger on the pad instead of the click (held still: the finger rests in the middle, for the hand scanner; a quick tap still clicks). Keep the stick pushed after the flick and the finger stays at the end of the pad (lifting a mobile command centre, then R2); centre the stick and another flick swipes again. `TLG_PAD_VIEW_GESTURE=0` brings back the old View + right stick.
 - **Keyboard:** Tab (left side) and Backspace (right side) click; **hold Tab and use the arrow keys** to swipe.
 - **Two fingers on both ends of the touchpad** (lifting the car off Reggie): **hold View/Select + R1**; on the keyboard, **hold Tab + Backspace**.
 
 | In-game action | DualShock 4 / DualSense | Xbox / other controller | Keyboard |
 |---|---|---|---|
-| Absorb/drain a power (smoke, neon...) and "hold the touchpad" interactions | hold the touchpad | hold View/Select (leave the right stick alone, or it becomes a swipe) | hold X, Tab or Backspace (no arrow keys); mouse: Left Ctrl (or X1) + hold the left button still |
+| Absorb/drain a power (smoke, neon...) and "hold the touchpad" interactions | hold the touchpad | hold View/Select | hold X, Tab or Backspace (no arrow keys); mouse: Left Ctrl (or X1) + hold the left button still |
 | "Press the touchpad" interactions | click the touchpad | tap View/Select | X, Tab or Backspace |
 | Graffiti: turn the controller sideways | turn the controller | L3+R3 (sensor mode): it is on its side at once | press T or G (again to leave) |
 | Graffiti: shake the can | shake the controller | cross/A in sensor mode | Y |
 | Graffiti: spray | R2, aiming with the controller | R2, aiming with the left stick in sensor mode | F or left button (R2), aiming with the mouse or the arrow keys after T or G |
 | Press both ends of the touchpad (lifting the car off Reggie) | two fingers, one on each end | hold View/Select + R1 | hold Tab + Backspace; mouse: Left Ctrl (or X1) + right button |
-| Touchpad swipe ("Open Door", hand scanner) | swipe a finger | hold View/Select + right stick in the asked direction | hold Tab + arrow keys; mouse: hold Left Ctrl (or X1), left button and drag |
+| Touchpad swipe ("Open Door", hand scanner) | swipe a finger | hold View/Select and flick the right stick the asked way | hold Tab + arrow keys; mouse: hold Left Ctrl (or X1), left button and drag |
 | Back to normal after the graffiti | — | L3+R3 again ("Sensor mode off") | — |
 
 **Launcher:** the **Controller** box has the **Stick dead zone** (0–40%, default 10%). Raise it if the character, the camera or the sensor-mode tilt moves on its own (stick drift).
@@ -733,20 +733,20 @@ O jogo pede o sensor de movimento e o touchpad em várias cenas: grafite, absorv
 - **Teclado e mouse:** aperte **T** ou **G** uma vez para virar o controle de lado (um lado ou o outro) e deixá-lo assim: o **mouse mira a lata de spray** durante todo o grafite (as setas também), **F** ou o botão esquerdo pinta, e **Y**, balançar o mouse rápido para os lados ou girar a rodinha sacode (balançar enquanto pinta não sacode, então contornar o desenho continua movendo o cursor). Aperte a mesma tecla de novo para pôr o controle em pé. `ISS_SENSOR_KEYS=hold` volta ao jeito antigo (só enquanto T ou G está seguro).
 
 **Touchpad em controle sem touchpad:**
-- **View/Select/Back** é o clique do touchpad (lado direito; com L1 segurado, o lado esquerdo). Segurar o botão é segurar o touchpad.
-- **Segure View/Select e mova o analógico direito** para deslizar o dedo a partir do meio do touchpad. Um toque rápido sem mover continua sendo clique.
+- **View/Select/Back** é o clique do touchpad (lado direito; com L1 segurado, o lado esquerdo). Segurar o botão é segurar o touchpad (drenar), e o analógico direito continua girando a câmera.
+- **Deslizar exige View segurado: segure View/Select e dê um toque rápido no analógico direito** na direção pedida. O analógico sozinho nunca desliza, então girar a câmera numa luta não inicia um prompt. O port percebe quando o jogo mostra um prompt de deslizar: só então View põe um dedo no touchpad em vez do clique (segurado parado: o dedo fica no meio, para o leitor de mão; um toque rápido continua clicando). Mantenha o analógico empurrado depois do movimento e o dedo fica no fim do touchpad (levantar um centro de comando móvel, depois R2); volte o analógico ao centro e outro movimento desliza de novo. `TLG_PAD_VIEW_GESTURE=0` volta ao View + analógico direito antigo.
 - **Teclado:** Tab (lado esquerdo) e Backspace (lado direito) clicam; **segure Tab e use as setas** para deslizar.
 - **Dois dedos nas duas pontas do touchpad** (levantar o carro de cima do Reggie): **segure View/Select + R1**; no teclado, **segure Tab + Backspace**.
 
 | Ação no jogo | DualShock 4 / DualSense | Xbox / outro controle | Teclado |
 |---|---|---|---|
-| Absorver/drenar um poder (fumaça, neon...) e interações de "segure o touchpad" | segurar o touchpad | segurar View/Select (sem mexer o analógico direito, senão vira deslize) | segurar Tab ou Backspace (sem as setas); no mouse: Ctrl esquerdo (ou X1) + segurar o esquerdo parado |
+| Absorver/drenar um poder (fumaça, neon...) e interações de "segure o touchpad" | segurar o touchpad | segurar View/Select | segurar Tab ou Backspace (sem as setas); no mouse: Ctrl esquerdo (ou X1) + segurar o esquerdo parado |
 | Interação de "toque no touchpad" | clicar o touchpad | toque em View/Select | Tab ou Backspace |
 | Grafite: virar o controle de lado | virar o controle | L3+R3 (modo sensor): já fica de lado | apertar T ou G (de novo para sair) |
 | Grafite: sacudir a lata | sacudir o controle | X/A no modo sensor | Y |
 | Grafite: pintar | R2, mirando com o controle | R2, mirando com o analógico esquerdo no modo sensor | F ou botão esquerdo (R2), mirando com o mouse ou as setas depois de T ou G |
 | Apertar as duas pontas do touchpad (levantar o carro de cima do Reggie) | dois dedos, um em cada ponta | segurar View/Select + R1 | segurar Tab + Backspace; no mouse: Ctrl esquerdo (ou X1) + botão direito |
-| Deslizar no touchpad (porta "Open Door", scanner de mão) | deslizar o dedo | segurar View/Select + analógico direito na direção pedida | segurar Tab + setas; no mouse: segurar Ctrl esquerdo (ou X1), esquerdo e arrastar |
+| Deslizar no touchpad (porta "Open Door", scanner de mão) | deslizar o dedo | segurar View/Select e dar um toque rápido no analógico direito na direção pedida | segurar Tab + setas; no mouse: segurar Ctrl esquerdo (ou X1), esquerdo e arrastar |
 | Voltar ao normal depois do grafite | — | L3+R3 de novo ("Modo sensor desligado") | — |
 
 **Launcher:** o quadro **Controle** tem a **Zona morta dos analógicos** (0–40%, padrão 10%). Aumente se o personagem, a câmera ou a inclinação do modo sensor se mexerem sozinhos (drift).

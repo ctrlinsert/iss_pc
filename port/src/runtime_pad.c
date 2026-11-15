@@ -26,6 +26,7 @@
 #include "power_wheel_input.h"
 #include "mouse_touch.h"
 #include "interact_gesture.h"
+#include "pad_view_gesture.h"
 #include "iss_touch_reads.h"
 #include "rumble_gate.h"
 #include "mouse_shake.h"
@@ -663,10 +664,11 @@ static void sample_motion(PadData *d, SDL_Gamepad *g, uint32_t acts) {
  * keys, the arrows): a finger moves from the middle of the pad toward that side. A quick tap
  * without moving still clicks. The interact key (apply_interact) does this in one press. */
 static struct { int active; } swipe;
+static bool view_gesture_on; /* apply_view_gesture has View this sample */
 static void apply_swipe(PadData *d, SDL_Gamepad *g, bool key_held, uint32_t acts) {
     float x=0, y=0;
     int held=0;
-    if (g && SDL_GetGamepadButton(g,SDL_GAMEPAD_BUTTON_BACK)) {
+    if (g && !view_gesture_on && SDL_GetGamepadButton(g,SDL_GAMEPAD_BUTTON_BACK)) {
         held=1;
         x=(float)SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTX)/32767.f;
         y=(float)SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTY)/32767.f;
@@ -1167,6 +1169,47 @@ static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
         if (interact_out.click) d->buttons|=BTN_TOUCHPAD;
     }
 }
+/* View/Select/- on a pad without a touchpad (pad_view_gesture.h): away from swipe prompts it
+ * stays the touchpad click (tap, hold to drain, + RB two fingers); at a swipe prompt a quick tap
+ * still clicks, a still hold rests a finger and View + a right-stick flick swipes. The stick
+ * alone never swipes. Only with the auto-detect hook (iss_touch_reads.h) and View bound to the
+ * click (the default); otherwise View + right stick works as before (apply_swipe).
+ * TLG_PAD_VIEW_GESTURE=0 turns it off. */
+static void apply_view_gesture(PadData *d, SDL_Gamepad *g, uint32_t mapped) {
+    static ViewGesture view;
+    static int env=-1, last_state;
+    if (env<0) { const char *e=getenv("TLG_PAD_VIEW_GESTURE"); env=!(e && *e=='0'); }
+    view_gesture_on=false;
+    if (!env || !g || !iss_touch_reads_active || SDL_GetNumGamepadTouchpads(g)>0) return;
+    bool bound=false;
+    for (size_t i=0;i<pad_map.count;++i)
+        if (pad_map.entries[i].source==SDL_GAMEPAD_BUTTON_BACK && pad_map.entries[i].ps==CLICK_RIGHT) bound=true;
+    if (!bound) return;
+    const bool held=SDL_GetGamepadButton(g,SDL_GAMEPAD_BUTTON_BACK);
+    if (!held && view.state==VIEW_IDLE) return;
+    view_gesture_on=true;
+    /* View's click comes from here now; another source bound to it still clicks. */
+    bool other=false;
+    for (size_t i=0;i<pad_map.count;++i)
+        if (pad_map.entries[i].ps==CLICK_RIGHT && pad_map.entries[i].source!=SDL_GAMEPAD_BUTTON_BACK &&
+            SDL_GetGamepadButton(g,(SDL_GamepadButton)pad_map.entries[i].source)) other=true;
+    if (!other) d->buttons&=~(uint32_t)CLICK_RIGHT;
+    const float sx=(float)SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTX)/32767.f;
+    const float sy=(float)SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTY)/32767.f;
+    const ViewParams p=view_default_params();
+    const int prompt=view.state==VIEW_IDLE ? touch_swipe_wanted(d->timestamp) : 1;
+    const ViewOut o=view_update(&view,&p,held,prompt,(mapped & (BTN_R1|BTN_L1))!=0,sx,sy,d->timestamp);
+    if (view.state!=last_state && (view.state==VIEW_PASS || view.state==VIEW_TAP || view.state==VIEW_HOLD || view.state==VIEW_SWIPE))
+        printf("Runtime: view %s%s\n",view.state==VIEW_PASS ? "click" : view.state==VIEW_TAP ? "tap" : view.state==VIEW_HOLD ? "hold" : "swipe ",
+               view.state!=VIEW_SWIPE ? "" : view.dx<0 ? "left" : view.dx>0 ? "right" : view.dy<0 ? "up" : "down");
+    last_state=view.state;
+    if (o.pass) d->buttons|=CLICK_RIGHT;
+    if (o.owns_stick) d->right_x=d->right_y=128;
+    if (o.touch && d->touch_count<2) {
+        d->touches[d->touch_count]=(PadTouch){.x=touch_axis(o.x,1919),.y=touch_axis(o.y,942),.id=(uint8_t)o.id};
+        ++d->touch_count;
+    }
+}
 static void key_axis(uint8_t *axis, bool negative, bool positive) {
     if (negative || positive) *axis=(uint8_t)(128-(negative ? 128 : 0)+(positive ? 127 : 0));
 }
@@ -1214,7 +1257,8 @@ static void sample_host(PadData *d) {
         if (pads>1) trackpad_haptics(g,d->timestamp);
         static SDL_Gamepad *told;
         if (pads>1 && told!=g) { told=g; printf("Runtime: %s: its 2 trackpads are the halves of the PS4 touchpad\n",SDL_GetGamepadName(g)); }
-    }
+        apply_view_gesture(d,g,mapped);
+    } else view_gesture_on=false;
     const int pad_input=g && gamepad_input(g);
     if (g && pad_only(g)) k=NULL;
     /* Host actions bound to mouse buttons are read after sample_mouse; the motion sensor, sampled

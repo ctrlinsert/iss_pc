@@ -148,6 +148,8 @@ if [[ ${1:-} == --test || ${1:-} == --test-only ]]; then
     out/interact-gesture-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_wheel_steps.c -Isrc -o out/wheel-steps-test
     out/wheel-steps-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_pad_view_gesture.c -Isrc -lm -o out/pad-view-gesture-test
+    out/pad-view-gesture-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_aim_assist.c -Isrc -o out/aim-assist-test
     out/aim-assist-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_native_cone.c -Isrc -lm -o out/native-cone-test
