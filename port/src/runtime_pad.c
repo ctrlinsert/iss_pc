@@ -477,10 +477,8 @@ static int key_tilt_side(uint32_t acts) {
     const int side=(pressed & ACT_TILT_RIGHT) ? 1 : (pressed & ACT_TILT_LEFT) ? -1 : 0;
     if (side) {
         motion.key_side=motion.key_side==side ? 0 : side;
-        const int pt=ui_portuguese();
-        tlggpu_overlay_notice(motion.key_side ? (pt ? "Modo sensor LIGADO: o mouse mira a lata, F/esquerdo pinta, Y ou balançar o mouse sacode; T/G de novo desliga"
-                                                    : "Sensor mode ON: the mouse aims the can, F/left button sprays, Y or a mouse wiggle shakes; T/G again turns it off")
-                                              : (pt ? "Modo sensor desligado" : "Sensor mode off"), 3.0f);
+        tlggpu_overlay_notice(motion.key_side ? "Sensor mode ON: the mouse aims the can, F/left button sprays, Y or a mouse wiggle shakes; T/G again turns it off"
+                                              : "Sensor mode off", 3.0f);
         printf("Runtime: keyboard sensor mode %s\n",motion.key_side ? "on" : "off");
         if (motion.key_side) tlggpu_graffiti_guide(0); /* the steps, the first time only */
     }

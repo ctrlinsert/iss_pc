@@ -798,7 +798,7 @@ class ControllerTests(unittest.TestCase):
         self.backend.setLang('pt_BR')
         names = [r['name'] for r in self.controls.keyRows]
         self.assertIn('Bola (Circle)', names)
-        self.assertIn('Analógico esquerdo: cima (andar para frente)', names)
+        self.assertIn('Left stick: up (walk forward)', names)  # new labels are English only
 
 
 if __name__ == '__main__':
