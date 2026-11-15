@@ -20,6 +20,8 @@ static void fixture(std::vector<unsigned char>& image){
     for(const auto& s:iss_exposure_sites)memcpy(image.data()+s.offset,s.before,5);
     for(const auto& s:iss_map_rt_sites)memcpy(image.data()+s.offset,s.before,s.length);
     memcpy(image.data()+ISS_MAP_RT_FLOAT_LOAD,iss_map_rt_float_load,sizeof(iss_map_rt_float_load));
+    for(const auto& s:iss_movie_sites)memcpy(image.data()+s.offset,s.before,s.length);
+    for(const auto& r:iss_movie_readers)memcpy(image.data()+r.offset,r.bytes,8);
 }
 // tests/native_resolution_cases.txt is shared with test_native_resolution_launcher.py (the launchers'
 // copy of this arithmetic): both must give the same answers.
@@ -128,6 +130,16 @@ int main(int argc,char** argv){
         image=original;image[s.offset+byte]^=1;auto before=image;
         assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,100,1}));assert(image==before);guards++;
     }
+    for(unsigned i=0;i<ISS_MOVIE_SITE_COUNT;i++){
+        for(unsigned byte=0;byte<iss_movie_sites[i].length;byte++){
+            image=original;image[iss_movie_sites[i].offset+byte]^=1;auto before=image;
+            assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,100,1}));assert(image==before);guards++;
+        }
+        for(unsigned byte=0;byte<8;byte++){
+            image=original;image[iss_movie_readers[i].offset+byte]^=1;auto before=image;
+            assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,100,1}));assert(image==before);guards++;
+        }
+    }
     for(unsigned byte=0;byte<sizeof(iss_map_rt_float_load);byte++){
         image=original;image[ISS_MAP_RT_FLOAT_LOAD+byte]^=1;auto before=image;
         assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,100,1}));assert(image==before);guards++;
@@ -148,7 +160,10 @@ int main(int argc,char** argv){
     auto expected=original;IssNativeSite changes[ISS_NATIVE_SITE_COUNT];assert(iss_native_plan({5,100,1},&p));iss_native_changes(&p,changes);
     for(const auto& s:changes)memcpy(expected.data()+s.offset,s.after,s.length);
     iss_native_exposure_write(expected.data(),iss_native_exposure_entries(p.width,p.height));
-    iss_map_rt_write(expected.data(),p.ui_width,p.ui_height);assert(image==expected);
+    iss_map_rt_write(expected.data(),p.ui_width,p.ui_height);iss_movie_write(expected.data(),p.ui_width,p.ui_height);assert(image==expected);
+    // Movies: contain fit on the 3840x1080 canvas: k = 1 (full picture) and a centred 16:9 quad.
+    {float f[6];memcpy(f,image.data()+0xaadbe0,8);memcpy(f+2,image.data()+0xaadd60,16);
+     assert(f[0]==3840.0f&&f[1]==1080.0f&&f[2]==-0.5f&&f[3]==-1.0f&&f[4]==0.5f&&f[5]==1.0f);}
     // Real-width canvas (5120x1440 = 3840x1080): the map target follows the canvas, not 1920x1080.
     {float f;memcpy(&f,image.data()+0xae5c9c,4);assert(f==3840.0f);}
     assert(read64(image.data()+0x5a611b)==((uint64_t)1080<<32|3840));
@@ -169,6 +184,7 @@ int main(int argc,char** argv){
         assert(read32(image.data()+world_width)==p.width&&read32(image.data()+world_height)==p.height);
         assert(read32(image.data()+0x1f0403)==1920&&read32(image.data()+0x1f03fb)==1080);
         for(const auto& m:iss_map_rt_sites)assert(!memcmp(image.data()+m.offset,m.before,m.length));
+        for(const auto& m:iss_movie_sites)assert(!memcmp(image.data()+m.offset,m.before,m.length));
     }
     f=tmpfile();assert(f);fputs("iss_native_ui_16_9=1\n",f);rewind(f);assert(iss_native_config(f,&c)&&c.ui_16_9==1);fclose(f);
     for(int output:{1,2,3,4,5}){

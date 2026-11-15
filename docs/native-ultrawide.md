@@ -298,3 +298,12 @@ Still to confirm in game on the real-width canvas: the map, text wrapping (the a
 reads the canvas width), the menu cursor's look rate, menu backdrops, and the menu slowdown
 seen in October, for which no code-side cause was found. The default stays mode 1 until then.
 Live output changes need a restart in mode 0.
+
+### Full-screen movies on the real-width canvas (2026-11-15)
+
+The game's movie draw (0x4575b0) puts the picture on a constant full-screen quad and samples a
+centred band of k = 16·H / (9·W) of its height: a cover fit, so on a 32:9 canvas a movie filled
+the width and lost its top and bottom (seen in game). `src/iss_native_movie.h` turns it into a
+contain fit with three single-use constants: 16 and 9 become the canvas size (k = 1, the whole
+picture) and the quad narrows to the centred 16:9 box. Still to confirm in game: the side bars
+are black, not stale frames.
