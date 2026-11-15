@@ -30,6 +30,7 @@
 #include "mouse_shake.h"
 #include "iss_aim_assist.h"
 #include "iss_menu_mouse.h"
+#include "wheel_steps.h"
 #include <sys/stat.h>
 
 #define ERR_INVALID_ARG ((int32_t)0x80920001)
@@ -704,11 +705,10 @@ static void load_pad_mode(void) {
 /* What sample_mouse decided for this sample; sample_host turns it into touches and buttons. */
 static struct { bool active, two_fingers; MouseTouch finger; MouseTouchOut out; } mouse_pad;
 
-/* The mouse: native camera motion, buttons and wheel pulses as source bits (1 << (source -
- * MOUSE_SOURCE)). A wheel notch holds its button WHEEL_PULSE_US, then WHEEL_GAP_US up, so each
- * notch is one press (menus scroll one item per notch). TLG_MOUSE_LOG=1 (or TLG_MOUSE_TEST)
- * logs what the game gets. Called under lock. */
-enum { WHEEL_PULSE_US=80000, WHEEL_GAP_US=40000 };
+/* The mouse: native camera motion, buttons and wheel steps as source bits (1 << (source -
+ * MOUSE_SOURCE)). A wheel notch is one press counted in the game's pad reads (wheel_steps.h), so
+ * menus move one item per notch. TLG_MOUSE_LOG=1 (or TLG_MOUSE_TEST) logs what the game gets.
+ * Called once per pad read, under lock. */
 static PwHold power_hold;
 static float power_mouse_dx,power_mouse_dy,power_cursor_x,power_cursor_y;
 static int power_cursor_source;
@@ -732,7 +732,7 @@ static bool wheel_bound(void) {
         if (key_map.entries[i].source>=WHEEL_UP && key_map.entries[i].source<=WHEEL_RIGHT) return true;
     return false;
 }
-static struct { int pending; uint64_t until, next; } wheel[4];
+static WheelAxis wheel[2]; /* 0: up (-) / down (+), 1: left (-) / right (+) */
 static size_t mouse_samples;
 /* The interact key (apply_interact): its gesture, and the mouse motion it took this sample. */
 static InteractGesture interact;
@@ -932,17 +932,10 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
     const uint8_t base_x=d->right_x, base_y=d->right_y;
     uint32_t bits=raw;
     if (pad_mode) bits&=~(uint32_t)MOUSE_BUTTONS_MASK; /* the buttons are fingers now */
-    const int32_t notches[4]={m.wheel_up,m.wheel_down,m.wheel_left,m.wheel_right};
-    for (int i=0;i<4;++i) {
-        wheel[i].pending+=notches[i];
-        if (wheel[i].pending>8) wheel[i].pending=8;
-        if (now>=wheel[i].next && wheel[i].pending>0) {
-            --wheel[i].pending;
-            wheel[i].until=now+WHEEL_PULSE_US;
-            wheel[i].next=wheel[i].until+WHEEL_GAP_US;
-        }
-        if (now<wheel[i].until) bits|=1u<<(WHEEL_UP-MOUSE_SOURCE+i);
-    }
+    const int vertical=wheel_axis_read(&wheel[0],m.wheel_up,m.wheel_down);
+    const int horizontal=wheel_axis_read(&wheel[1],m.wheel_left,m.wheel_right);
+    if (vertical) bits|=1u<<((vertical<0 ? WHEEL_UP : WHEEL_DOWN)-MOUSE_SOURCE);
+    if (horizontal) bits|=1u<<((horizontal<0 ? WHEEL_LEFT : WHEEL_RIGHT)-MOUSE_SOURCE);
     static int log_state=-1; static uint64_t last_log;
     if (log_state<0) { const char *a=getenv("TLG_MOUSE_LOG"), *b=getenv("TLG_MOUSE_TEST"); log_state=(a && *a=='1') || (b && *b=='1'); }
     if (log_state) {
