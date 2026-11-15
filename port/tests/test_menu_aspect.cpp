@@ -1,5 +1,6 @@
 #include "../src/iss_menu_aspect.h"
 #include "../src/iss_hud_corners.h"
+#include "../src/iss_menu_mouse.h"
 #include <cassert>
 #include <cstring>
 #include <cstdio>
@@ -30,6 +31,16 @@ int main(){
  assert(iss_menu_scene_fit(ISS_MENU_SCENE_STARTING)&&iss_menu_scene_fit(ISS_MENU_SCENE_NO_HERO)&&iss_menu_scene_fit(ISS_MENU_SCENE_PAUSED)&&iss_menu_scene_fit(ISS_MENU_SCENE_MOVIE));
  assert(iss_menu_presentation_fit(7680,2160,iss_menu_scene_fit(ISS_MENU_SCENE_NO_HERO)));
  assert(!iss_menu_presentation_fit(3840,2160,iss_menu_scene_fit(ISS_MENU_SCENE_PAUSED)));
+ // Mouse in menus with clicks: left = cross, right = circle, wheel = up/down; other bits stay.
+ assert(iss_menu_mouse_scene(ISS_MENU_SCENE_PAUSED)&&iss_menu_mouse_scene(ISS_MENU_SCENE_NO_HERO)&&iss_menu_mouse_scene(ISS_MENU_SCENE_STARTING));
+ assert(!iss_menu_mouse_scene(ISS_MENU_SCENE_GAMEPLAY)&&!iss_menu_mouse_scene(ISS_MENU_SCENE_MOVIE)&&!iss_menu_mouse_scene(ISS_MENU_SCENE_UNSUPPORTED));
+ {uint32_t m=(1u<<0)|(1u<<1)|(1u<<2)|(1u<<5)|(1u<<6);
+  uint32_t ps=iss_menu_mouse_buttons(&m,1,0,2,5,6,0x4000,0x2000,0x10,0x40);
+  assert(ps==(0x4000u|0x2000u|0x10u|0x40u)&&m==(1u<<1));
+  m=1u<<6;assert(iss_menu_mouse_buttons(&m,1,0,2,5,6,0x4000,0x2000,0x10,0x40)==0x40u&&m==0);
+  // Default: the wheel steps, the buttons keep their bindings (right L2 / left R2 page the tabs).
+  m=(1u<<0)|(1u<<2)|(1u<<5);ps=iss_menu_mouse_buttons(&m,0,0,2,5,6,0x4000,0x2000,0x10,0x40);
+  assert(ps==0x10u&&m==((1u<<0)|(1u<<2)));}
  // The presenter's 16:9 menu fit only applies to the 1920x1080 canvas; the real-width canvas
  // lays the menus out at the output's own aspect.
  assert(iss_menu_canvas_16_9(1920,1080)&&!iss_menu_canvas_16_9(3840,1080)&&!iss_menu_canvas_16_9(1728,1080)&&!iss_menu_canvas_16_9(0,0));

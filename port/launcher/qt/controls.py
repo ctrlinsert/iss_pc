@@ -211,15 +211,12 @@ class Controls(QObject):
     def keyRows(self):
         keys = padsettings.effective_keys(str(self.settings.get('key_map', '') or ''))
         default = padsettings.effective_keys('')
-        rows = [{'name': self.t('pad_left_stick'), 'keys': 'W A S D', 'fixed': True, 'changed': False},
-                {'name': self.t('pad_right_stick'), 'keys': '← ↑ → ↓', 'fixed': True, 'changed': False}]
-        for button, _, _ in padsettings.KEYBOARD_BUTTONS:
+        rows = []
+        for button in [b for b, _, _ in padsettings.KEYBOARD_BUTTONS] + list(padsettings.HOST_ACTIONS):
             names = keys[button]
-            rows.append({'name': self.t('pad_btn_' + button), 'keys': ' | '.join(names) if names else self.t('ctl_key_none'),
+            label = 'pad_btn_' if button not in padsettings.HOST_ACTIONS else 'pad_act_'
+            rows.append({'name': self.t(label + button), 'keys': ' | '.join(names) if names else self.t('ctl_key_none'),
                          'fixed': False, 'changed': names != default[button]})
-        rows += [{'name': self.t('pad_sensor_right'), 'keys': 'T', 'fixed': True, 'changed': False},
-                 {'name': self.t('pad_sensor_left'), 'keys': 'G', 'fixed': True, 'changed': False},
-                 {'name': self.t('pad_sensor_shake'), 'keys': 'Y', 'fixed': True, 'changed': False}]
         return rows
 
     @Property(str, notify=changed)
