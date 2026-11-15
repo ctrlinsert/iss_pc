@@ -336,7 +336,7 @@ static ButtonMap key_map={{
  * iss_menu_mouse_scene): Enter / Space / left click select (cross), Esc / Backspace / right click
  * go back (circle), Q / E and Shift+Tab / Tab change tabs (L2 / R2: the pause tabs), F and R are
  * triangle (Options and Saves) and square (Abandon Mission), the arrows and the wheel move (d-pad;
- * the wheel tilt, Shift + wheel and the mouse thumb buttons go left / right), P is OPTIONS. A PS4 button bound here is pressed only by its menu keys while a menu is up, and a
+ * the mouse thumb buttons go left / right), P is OPTIONS. A PS4 button bound here is pressed only by its menu keys while a menu is up, and a
  * key bound here does only its menu job; every other key keeps its gameplay binding (WASD still
  * moves the left stick, 1 / 3 are still L1 / R1). TLG_MENU_KEY_MAP or tlg.ini menu_key_map
  * remap it (the TLG_KEY_MAP syntax); TLG_MENU_KEYS=0 turns it off. */
@@ -347,12 +347,11 @@ static ButtonMap menu_map={{
     {SDL_SCANCODE_Q,BTN_L2}, {SDL_SCANCODE_E,BTN_R2}, {SDL_SCANCODE_TAB,BTN_R2}, {SDL_SCANCODE_TAB|SOURCE_SHIFT,BTN_L2},
     {SDL_SCANCODE_UP,BTN_UP}, {SDL_SCANCODE_DOWN,BTN_DOWN}, {SDL_SCANCODE_LEFT,BTN_LEFT}, {SDL_SCANCODE_RIGHT,BTN_RIGHT},
     {WHEEL_UP,BTN_UP}, {WHEEL_DOWN,BTN_DOWN},
-    /* Side to side with the mouse alone (option values, sliders): the wheel tilt, Shift + wheel,
-     * and the thumb buttons (back = left, forward = right). */
-    {WHEEL_LEFT,BTN_LEFT}, {WHEEL_RIGHT,BTN_RIGHT}, {WHEEL_UP|SOURCE_SHIFT,BTN_LEFT}, {WHEEL_DOWN|SOURCE_SHIFT,BTN_RIGHT},
+    /* Side to side with the mouse alone (option values, sliders): the thumb buttons (back = left,
+     * forward = right). */
     {MOUSE_X1,BTN_LEFT}, {MOUSE_X2,BTN_RIGHT},
     {SDL_SCANCODE_P,BTN_OPTIONS},
-},27};
+},23};
 
 static char *trim(char *text) {
     while (*text==' ' || *text=='\t') ++text;
