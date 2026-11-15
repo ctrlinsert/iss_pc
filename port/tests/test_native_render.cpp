@@ -115,6 +115,40 @@ void TestSpanOk() {
     CHECK(r.end_marker == dcb.At(end));
     CHECK(r.resume == dcb.At(end + 1 + kHeaderWords));
     CHECK(r.draws == 2 && r.dispatches == 1);
+    CHECK(r.target_writes == 1); // 0x318 is CB_COLOR0_BASE
+}
+
+void TestTargetWrites() {
+    // Writes below, across the start of, and past the colour target registers.
+    Dcb dcb;
+    dcb.Mark(kBegin, kProbe, 9);
+    dcb.SetContext(0x317, 1);                     // just below
+    dcb.Packet(0x69, {0x390, 1, 2});              // just past
+    dcb.Draw();
+    dcb.Mark(kEnd, kProbe, 9);
+    CHECK(ScanFrom(dcb, 0).target_writes == 0);
+    Dcb across;
+    across.Mark(kBegin, kProbe, 9);
+    across.Packet(0x69, {0x316, 1, 2, 3});        // 0x316..0x318: touches CB_COLOR0_BASE
+    across.Mark(kEnd, kProbe, 9);
+    CHECK(ScanFrom(across, 0).target_writes == 1);
+}
+
+void TestTexture() {
+    // A 7680x2160 2D image at 0x12_3456_7800, data format 10, number format 9.
+    const u64 address = 0x1234567800ull;
+    u32 t[8]{};
+    t[0] = u32(address >> 8);
+    t[1] = u32((address >> 40) & 0x3F) | (10u << 20) | (9u << 26) | (3u << 30);
+    t[2] = (7680 - 1) | ((2160 - 1) << 14);
+    t[3] = 9u << 28;
+    const Texture x = DecodeTexture(t);
+    CHECK(x.address == address);
+    CHECK(x.width == 7680 && x.height == 2160);
+    CHECK(x.data_format == 10 && x.num_format == 9 && x.type == 9);
+    CHECK(x.Valid());
+    const u32 zero[8]{};
+    CHECK(!DecodeTexture(zero).Valid());
 }
 
 void TestSpanUnsafe() {
@@ -201,6 +235,8 @@ int main() {
     TestMarkers();
     TestSwitches();
     TestSpanOk();
+    TestTargetWrites();
+    TestTexture();
     TestSpanUnsafe();
     TestSpanBroken();
     TestSizes();

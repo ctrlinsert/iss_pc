@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "video_core/amdgpu/regs.h"
+
 namespace iss::native_render {
 namespace {
 
@@ -60,7 +62,31 @@ void LogSpan(PassStats& stats, const Marker& begin, const SpanResult& span, cons
                  span.draws, span.dispatches, int(verdict.size()), verdict.data());
     if (span.verdict == Scan::Unsafe)
         std::fprintf(stderr, " opcode=%02x word=%08x", span.bad_opcode, span.bad_word);
-    std::fprintf(stderr, " -> %s\n", outcome);
+    std::fprintf(stderr, " target_writes=%u -> %s\n", span.target_writes, outcome);
+}
+
+/// The images a pass would use: the source T#s of the payload and colour target 0 at BEGIN.
+void LogImages(PassStats& stats, const Marker& begin, const AmdGpu::Regs& regs) {
+    if (!GetState().log || stats.logged >= 8) return;
+    const auto print = [](const char* what, const Texture& t) {
+        std::fprintf(stderr, " %s=%010llx %ux%u fmt=%u/%u type=%u", what,
+                     (unsigned long long)t.address, t.width, t.height, t.data_format, t.num_format,
+                     t.type);
+    };
+    std::fprintf(stderr, "NATIVE_RENDER images seq=%u", begin.sequence);
+    if (begin.payload_words >= 8) print("src", DecodeTexture(begin.payload));
+    if (begin.pass == static_cast<u32>(Pass::Copy) && begin.payload_words >= 9)
+        std::fprintf(stderr, " mode=%d", int(begin.payload[8]));
+    if (begin.pass == static_cast<u32>(Pass::Fxaa) && begin.payload_words >= 17 && begin.payload[8])
+        print("second", DecodeTexture(begin.payload + 9));
+    const auto& cb = regs.color_buffers[0];
+    if (cb) {
+        std::fprintf(stderr, " cb0=%010llx pitch=%u height=%u fmt=%u/%u", (unsigned long long)cb.Address(),
+                     cb.Pitch(), cb.Height(), unsigned(cb.GetDataFmt()), unsigned(cb.GetNumberFmt()));
+    } else {
+        std::fprintf(stderr, " cb0=none");
+    }
+    std::fprintf(stderr, "\n");
 }
 
 } // namespace
@@ -89,6 +115,7 @@ const u32* OnBegin(const Services& services, const u32* packet, const u32* limit
     const SpanResult span = ScanSpan(packet + 1 + body, limit, begin);
     ++stats.scans[static_cast<u32>(span.verdict)];
     if (!wanted || begin.pass == static_cast<u32>(Pass::Probe)) {
+        LogImages(stats, begin, services.regs);
         LogSpan(stats, begin, span, "probe");
         return nullptr;
     }

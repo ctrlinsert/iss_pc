@@ -18,6 +18,10 @@ namespace VideoCore {
 class TextureCache;
 }
 
+namespace AmdGpu {
+union Regs;
+}
+
 namespace iss::native_render {
 
 /// What a pass records with. The pass ends any render pass the rasterizer had open itself.
@@ -26,6 +30,10 @@ struct Services {
     Vulkan::Scheduler& scheduler;
     Vulkan::Runtime& runtime;
     VideoCore::TextureCache& texture_cache;
+    /// The registers as the engine left them at BEGIN (its render target, viewport). A pass that
+    /// reads its destination here declines when the span writes the colour targets
+    /// (SpanResult::target_writes).
+    const AmdGpu::Regs& regs;
 };
 
 struct Request {

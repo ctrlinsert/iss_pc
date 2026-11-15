@@ -175,7 +175,15 @@ struct SpanResult {
     u32 bad_opcode{};        ///< Unsafe: the opcode (a NOP: 0x10, bad_word its first data word)
     u32 bad_word{};
     u32 draws{}, dispatches{}, packets{};
+    /// Context register writes inside the span to the colour target registers (CB_COLOR0..7).
+    /// A pass that takes its destination from the registers at BEGIN declines when it is not 0:
+    /// the engine changed its target inside the span.
+    u32 target_writes{};
 };
+
+/// The colour target registers (CB_COLOR0_BASE .. CB_COLOR7_*), context register offsets.
+inline constexpr u32 kColorTargetFirst = 0x318;
+inline constexpr u32 kColorTargetEnd = 0x390;
 
 /// Whether a NOP with this first data word may sit inside a dropped span. Plain padding, the
 /// CB/DB size hints and the gnmdriver sharp/debug hints may. Any other marker (flip, engine,
@@ -233,8 +241,14 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin) 
             if (!ok) r.bad_word = p[1];
             break;
         }
+        case 0x69: { // SET_CONTEXT_REG
+            const u32 first = p[1] & 0xFFFF;
+            const u32 last = first + (body - 1); // one past
+            if (first < kColorTargetEnd && last > kColorTargetFirst) ++r.target_writes;
+            ok = true;
+            break;
+        }
         case 0x68: // SET_CONFIG_REG
-        case 0x69: // SET_CONTEXT_REG
         case 0x76: // SET_SH_REG
         case 0x79: // SET_UCONFIG_REG
         case 0x2A: // INDEX_TYPE
@@ -278,6 +292,28 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin) 
     }
     r.verdict = Scan::NoEnd;
     return r;
+}
+
+// ----------------------------------------------------------------------- image descriptors
+/// The fields of a texture descriptor (T#, 8 dwords, as the game hooks copy it into a payload)
+/// that a native pass needs to find the image in the texture cache.
+struct Texture {
+    u64 address{};     ///< guest address of the image's first byte
+    u32 width{}, height{};
+    u32 data_format{}, num_format{};
+    u32 type{};        ///< 8 = 1D .. 13 = 2D array, 14/15 multisampled
+    bool Valid() const { return address != 0 && width != 0 && height != 0; }
+};
+
+inline Texture DecodeTexture(const u32* t) {
+    Texture x;
+    x.address = (u64(t[0]) | (u64(t[1] & 0x3F) << 32)) << 8;
+    x.data_format = (t[1] >> 20) & 0x3F;
+    x.num_format = (t[1] >> 26) & 0xF;
+    x.width = (t[2] & 0x3FFF) + 1;
+    x.height = ((t[2] >> 14) & 0x3FFF) + 1;
+    x.type = (t[3] >> 28) & 0xF;
+    return x;
 }
 
 // ------------------------------------------------------------------------------- size helpers

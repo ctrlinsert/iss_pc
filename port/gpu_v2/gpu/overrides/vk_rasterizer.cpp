@@ -6629,7 +6629,7 @@ const u32* Rasterizer::NativeRenderBegin(const u32* packet, const u32* limit, bo
     // images under the cached bindings.
     DrainDrawPipe(5);
     blocked = blocked || iss::pause_guard::Blocked() || (iss_temporal && iss_temporal->UiActive());
-    const iss::native_render::Services services{instance, scheduler, runtime, texture_cache};
+    const iss::native_render::Services services{instance, scheduler, runtime, texture_cache, DrawRegs()};
     const u32* end = iss::native_render::OnBegin(services, packet, limit, blocked);
     if (end) {
         BumpBindEpoch();
