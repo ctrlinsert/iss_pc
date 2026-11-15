@@ -250,7 +250,8 @@ set(OURS_SOURCES ${PORT}/shim/tlg_overlay.cpp ${PORT}/shim/tlg_settings.cpp
     ${PORT}/shim/tlg_trophies.cpp ${PORT}/../src/trophy_store.cpp
     ${PORT}/shim/tlg_perf_stats.cpp ${PORT}/shim/tlg_png.cpp ${PORT}/shim/tlg_orbs.cpp
     ${PORT}/shim/tlg_actors.cpp ${PORT}/shim/tlg_view.cpp
-    ${PORT}/shim/tlg_karma.cpp ${PORT}/shim/tlg_karma_store.cpp ${PORT}/shim/tlg_karma_save_session.cpp)
+    ${PORT}/shim/tlg_karma.cpp ${PORT}/shim/tlg_karma_store.cpp ${PORT}/shim/tlg_karma_save_session.cpp
+    ${PORT}/shim/tlg_prompt_icons.cpp)
 # The bridge to the Windows runtime, its window and save dialogs: replaced by this port's own.
 list(REMOVE_ITEM CS_SOURCES ${CS}/save_dialog_ui.cpp)
 list(APPEND ALL ${CS_SOURCES})

@@ -6,7 +6,7 @@ name: Build
 on:
   # Pull requests to main build both packages (artifacts only): the Release is left untouched.
   pull_request:
-    branches: [main]
+    branches: [main, developer]
   workflow_dispatch:
     inputs:
       publish_release:

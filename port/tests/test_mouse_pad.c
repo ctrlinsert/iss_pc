@@ -38,6 +38,8 @@ void tlggpu_mouse_pad_hud(int active, float x, float y, int touching, int clicki
 uint64_t tlggpu_total_draws(void) { return 0; }
 void tlggpu_frame_counters(TlgGpuFrameCounters *out) { memset(out,0,sizeof(*out)); }
 int tlggpu_overlay_captures_input(void) { return 0; }
+/* Button prompt icons (gpu/shim/tlg_prompt_icons.cpp, not linked here). */
+void iss_prompt_icons_device(int style) { (void)style; }
 void tlggpu_overlay_notice(const char *text, float seconds) { (void)text; (void)seconds; }
 void tlggpu_graffiti_guide(int force) { (void)force; }
 float tlggpu_sensor_aim_scale(void) { return 1.0f; }
