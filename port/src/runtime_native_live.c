@@ -98,6 +98,7 @@ void runtime_native_live_enable(uint32_t *cells,const IssNativePlan *startup){
  atomic_store(&resize_generation,1);
  atomic_store(&resize_reason,"Live resize ready within this launch's allocation budget");atomic_store(&resize_enabled,1);
 }
+void runtime_native_live_set_custom(uint32_t width,uint32_t height){iss_native_set_custom(width,height);}
 int runtime_native_live_request_config(IssNativeConfig config){
  if(!runtime_native_live_enabled())return 0;
  IssNativePlan next;
@@ -152,7 +153,7 @@ void __attribute__((ms_abi)) runtime_native_safe_resize(void *object){
  }
  if(state!=1)return;
  expected_width=read32(p);expected_height=read32(p+4);
- if(p[0xdf0f08]>1||!expected_width||!expected_height||(uint64_t)expected_width*expected_height>3840u*2160u||read32(p+12)!=expected_width||read32(p+16)!=expected_height){atomic_store(&rebuild_state,-1);return;}
+ if(p[0xdf0f08]>1||!expected_width||!expected_height||(uint64_t)expected_width*expected_height>ISS_NATIVE_MAX_PIXELS||read32(p+12)!=expected_width||read32(p+16)!=expected_height){atomic_store(&rebuild_state,-1);return;}
  target_before=atomic_load(&targets);frame_before=atomic_load(&frames);previous_mode=p[0xdf0f08];
  if(changing_dimensions){expected_width=pending_plan.width;expected_height=pending_plan.height;}
  /* This hook runs after the original game's command-buffer waits. Invalidating

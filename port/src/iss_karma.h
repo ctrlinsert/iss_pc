@@ -72,7 +72,11 @@ static inline unsigned iss_karma_bridge_ex(unsigned char *p, uintptr_t helper,
             (unsigned char)(0x84+8*(i%8)),0x24};
         memcpy(p+n,op,6);n+=6;uint32_t d=32+32*i;memcpy(p+n,&d,4);n+=4;
     }
-    if(shard_args==4){
+    if(shard_args==7){
+        /* Function-entry observer: original RDI, editable saved YMM0, return PC. */
+        const unsigned char args[]={0x48,0x89,0xf9,0x48,0x8d,0x54,0x24,0x20,0x4c,0x8b,0x83,0x80,0,0,0};
+        memcpy(p+n,args,sizeof(args));n+=sizeof(args);
+    }else if(shard_args==4){
         /* Direct camera: editable saved YMM0, camera-data R12, context from
          * original RSP+0x50. Other lanes and all other registers are restored. */
         const unsigned char args[]={0x48,0x8d,0x4c,0x24,0x20,0x4c,0x89,0xe2,

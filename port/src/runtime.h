@@ -93,6 +93,7 @@ int32_t runtime_guest_errno(int host_errno);
 void *runtime_low_map(size_t size, int prot);
 /* Windows: reserves the PS4 user address range as a placeholder (no-op elsewhere). */
 void runtime_memory_reserve(void);
+uint64_t runtime_memory_raise_pool_mb(uint64_t mb);
 uintptr_t runtime_ajm_resolve(const char *name);
 void runtime_ajm_report(void);
 /* AjmDecMp3ParseFrame (guest layout). */
@@ -160,6 +161,7 @@ typedef struct RuntimeWait {
  * entry itself: there [frame+8] is the guest call site and [frame] the guest frame chain. */
 #define RUNTIME_GUEST_FRAME() ((uintptr_t)__builtin_frame_address(0))
 uint64_t runtime_wait_now_ms(void);
+int runtime_movie_playing(void); /* a full-screen movie decoded a picture in the last 0.5 s */
 /* The calling thread's slot: its guest thread record, else a host slot (NULL when all are taken). */
 RuntimeWait *runtime_wait_slot(void);
 void runtime_wait_slot_begin(RuntimeWait *w, const char *kind, const void *object, const char *name,

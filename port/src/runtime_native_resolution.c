@@ -21,3 +21,7 @@ float runtime_native_safe_area(void){
     const IssNativePlan *p=runtime_native_plan();
     return runtime_native_status()==1 && !p->hud_edges && p->ui_width ? 1920.0f/p->ui_width : 1.0f;
 }
+#include "iss_native_light_tiles.h"
+static _Atomic uint32_t light_tiles_row_base=ISS_LIGHT_TILES_ORIGINAL_ROW_BASE;
+void iss_light_tiles_publish(uint32_t row_base){atomic_store_explicit(&light_tiles_row_base,row_base,memory_order_release);}
+uint32_t iss_light_tiles_row_base(void){return atomic_load_explicit(&light_tiles_row_base,memory_order_acquire);}

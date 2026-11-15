@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Output and internal resolution of the game's "native rendering" (renderer v2, update 1.07).
 
-The game reads two keys of tlg.ini: iss_native_output (0 = off, 1..5 = a display preset) and
+The game reads these keys of tlg.ini: iss_native_output (0 = off, 1..6 = a display preset, 7 = the
+custom size iss_native_width x iss_native_height, any display 16:9 or wider) and
 iss_native_percent (25..200, the 3D scene as a percent of that output). The player thinks in
 "render 720p, show 1440p", so the launchers offer the internal resolution as a height and store
 the percent that gives it.
@@ -18,13 +19,36 @@ translator falls back to the Tk table, so one entry serves both.
 import backports_table
 
 # Index = value of iss_native_output. Index 0 is "off".
-OUTPUTS = ((0, 0), (1920, 1080), (2560, 1440), (3440, 1440), (3840, 2160), (5120, 1440))
+OUTPUTS = ((0, 0), (1920, 1080), (2560, 1440), (3440, 1440), (3840, 2160), (5120, 1440), (7680, 2160), (0, 0))
 OUTPUT_LABELS = ('', '1080p · 1920×1080', '1440p · 2560×1440', '3440×1440 (21:9)', '4K · 3840×2160',
-                 '5120×1440 (32:9)')
+                 '5120×1440 (32:9)', '7680×2160 (32:9)', 'Custom')
+CUSTOM = 7      # ISS_NATIVE_CUSTOM: the size is iss_native_width x iss_native_height
+CUSTOM_MIN, CUSTOM_MAX = (1280, 720), (15360, 4320)
+_custom = (0, 0)
+
+
+def custom_valid(width, height):
+    """iss_native_custom_valid: even, from 1280x720 to 15360x4320, 16:9 or wider."""
+    return (CUSTOM_MIN[0] <= width <= CUSTOM_MAX[0] and CUSTOM_MIN[1] <= height <= CUSTOM_MAX[1]
+            and not width % 2 and not height % 2 and width * 9 >= height * 16)
+
+
+def set_custom(width, height):
+    """iss_native_set_custom: the size the custom output stands for (0 x 0 when invalid)."""
+    global _custom
+    _custom = (width, height) if custom_valid(width, height) else (0, 0)
+
+
+def output_size(output):
+    """(width, height) of an output, or None (off, unknown, or a custom size that is not set)."""
+    if not 0 < output < len(OUTPUTS):
+        return None
+    size = _custom if output == CUSTOM else OUTPUTS[output]
+    return size if size[0] and size[1] else None
 # Internal resolution steps: scene heights offered to the player.
 STEPS = (540, 720, 900, 1080, 1440, 2160)
 PERCENT_MIN, PERCENT_MAX = 25, 200
-PIXEL_BUDGET = 3840 * 2160      # the game refuses a larger scene at startup
+PIXEL_BUDGET = 7680 * 4320      # ISS_NATIVE_MAX_PIXELS (8K): the native patch refuses a larger scene
 
 PICK_OK, PICK_BUDGET, PICK_RANGE, PICK_OUTPUT = 1, 0, -1, -2
 
@@ -37,9 +61,10 @@ def scale(dimension, percent):
 def plan(output, percent):
     """(scene width, scene height, output width, output height), or None when the game would
     refuse it (output off or unknown, percent out of range, scene over the pixel budget)."""
-    if not 0 < output < len(OUTPUTS) or not PERCENT_MIN <= percent <= PERCENT_MAX:
+    size = output_size(output)
+    if size is None or not PERCENT_MIN <= percent <= PERCENT_MAX:
         return None
-    out_w, out_h = OUTPUTS[output]
+    out_w, out_h = size
     width, height = scale(out_w, percent), scale(out_h, percent)
     if not width or not height or width * height > PIXEL_BUDGET:
         return None
@@ -51,9 +76,10 @@ def pick(output, target_height):
     target_height (the lowest percent on a tie). error = height - target_height, so 0 is exact.
     status: PICK_OK; PICK_BUDGET (the result is over the pixel budget: nothing to store);
     PICK_RANGE (no percent from 25 to 200 gets near); PICK_OUTPUT (output off or unknown)."""
-    if not 0 < output < len(OUTPUTS):
+    size = output_size(output)
+    if size is None:
         return PICK_OUTPUT, 0, 0, 0, 0
-    out_w, out_h = OUTPUTS[output]
+    out_w, out_h = size
     if target_height * 100 < out_h * PERCENT_MIN or target_height * 100 > out_h * PERCENT_MAX:
         return PICK_RANGE, 0, 0, 0, 0
     best = min(range(PERCENT_MIN, PERCENT_MAX + 1), key=lambda p: (abs(scale(out_h, p) - target_height), p))
@@ -101,6 +127,7 @@ def read(ini):
         except ValueError:
             return default
         return value if low <= value <= high else default
+    set_custom(number('iss_native_width', 0, CUSTOM_MAX[0], 0), number('iss_native_height', 0, CUSTOM_MAX[1], 0))
     return (number('iss_native_output', 0, len(OUTPUTS) - 1, 0),
             number('iss_native_percent', PERCENT_MIN, PERCENT_MAX, 100))
 
@@ -114,7 +141,9 @@ def save(path, output, percent):
 # ------------------------------------------------------------------------------------------ UI model
 def output_options(t):
     """[(value text, label)] of the Output choice."""
-    return [('0', t('nat_out_off'))] + [(str(n), OUTPUT_LABELS[n]) for n in range(1, len(OUTPUTS))]
+    custom = f'{OUTPUT_LABELS[CUSTOM]} · {_custom[0]}×{_custom[1]}' if _custom[0] else f'{OUTPUT_LABELS[CUSTOM]} (game menu)'
+    return [('0', t('nat_out_off'))] + [(str(n), custom if n == CUSTOM else OUTPUT_LABELS[n])
+                                        for n in range(1, len(OUTPUTS))]
 
 
 def internal_options(t, output, percent):
@@ -188,7 +217,7 @@ TEXT = {
     'nat_step_near': ('{h}p · about {w}×{sh} ({pct}%)', '{h}p · cerca de {w}×{sh} ({pct}%)'),
     'nat_step_custom': ('Custom ({pct}%)', 'Personalizada ({pct}%)'),
     'nat_step_range': ('{h}p · out of range for this output', '{h}p · fora do alcance desta saída'),
-    'nat_step_budget': ('{h}p · {w}×{sh} is over the 4K limit', '{h}p · {w}×{sh} passa do limite de 4K'),
+    'nat_step_budget': ('{h}p · {w}×{sh} is over the 8K limit', '{h}p · {w}×{sh} passa do limite de 8K'),
     'nat_sum_off': ('Original game rendering. Pick an output to render natively.',
                     'Renderização do jogo original. Escolha uma saída para renderizar nativamente.'),
     'nat_sum_ok': ('Scene {w}×{sh} → output {ow}×{oh} ({pct}%).',
@@ -197,9 +226,9 @@ TEXT = {
                      'Não é exato: {h}p não é um percentual inteiro desta saída ({err} px).'),
     'nat_sum_exact_on': ('Exactly {h}p on: {where}.', 'Exatamente {h}p em: {where}.'),
     'nat_sum_budget': (
-        'Scene {w}×{sh} ({pct}% of {ow}×{oh}) is over the 4K pixel limit, so the game would refuse it and start unchanged. '
+        'Scene {w}×{sh} ({pct}% of {ow}×{oh}) is over the 8K pixel limit, so the game would refuse it and start unchanged. '
         'Choose a lower internal resolution.',
-        'A cena {w}×{sh} ({pct}% de {ow}×{oh}) passa do limite de pixels de 4K; o jogo a recusaria e abriria sem mudança. '
+        'A cena {w}×{sh} ({pct}% de {ow}×{oh}) passa do limite de pixels de 8K; o jogo a recusaria e abriria sem mudança. '
         'Escolha uma resolução interna menor.'),
     'nat_restart': ('Takes effect the next time the game starts.', 'Vale na próxima vez que o jogo iniciar.'),
     'nat_needs_v2': (

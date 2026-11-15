@@ -144,6 +144,12 @@ if [[ ${1:-} == --test || ${1:-} == --test-only ]]; then
     out/mouse-shake-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_mouse_touch.c -Isrc -lm -o out/mouse-touch-test
     out/mouse-touch-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_native_cone.c -Isrc -lm -o out/native-cone-test
+    out/native-cone-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_camera_aspect.c -Isrc -lm -o out/camera-aspect-test
+    out/camera-aspect-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_light_tiles.c -Isrc -o out/light-tiles-test
+    out/light-tiles-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_stream_busy.c -Isrc -o out/stream-busy-test
     out/stream-busy-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_rumble_gate.c -Isrc -o out/rumble-gate-test

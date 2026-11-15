@@ -9,6 +9,7 @@
 #include <filesystem>
 #include "common/path_util.h"
 #include "shader_salt.h"
+#include "light_tiles_patch.h"
 #include "common/serdes.h"
 #include "common/elf_info.h"
 #include "pipeline_library.h"
@@ -42,9 +43,12 @@ static thread_local bool loading_legacy_srt{};
 static u32 compute_shader_variant{};
 
 static u32 BinaryVersionFor(const Shader::Info& info) {
-    return info.hw_stage == Shader::HwStage::Compute
-               ? ShaderBinaryVersion + compute_shader_variant * 100u
-               : ShaderBinaryVersion;
+    if (info.hw_stage != Shader::HwStage::Compute) return ShaderBinaryVersion;
+    u32 version = ShaderBinaryVersion + compute_shader_variant * 100u;
+    // The lighting pass with a moved row table (light_tiles_patch.h) is another binary per offset.
+    if (iss::light_tiles::Applies(info.pgm_hash))
+        version += 100u * (0x10000u + iss::light_tiles::RowBase());
+    return version;
 }
 } // namespace Serialization
 
