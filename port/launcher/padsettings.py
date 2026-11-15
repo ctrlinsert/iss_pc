@@ -154,6 +154,31 @@ PAD_SENS_RANGE = (0.1, 10.0)
 PAD_DRAG_RANGE = (0, 200)    # 0 = a drag never releases the click
 
 
+# -------------------------------------------- extra controller buttons (TLG_PAD_EXTRA, environment)
+# runtime_pad.c extra_names / apply_pad_extra: buttons only some controllers have, as sources that add
+# to the layout. (SDL name, label) in the order the Elite pad prints them: SDL's paddle1/3 are the
+# right paddles P1/P2, paddle2/4 the left ones P3/P4. None is bound by default.
+PAD_EXTRA_BUTTONS = (('misc1', 'Share'), ('paddle1', 'P1'), ('paddle3', 'P2'), ('paddle2', 'P3'), ('paddle4', 'P4'))
+# Targets apply_pad_extra takes ('' = unbound): the PS4 buttons, interact and two_fingers.
+PAD_EXTRA_TARGETS = ('', 'cross', 'circle', 'square', 'triangle', 'l1', 'r1', 'l2', 'r2', 'l3', 'r3', 'options',
+                     'up', 'down', 'left', 'right', 'touchpad_left', 'touchpad_right', 'interact', 'two_fingers')
+
+
+def pad_extra_value(settings):
+    """{extra button: target} that the game will use (unknown entries dropped)."""
+    raw = settings.get('pad_extra') or {}
+    if not isinstance(raw, dict):
+        return {}
+    known = {name for name, _ in PAD_EXTRA_BUTTONS}
+    return {b: t for b, t in raw.items() if b in known and t in PAD_EXTRA_TARGETS and t}
+
+
+def pad_extra_spec(settings):
+    """The TLG_PAD_EXTRA value ('' when nothing is bound), in PAD_EXTRA_BUTTONS order."""
+    value = pad_extra_value(settings)
+    return ','.join(f'{b}={value[b]}' for b, _ in PAD_EXTRA_BUTTONS if b in value)
+
+
 def environment(settings):
     """ISS_* variables for the settings that differ from the game's defaults ({} when none does)."""
     env = {}
@@ -173,6 +198,9 @@ def environment(settings):
         env['ISS_MOUSE_PAD_SENS'] = f'{min(max(sens, PAD_SENS_RANGE[0]), PAD_SENS_RANGE[1]):.2f}'
     if drag != 80:
         env['ISS_MOUSE_PAD_DRAG'] = str(min(max(drag, PAD_DRAG_RANGE[0]), PAD_DRAG_RANGE[1]))
+    extra = pad_extra_spec(settings)
+    if extra:
+        env['ISS_PAD_EXTRA'] = extra
     key_map = str(settings.get('key_map', '') or '').strip()
     if key_map:
         _, errors, _ = parse_key_map(key_map)

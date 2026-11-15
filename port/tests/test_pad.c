@@ -387,11 +387,70 @@ int main(void) {
     accel_boost(hard,gravity,2,0.01f);
     assert(hard[1]==4);
 
+    /* A pad without a touchpad (Xbox) with the auto-detect on (pad_view_gesture.h). No swipe
+     * prompt: View is the right click and the right stick stays the camera. */
+    SDL_CloseJoystick(joystick);
+    if (gamepad) SDL_CloseGamepad(gamepad);
+    gamepad=NULL;
+    assert(SDL_DetachVirtualJoystick(id));
+    pump();
+    data=read_pad();
+    desc.ntouchpads=0; desc.touchpads=NULL; desc.nsensors=0; desc.sensors=NULL;
+    desc.name="tlg test xbox";
+    id=SDL_AttachVirtualJoystick(&desc);
+    assert(id!=0);
+    joystick=SDL_OpenJoystick(id);
+    assert(joystick);
+    iss_touch_reads_active=1;
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_RIGHTY,-32767));
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_BACK,true));
+    pump();
+    data=read_pad();
+    assert(gamepad && touch_at(&data,1440) && data.right_y<64);
+    usleep(60000);
+    data=read_pad();
+    assert((data.buttons & BTN_TOUCHPAD) && touch_at(&data,1440) && data.right_y<64);
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_BACK,false));
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_RIGHTY,0));
+    pump();
+    data=read_pad();
+    usleep(220000);
+    data=read_pad();
+    assert(data.buttons==0 && data.touch_count==0);
+    /* A swipe prompt (the script read the finger): View + a right-stick flick up swipes up, with
+     * no click, and the stick is kept from the camera; the stick alone never swipes. */
+    ++iss_touch_reads[ISS_TOUCH_X];
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_RIGHTY,-32767));
+    pump();
+    data=read_pad();
+    assert(data.touch_count==0 && data.right_y<64);
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_RIGHTY,0));
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_BACK,true));
+    pump();
+    ++iss_touch_reads[ISS_TOUCH_X];
+    data=read_pad();
+    assert(data.touch_count==0 && !(data.buttons & BTN_TOUCHPAD));
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_RIGHTY,-32767));
+    pump();
+    data=read_pad();
+    assert(data.touch_count==1 && data.touches[0].y>800 && data.right_y==128 && !(data.buttons & BTN_TOUCHPAD));
+    usleep(350000);
+    data=read_pad();
+    assert(data.touch_count==1 && data.touches[0].y<150 && data.right_y==128 && !(data.buttons & BTN_TOUCHPAD));
+    assert(SDL_SetJoystickVirtualButton(joystick,SDL_GAMEPAD_BUTTON_BACK,false));
+    assert(SDL_SetJoystickVirtualAxis(joystick,SDL_GAMEPAD_AXIS_RIGHTY,0));
+    pump();
+    data=read_pad();
+    usleep(150000);
+    data=read_pad();
+    assert(data.touch_count==0 && data.buttons==0);
+    iss_touch_reads_active=0;
+
     SDL_CloseJoystick(joystick);
     if (gamepad) SDL_CloseGamepad(gamepad);
     gamepad=NULL;
     assert(SDL_DetachVirtualJoystick(id));
     SDL_Quit();
     unlink(path);
-    puts("PASS: pad ABI, staged left/right clicks, L1 chord, SDL touch coordinates, two trackpads, trackpad haptics, touch IDs, orientation reset, accel gain, overlay capture");
+    puts("PASS: pad ABI, staged left/right clicks, L1 chord, SDL touch coordinates, two trackpads, trackpad haptics, touch IDs, orientation reset, accel gain, overlay capture, Xbox View swipe");
 }

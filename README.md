@@ -346,25 +346,26 @@ The game asks for the motion sensor and the touchpad in many scenes: graffiti, a
 **Aim assist follows the device you use:** the game's aim assist (it has no menu option) is **off while you play with keyboard and mouse** and turns **on by itself as soon as a controller is used** (a button, a trigger or a stick), then off again at the next key or mouse input. `TLG_AIM_ASSIST=on` keeps the original assist always on; `TLG_AIM_ASSIST=off` keeps it always off.
 
 **Touchpad on a controller without one:**
-- **View/Select/Back** is the touchpad click (right side; with L1 held, the left side). Holding the button holds the touchpad.
-- **Hold View/Select and move the right stick** to swipe a finger from the middle of the touchpad. A quick tap without moving still clicks.
+- **View/Select/Back** is the touchpad click (right side; with L1 held, the left side). Holding the button holds the touchpad (draining), and the right stick keeps turning the camera meanwhile.
+- **Swipes need View held: hold View/Select and flick the right stick** in the asked direction. The stick alone never swipes, so turning the camera in a fight cannot start a prompt. The port sees when the game shows a swipe prompt: only then does View put a finger on the pad instead of the click (held still: the finger rests in the middle, for the hand scanner; a quick tap still clicks). Keep the stick pushed after the flick and the finger stays at the end of the pad (lifting a mobile command centre, then R2); centre the stick and another flick swipes again. `TLG_PAD_VIEW_GESTURE=0` brings back the old View + right stick.
 - **Keyboard:** Tab (left side) and Backspace (right side) click; **hold Tab and use the arrow keys** to swipe.
 - **Two fingers on both ends of the touchpad** (lifting the car off Reggie): **hold View/Select + R1**; on the keyboard, **hold Tab + Backspace**.
+- **Extra buttons** (Share on Xbox Series pads, the four Elite paddles): nothing by default, so the layout never needs them. Bind each one in the launcher's Controls screen (or `ISS_PAD_EXTRA=paddle1=cross,misc1=two_fingers`; paddle1/paddle3 are P1/P2, paddle2/paddle4 are P3/P4) to any PS4 button, a touchpad side, interact or two fingers. A binding adds to the layout. On Windows the paddles reach the game only when they are left unassigned in the Xbox Accessories app.
 
 | In-game action | DualShock 4 / DualSense | Xbox / other controller | Keyboard |
 |---|---|---|---|
-| Absorb/drain a power (smoke, neon...) and "hold the touchpad" interactions | hold the touchpad | hold View/Select (leave the right stick alone, or it becomes a swipe) | hold X, Tab or Backspace (no arrow keys); mouse: Left Ctrl (or X1) + hold the left button still |
+| Absorb/drain a power (smoke, neon...) and "hold the touchpad" interactions | hold the touchpad | hold View/Select | hold X, Tab or Backspace (no arrow keys); mouse: Left Ctrl (or X1) + hold the left button still |
 | "Press the touchpad" interactions | click the touchpad | tap View/Select | X, Tab or Backspace |
 | Graffiti: turn the controller sideways | turn the controller | L3+R3 (sensor mode): it is on its side at once | press T or G (again to leave) |
 | Graffiti: shake the can | shake the controller | cross/A in sensor mode | Y |
 | Graffiti: spray | R2, aiming with the controller | R2, aiming with the left stick in sensor mode | F or left button (R2), aiming with the mouse or the arrow keys after T or G |
 | Press both ends of the touchpad (lifting the car off Reggie) | two fingers, one on each end | hold View/Select + R1 | hold Tab + Backspace; mouse: Left Ctrl (or X1) + right button |
-| Touchpad swipe ("Open Door", hand scanner) | swipe a finger | hold View/Select + right stick in the asked direction | hold Tab + arrow keys; mouse: hold Left Ctrl (or X1), left button and drag |
+| Touchpad swipe ("Open Door", hand scanner) | swipe a finger | hold View/Select and flick the right stick the asked way | hold Tab + arrow keys; mouse: hold Left Ctrl (or X1), left button and drag |
 | Back to normal after the graffiti | — | L3+R3 again ("Sensor mode off") | — |
 
 **Launcher:** the **Controller** box has the **Stick dead zone** (0–40%, default 10%). Raise it if the character, the camera or the sensor-mode tilt moves on its own (stick drift).
 
-**Environment variables:** `ISS_MOTION_BUTTON=<SDL button>` changes the sensor-mode button (default `misc1`; L3+R3 always works), and `ISS_MOTION=off` ignores the real gyro (the simulation still works).
+**Environment variables:** `ISS_MOTION_BUTTON=<SDL button>` adds a sensor-mode button (none by default; L3+R3 always works), and `ISS_MOTION=off` ignores the real gyro (the simulation still works).
 
 **Intel CPUs:** the game's code uses SSE4A instructions (EXTRQ), which only AMD CPUs have. On Intel the port replaces them with an emulation at start (needs `iced-x86`, included in the packages). Older CPUs (Sandy and Ivy Bridge) also lack MOVBE, F16C, BMI1 or LZCNT, which are emulated the same way; AVX is still required. `ISS_ISA_REWRITE=sse4a` (or `f16c`, or a list such as `f16c,movbe`) forces the emulation on a CPU that has the instruction (testing), `ISS_ISA_REWRITE=1` forces every emulated set (MOVBE, BMI1, LZCNT, F16C, SSE4A) and `ISS_ISA_REWRITE=0` turns it off. Details: [port/docs/isa_rewrite.md](port/docs/isa_rewrite.md).
 

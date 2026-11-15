@@ -67,6 +67,22 @@ int main(void) {
     assert(pressed_by(&pad,SDL_GAMEPAD_BUTTON_BACK)==0 && pressed_by(&pad,SDL_GAMEPAD_BUTTON_GUIDE)==CLICK_RIGHT);
     assert(pressed_by(&pad,SDL_GAMEPAD_BUTTON_MISC1)==0 && pressed_by(&pad,SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1)==CLICK_LEFT);
     assert(apply_button_map(&pad,"cross=Space",false)==0); /* a key name is no gamepad button */
+    /* Extra buttons (TLG_PAD_EXTRA): none bound by default; each adds a source and leaves the
+     * defaults alone; one target per extra button; keyboard keys, unknown names and the
+     * keyboard-only actions are refused. */
+    for (size_t i=0;i<sizeof(extra_names)/sizeof(*extra_names);++i) assert(pressed_by(&pad_map,extra_names[i].button)==0);
+    ButtonMap extra=pad_map;
+    assert(apply_pad_extra(&extra,"paddle1=cross, paddle3=interact,misc1=two_fingers,paddle2=touchpad_right,paddle4=R1")==5);
+    assert(pressed_by(&extra,SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1)==BTN_CROSS && pressed_by(&extra,SDL_GAMEPAD_BUTTON_SOUTH)==BTN_CROSS);
+    assert(pressed_by(&extra,SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2)==ACT_INTERACT);
+    assert(pressed_by(&extra,SDL_GAMEPAD_BUTTON_MISC1)==(CLICK_LEFT|CLICK_RIGHT));
+    assert(pressed_by(&extra,SDL_GAMEPAD_BUTTON_LEFT_PADDLE1)==CLICK_RIGHT && pressed_by(&extra,SDL_GAMEPAD_BUTTON_BACK)==CLICK_RIGHT);
+    assert(pressed_by(&extra,SDL_GAMEPAD_BUTTON_LEFT_PADDLE2)==BTN_R1 && pressed_by(&extra,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)==BTN_R1);
+    assert(apply_pad_extra(&extra,"paddle1=square")==1);
+    assert(pressed_by(&extra,SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1)==BTN_SQUARE);
+    assert(apply_pad_extra(&extra,"a=cross,paddle1=shake,paddle9=cross,misc1=bogus,paddle1,=x")==0);
+    assert(pressed_by(&extra,SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1)==BTN_SQUARE);
+    assert(motion_button()<0); /* Share no longer toggles sensor mode by default */
     /* Keyboard: each side has a key of its own. */
     assert(pressed_by(&key_map,SDL_SCANCODE_TAB)==CLICK_LEFT && pressed_by(&key_map,SDL_SCANCODE_BACKSPACE)==CLICK_RIGHT);
     ButtonMap sides=key_map;

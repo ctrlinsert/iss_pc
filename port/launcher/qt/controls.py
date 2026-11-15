@@ -71,6 +71,15 @@ class Controls(QObject):
         rows.append(self._row(item.id, self.backend.t_.pair(item.name), self.backend.t_.pair(item.what), 'slider',
                               True, self.backend.fix_states.get(item.id) is not None, lo=item.lo, hi=item.hi,
                               step=5, unit=item.unit, value=value, valueText=f'{value}{item.unit}'))
+        extra = padsettings.pad_extra_value(self.settings)
+        for button, label in padsettings.PAD_EXTRA_BUTTONS:
+            target = extra.get(button, '')
+            options = [{'value': t, 'label': self.t('ctl_extra_none') if not t else self.t(
+                ('pad_act_' if t == 'interact' else 'ctl_extra_' if t == 'two_fingers' else 'pad_btn_') + t)}
+                for t in padsettings.PAD_EXTRA_TARGETS]
+            rows.append(self._row('x:' + button, self.t('ctl_extra_' + button, label=label), self.t('ctl_what_extra'),
+                                  'combo', False, bool(target), options=options,
+                                  index=padsettings.PAD_EXTRA_TARGETS.index(target)))
         return rows
 
     def _mouse_rows(self):
@@ -136,6 +145,17 @@ class Controls(QObject):
             tlg_run.save_settings(s)
         elif rid == 'i:rumble':
             backports_table.write_ini(self.ini_path(), {'rumble': None if value in ('1', 'true') else '0'})
+        elif rid.startswith('x:'):
+            extra = padsettings.pad_extra_value(s)
+            if value in padsettings.PAD_EXTRA_TARGETS and value:
+                extra[rid[2:]] = value
+            else:
+                extra.pop(rid[2:], None)
+            if extra:
+                s['pad_extra'] = extra
+            else:
+                s.pop('pad_extra', None)
+            tlg_run.save_settings(s)
         elif rid.startswith('m:'):
             key = rid[2:]
             kind = padsettings.MOUSE_SPEC[key][1]
