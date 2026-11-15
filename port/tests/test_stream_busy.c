@@ -27,6 +27,15 @@ __asm__(".text\n.globl stream_busy_run\nstream_busy_run:\n"
         ".globl stream_busy_resume\nstream_busy_resume:\n"
         "pop %r14\npop %r13\npop %rbx\nret\n");
 
+/* run_kill(stub, stream) -> 1 when the stub went to the stop target, 2 for the no-change one. */
+__attribute__((sysv_abi)) int stream_kill_run(const void *stub, void *stream);
+void stream_kill_stop(void);
+void stream_kill_skip(void);
+__asm__(".text\n.globl stream_kill_run\nstream_kill_run:\n"
+        "push %rbx\nmov %rsi,%rbx\njmp *%rdi\n"
+        ".globl stream_kill_stop\nstream_kill_stop:\nmov $1,%eax\npop %rbx\nret\n"
+        ".globl stream_kill_skip\nstream_kill_skip:\nmov $2,%eax\npop %rbx\nret\n");
+
 int main(void) {
     /* Guard bytes: the original 16-byte tail and the lea of the stream lock. */
     static unsigned char image[ISS_STREAM_BUSY_SITE + 64];
@@ -86,6 +95,51 @@ int main(void) {
     /* Nothing dequeued: no write through rbx, unlock as before. */
     stream_busy_run(stub, lock, mutex, NULL, 0);
     assert(unlocks == 2);
+
+    /* Kill path: guard bytes and the original table targets. */
+    static unsigned char big[ISS_STREAM_KILL_TABLE + 64];
+    memcpy(big + ISS_STREAM_KILL_DISPATCH, iss_stream_kill_dispatch_bytes, sizeof iss_stream_kill_dispatch_bytes);
+    memcpy(big + ISS_STREAM_KILL_TABLE, iss_stream_kill_table_bytes, sizeof iss_stream_kill_table_bytes);
+    assert(iss_stream_kill_valid(big, sizeof big));
+    const uint32_t targets[8] = {0x28a6a8,0x28a6a8,0x28a685,0x28a685,0x28a685,0x28a693,0x28a6bc,0x28a6a8};
+    for (int i = 0; i < 8; ++i) {
+        int32_t e; memcpy(&e, iss_stream_kill_table_bytes + 4 * i, 4);
+        assert((uint32_t)(ISS_STREAM_KILL_TABLE + e) == targets[i]);
+    }
+    /* The dispatch's lea points at the table, and its state bound is 7. */
+    memcpy(&rel, iss_stream_kill_dispatch_bytes + 12, 4);
+    assert(ISS_STREAM_KILL_DISPATCH + 16 + rel == ISS_STREAM_KILL_TABLE);
+    assert(iss_stream_kill_dispatch_bytes[6] == 7);
+    /* The stop and skip offsets inside the guarded bytes. */
+    assert(!memcmp(iss_stream_kill_dispatch_bytes + (ISS_STREAM_KILL_STOP - ISS_STREAM_KILL_DISPATCH), "\x48\x8d\x3d", 3));
+    assert(iss_stream_kill_dispatch_bytes[ISS_STREAM_KILL_STOP - ISS_STREAM_KILL_DISPATCH + 8] == 0x08);
+    assert(!memcmp(iss_stream_kill_dispatch_bytes + (ISS_STREAM_KILL_SKIP - ISS_STREAM_KILL_DISPATCH), "\x48\x89\xdf\xe8", 4));
+    /* Entries 1 and 7 move to the stub; the others stay. */
+    uintptr_t near = (uintptr_t)big + ISS_STREAM_KILL_TABLE + 0x1000;
+    assert(iss_stream_kill_table(big, near));
+    for (int i = 0; i < 8; ++i) {
+        int32_t e; memcpy(&e, big + ISS_STREAM_KILL_TABLE + 4 * i, 4);
+        if (i == 1 || i == 7) assert((uintptr_t)(big + ISS_STREAM_KILL_TABLE) + e == near);
+        else assert(!memcmp(big + ISS_STREAM_KILL_TABLE + 4 * i, iss_stream_kill_table_bytes + 4 * i, 4));
+    }
+    static unsigned char copy[sizeof big]; memcpy(copy, big, sizeof big);
+    assert(!iss_stream_kill_table(big, (uintptr_t)big + ISS_STREAM_KILL_TABLE + ((uintptr_t)1 << 32)));
+    assert(!memcmp(copy, big, sizeof big)); /* out of reach: nothing written */
+    /* The stub, run: busy goes to the no-change target, idle to the stop. */
+    unsigned char kill[64];
+    n = iss_stream_kill_stub(kill, 0x800000000u);
+    assert(n == 37);
+    memcpy(&a, kill + 15, 8); assert(a == 0x800000000u + ISS_STREAM_KILL_STOP);
+    memcpy(&a, kill + 29, 8); assert(a == 0x800000000u + ISS_STREAM_KILL_SKIP);
+    memcpy(stub + 0x100, kill, n);
+    target = (uint64_t)(uintptr_t)stream_kill_stop; memcpy(stub + 0x100 + 15, &target, 8);
+    target = (uint64_t)(uintptr_t)stream_kill_skip; memcpy(stub + 0x100 + 29, &target, 8);
+    memset(stream, 0, sizeof stream);
+    assert(stream_kill_run(stub + 0x100, stream) == 1);
+    stream[ISS_STREAM_BUSY_FLAG] = 1;
+    assert(stream_kill_run(stub + 0x100, stream) == 2);
+    stream[ISS_STREAM_BUSY_FLAG] = 0; stream[ISS_STREAM_BUSY_FLAG - 1] = 1; /* play byte: not the stub's business */
+    assert(stream_kill_run(stub + 0x100, stream) == 1);
     puts("stream busy: ok");
     return 0;
 }
