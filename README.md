@@ -734,26 +734,25 @@ O jogo pede o sensor de movimento e o touchpad em várias cenas: grafite, absorv
 - **Teclado e mouse:** aperte **T** ou **G** uma vez para virar o controle de lado (um lado ou o outro) e deixá-lo assim: o **mouse mira a lata de spray** durante todo o grafite (as setas também), **F** ou o botão esquerdo pinta, e **Y**, balançar o mouse rápido para os lados ou girar a rodinha sacode (balançar enquanto pinta não sacode, então contornar o desenho continua movendo o cursor). Aperte a mesma tecla de novo para pôr o controle em pé. `ISS_SENSOR_KEYS=hold` volta ao jeito antigo (só enquanto T ou G está seguro).
 
 **Touchpad em controle sem touchpad:**
-- **View/Select/Back** é o clique do touchpad (lado direito; com L1 segurado, o lado esquerdo). Segurar o botão é segurar o touchpad (drenar), e o analógico direito continua girando a câmera.
-- **Deslizar exige View segurado: segure View/Select e dê um toque rápido no analógico direito** na direção pedida. O analógico sozinho nunca desliza, então girar a câmera numa luta não inicia um prompt. O port percebe quando o jogo mostra um prompt de deslizar: só então View põe um dedo no touchpad em vez do clique (segurado parado: o dedo fica no meio, para o leitor de mão; um toque rápido continua clicando). Mantenha o analógico empurrado depois do movimento e o dedo fica no fim do touchpad (levantar um centro de comando móvel, depois R2); volte o analógico ao centro e outro movimento desliza de novo. `TLG_PAD_VIEW_GESTURE=0` volta ao View + analógico direito antigo.
+- **View/Select/Back** é o clique do touchpad (lado direito; com L1 segurado, o lado esquerdo). Segurar o botão é segurar o touchpad.
+- **Segure View/Select e mova o analógico direito** para deslizar o dedo a partir do meio do touchpad. Um toque rápido sem mover continua sendo clique.
 - **Teclado:** Tab (lado esquerdo) e Backspace (lado direito) clicam; **segure Tab e use as setas** para deslizar.
 - **Dois dedos nas duas pontas do touchpad** (levantar o carro de cima do Reggie): **segure View/Select + R1**; no teclado, **segure Tab + Backspace**.
-- **Botões extras** (Share dos controles Xbox Series, as quatro pás do Elite): nada por padrão, então o layout nunca depende deles. Escolha a função de cada um na tela Controles do launcher (ou `ISS_PAD_EXTRA=paddle1=cross,misc1=two_fingers`; paddle1/paddle3 são P1/P2, paddle2/paddle4 são P3/P4): qualquer botão do PS4, um lado do touchpad, interagir ou dois dedos. A função soma ao layout. No Windows as pás só chegam ao jogo se estiverem sem função no app Acessórios Xbox.
 
 | Ação no jogo | DualShock 4 / DualSense | Xbox / outro controle | Teclado |
 |---|---|---|---|
-| Absorver/drenar um poder (fumaça, neon...) e interações de "segure o touchpad" | segurar o touchpad | segurar View/Select | segurar Tab ou Backspace (sem as setas); no mouse: Ctrl esquerdo (ou X1) + segurar o esquerdo parado |
+| Absorver/drenar um poder (fumaça, neon...) e interações de "segure o touchpad" | segurar o touchpad | segurar View/Select (sem mexer o analógico direito, senão vira deslize) | segurar Tab ou Backspace (sem as setas); no mouse: Ctrl esquerdo (ou X1) + segurar o esquerdo parado |
 | Interação de "toque no touchpad" | clicar o touchpad | toque em View/Select | Tab ou Backspace |
 | Grafite: virar o controle de lado | virar o controle | L3+R3 (modo sensor): já fica de lado | apertar T ou G (de novo para sair) |
 | Grafite: sacudir a lata | sacudir o controle | X/A no modo sensor | Y |
 | Grafite: pintar | R2, mirando com o controle | R2, mirando com o analógico esquerdo no modo sensor | F ou botão esquerdo (R2), mirando com o mouse ou as setas depois de T ou G |
 | Apertar as duas pontas do touchpad (levantar o carro de cima do Reggie) | dois dedos, um em cada ponta | segurar View/Select + R1 | segurar Tab + Backspace; no mouse: Ctrl esquerdo (ou X1) + botão direito |
-| Deslizar no touchpad (porta "Open Door", scanner de mão) | deslizar o dedo | segurar View/Select e dar um toque rápido no analógico direito na direção pedida | segurar Tab + setas; no mouse: segurar Ctrl esquerdo (ou X1), esquerdo e arrastar |
+| Deslizar no touchpad (porta "Open Door", scanner de mão) | deslizar o dedo | segurar View/Select + analógico direito na direção pedida | segurar Tab + setas; no mouse: segurar Ctrl esquerdo (ou X1), esquerdo e arrastar |
 | Voltar ao normal depois do grafite | — | L3+R3 de novo ("Modo sensor desligado") | — |
 
 **Launcher:** o quadro **Controle** tem a **Zona morta dos analógicos** (0–40%, padrão 10%). Aumente se o personagem, a câmera ou a inclinação do modo sensor se mexerem sozinhos (drift).
 
-**Variáveis de ambiente:** `ISS_MOTION_BUTTON=<botão do SDL>` acrescenta um botão para o modo sensor (nenhum por padrão; o L3+R3 vale sempre), e `ISS_MOTION=off` ignora o giroscópio real (a simulação continua funcionando).
+**Variáveis de ambiente:** `ISS_MOTION_BUTTON=<botão do SDL>` troca o botão do modo sensor (padrão `misc1`; o L3+R3 vale sempre), e `ISS_MOTION=off` ignora o giroscópio real (a simulação continua funcionando).
 
 **Processadores Intel:** o código do jogo usa instruções SSE4A (EXTRQ), que só existem em processadores AMD. Num Intel o port troca essas instruções por uma emulação na partida (precisa do `iced-x86`, que já vem nos pacotes). Processadores mais antigos (Sandy e Ivy Bridge) também não têm MOVBE, F16C, BMI1 ou LZCNT, que são emulados do mesmo jeito; o AVX continua obrigatório. `ISS_ISA_REWRITE=sse4a` (ou `f16c`, ou uma lista como `f16c,movbe`) força a emulação num processador que tem a instrução (teste), `ISS_ISA_REWRITE=1` força todos os conjuntos emulados (MOVBE, BMI1, LZCNT, F16C, SSE4A) e `ISS_ISA_REWRITE=0` desliga. Detalhes: [port/docs/isa_rewrite.md](port/docs/isa_rewrite.md).
 
