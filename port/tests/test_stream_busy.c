@@ -5,16 +5,21 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/mman.h>
+#endif
 #include "iss_stream_busy.h"
 
 static void *unlocked_with;
 static int unlocks;
-static void unlock(void *mutex) { unlocked_with = mutex; ++unlocks; }
+/* The stub calls with the game's (SysV) convention, on every host. */
+static __attribute__((sysv_abi)) void unlock(void *mutex) { unlocked_with = mutex; ++unlocks; }
 
 /* run(stub, S, mutex handle, stream, depth): the registers the site sees, then into the stub;
  * the stub's resume jump lands on stream_busy_resume, which returns to the caller. */
-void stream_busy_run(const void *stub, void *s, void *mutex, void *stream, uint32_t depth);
+__attribute__((sysv_abi)) void stream_busy_run(const void *stub, void *s, void *mutex, void *stream, uint32_t depth);
 void stream_busy_resume(void);
 __asm__(".text\n.globl stream_busy_run\nstream_busy_run:\n"
         "push %rbx\npush %r13\npush %r14\n"
@@ -54,8 +59,13 @@ int main(void) {
     memcpy(&a, bytes + 0x29, 8); assert(a == 0x800000000u + ISS_STREAM_BUSY_RESUME);
 
     /* Run it with the targets pointed at the test's unlock and resume. */
+#ifdef _WIN32
+    unsigned char *stub = VirtualAlloc(NULL, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    assert(stub);
+#else
     unsigned char *stub = mmap(NULL, 4096, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     assert(stub != MAP_FAILED);
+#endif
     memcpy(stub, bytes, n);
     uint64_t target = (uint64_t)(uintptr_t)unlock; memcpy(stub + 0x19, &target, 8);
     target = (uint64_t)(uintptr_t)stream_busy_resume; memcpy(stub + 0x29, &target, 8);
