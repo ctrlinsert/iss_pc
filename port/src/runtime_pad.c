@@ -425,11 +425,50 @@ static int apply_button_map(ButtonMap *map, const char *spec, bool keyboard) {
     return used;
 }
 
+/* TLG_PAD_EXTRA: the buttons only some controllers have, as extra sources that add to the
+ * layout instead of replacing a default: "<extra button>=<ps4 button or action>", comma
+ * separated, e.g. "paddle1=cross,paddle3=interact,misc1=two_fingers". Extra buttons: misc1
+ * (Share/Capture, Xbox Series), paddle1..paddle4 (Elite: paddle1=P1, paddle3=P2, paddle2=P3,
+ * paddle4=P4, as SDL names them). Targets: the PS4 buttons of TLG_PAD_MAP, touchpad_left/_right,
+ * interact (a tap clicks, held + right stick swipes) and two_fingers (both ends of the touchpad).
+ * None is bound by default. */
+static const struct { const char *name; SDL_GamepadButton button; } extra_names[]={
+    {"misc1",SDL_GAMEPAD_BUTTON_MISC1}, {"paddle1",SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1},
+    {"paddle2",SDL_GAMEPAD_BUTTON_LEFT_PADDLE1}, {"paddle3",SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2},
+    {"paddle4",SDL_GAMEPAD_BUTTON_LEFT_PADDLE2},
+};
+static int apply_pad_extra(ButtonMap *map, const char *spec) {
+    if (!spec || !*spec) return 0;
+    char copy[512];
+    snprintf(copy,sizeof(copy),"%s",spec);
+    int used=0;
+    for (char *entry=copy, *next; entry; entry=next) {
+        if ((next=strchr(entry,','))) *next++=0;
+        char *eq=strchr(entry,'=');
+        if (!eq) { if (*trim(entry)) printf("Runtime: pad extra: ignored '%s' (expected button=action)\n",trim(entry)); continue; }
+        *eq=0;
+        const char *source=trim(entry), *target=trim(eq+1);
+        int button=-1;
+        for (size_t i=0;i<sizeof(extra_names)/sizeof(*extra_names);++i) if (!SDL_strcasecmp(source,extra_names[i].name)) button=extra_names[i].button;
+        uint32_t ps=0;
+        if (!SDL_strcasecmp(target,"two_fingers")) ps=CLICK_LEFT|CLICK_RIGHT;
+        for (size_t i=0;i<sizeof(ps_names)/sizeof(*ps_names) && !ps;++i)
+            if (!SDL_strcasecmp(target,ps_names[i].name) && (!(ps_names[i].ps & ACT_ALL) || ps_names[i].ps==ACT_INTERACT)) ps=ps_names[i].ps;
+        if (button<0 || !ps) { printf("Runtime: pad extra: ignored '%s=%s'\n",source,target); continue; }
+        size_t kept=0; /* one target per extra button: a later entry replaces an earlier one */
+        for (size_t i=0;i<map->count;++i) if (map->entries[i].source!=button) map->entries[kept++]=map->entries[i];
+        map->count=kept;
+        if (map->count<sizeof(map->entries)/sizeof(*map->entries)) { map->entries[map->count++]=(ButtonSource){button,ps}; ++used; }
+    }
+    return used;
+}
+
 static void load_button_maps(void) {
     static bool loaded;
     if (loaded) return;
     loaded=true;
-    const int pad=apply_button_map(&pad_map,getenv("TLG_PAD_MAP"),false);
+    int pad=apply_button_map(&pad_map,getenv("TLG_PAD_MAP"),false);
+    pad+=apply_pad_extra(&pad_map,getenv("TLG_PAD_EXTRA"));
     /* TLG_KEY_MAP wins over tlg.ini's key_map, TLG_MENU_KEY_MAP over its menu_key_map. */
     const char *env=getenv("TLG_KEY_MAP");
     TlgGpuInputSettings in;
@@ -448,8 +487,8 @@ static void load_button_maps(void) {
  *   keyboard: T / G hold the controller turned sideways (to one side / the other) and, while held,
  *   the arrow keys or the mouse point it (the graffiti cursor), Y or a quick wiggle of the mouse
  *   (or spinning the wheel, see mouse_shake.h) shakes it, F or the left button sprays (R2);
- *   gamepad: "sensor mode", toggled by a tap on TLG_MOTION_BUTTON (default "misc1": Share/Capture;
- *   any SDL button name) or on L3+R3 together. Sensor mode is the spray can of the graffiti (the
+ *   gamepad: "sensor mode", toggled on L3+R3 together, or by a tap on TLG_MOTION_BUTTON (any SDL
+ *   button name; none by default, so Share/Capture stays free for TLG_PAD_EXTRA). Sensor mode is the spray can of the graffiti (the
  *   only scene that asks for motion; the others use the touchpad): the controller is held on its
  *   side, as the game asks ("Hold Wireless Controller Sideways"), the left stick (or the right)
  *   points it left/right and up/down (the graffiti cursor; it stays where it is left) and the
@@ -524,7 +563,7 @@ static int motion_button(void) {
     static int button=-2;
     if (button==-2) {
         const char *name=getenv("TLG_MOTION_BUTTON");
-        button=(int)SDL_GetGamepadButtonFromString(name && *name ? name : "misc1");
+        button=name && *name ? (int)SDL_GetGamepadButtonFromString(name) : -1;
     }
     return button;
 }
@@ -1191,7 +1230,7 @@ static void apply_view_gesture(PadData *d, SDL_Gamepad *g, uint32_t mapped) {
     /* View's click comes from here now; another source bound to it still clicks. */
     bool other=false;
     for (size_t i=0;i<pad_map.count;++i)
-        if (pad_map.entries[i].ps==CLICK_RIGHT && pad_map.entries[i].source!=SDL_GAMEPAD_BUTTON_BACK &&
+        if ((pad_map.entries[i].ps & CLICK_RIGHT) && pad_map.entries[i].source!=SDL_GAMEPAD_BUTTON_BACK &&
             SDL_GetGamepadButton(g,(SDL_GamepadButton)pad_map.entries[i].source)) other=true;
     if (!other) d->buttons&=~(uint32_t)CLICK_RIGHT;
     const float sx=(float)SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTX)/32767.f;

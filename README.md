@@ -350,6 +350,7 @@ The game asks for the motion sensor and the touchpad in many scenes: graffiti, a
 - **Swipes need View held: hold View/Select and flick the right stick** in the asked direction. The stick alone never swipes, so turning the camera in a fight cannot start a prompt. The port sees when the game shows a swipe prompt: only then does View put a finger on the pad instead of the click (held still: the finger rests in the middle, for the hand scanner; a quick tap still clicks). Keep the stick pushed after the flick and the finger stays at the end of the pad (lifting a mobile command centre, then R2); centre the stick and another flick swipes again. `TLG_PAD_VIEW_GESTURE=0` brings back the old View + right stick.
 - **Keyboard:** Tab (left side) and Backspace (right side) click; **hold Tab and use the arrow keys** to swipe.
 - **Two fingers on both ends of the touchpad** (lifting the car off Reggie): **hold View/Select + R1**; on the keyboard, **hold Tab + Backspace**.
+- **Extra buttons** (Share on Xbox Series pads, the four Elite paddles): nothing by default, so the layout never needs them. Bind each one in the launcher's Controls screen (or `ISS_PAD_EXTRA=paddle1=cross,misc1=two_fingers`; paddle1/paddle3 are P1/P2, paddle2/paddle4 are P3/P4) to any PS4 button, a touchpad side, interact or two fingers. A binding adds to the layout. On Windows the paddles reach the game only when they are left unassigned in the Xbox Accessories app.
 
 | In-game action | DualShock 4 / DualSense | Xbox / other controller | Keyboard |
 |---|---|---|---|
@@ -364,7 +365,7 @@ The game asks for the motion sensor and the touchpad in many scenes: graffiti, a
 
 **Launcher:** the **Controller** box has the **Stick dead zone** (0–40%, default 10%). Raise it if the character, the camera or the sensor-mode tilt moves on its own (stick drift).
 
-**Environment variables:** `ISS_MOTION_BUTTON=<SDL button>` changes the sensor-mode button (default `misc1`; L3+R3 always works), and `ISS_MOTION=off` ignores the real gyro (the simulation still works).
+**Environment variables:** `ISS_MOTION_BUTTON=<SDL button>` adds a sensor-mode button (none by default; L3+R3 always works), and `ISS_MOTION=off` ignores the real gyro (the simulation still works).
 
 **Intel CPUs:** the game's code uses SSE4A instructions (EXTRQ), which only AMD CPUs have. On Intel the port replaces them with an emulation at start (needs `iced-x86`, included in the packages). Older CPUs (Sandy and Ivy Bridge) also lack MOVBE, F16C, BMI1 or LZCNT, which are emulated the same way; AVX is still required. `ISS_ISA_REWRITE=sse4a` (or `f16c`, or a list such as `f16c,movbe`) forces the emulation on a CPU that has the instruction (testing), `ISS_ISA_REWRITE=1` forces every emulated set (MOVBE, BMI1, LZCNT, F16C, SSE4A) and `ISS_ISA_REWRITE=0` turns it off. Details: [port/docs/isa_rewrite.md](port/docs/isa_rewrite.md).
 
@@ -737,6 +738,7 @@ O jogo pede o sensor de movimento e o touchpad em várias cenas: grafite, absorv
 - **Deslizar exige View segurado: segure View/Select e dê um toque rápido no analógico direito** na direção pedida. O analógico sozinho nunca desliza, então girar a câmera numa luta não inicia um prompt. O port percebe quando o jogo mostra um prompt de deslizar: só então View põe um dedo no touchpad em vez do clique (segurado parado: o dedo fica no meio, para o leitor de mão; um toque rápido continua clicando). Mantenha o analógico empurrado depois do movimento e o dedo fica no fim do touchpad (levantar um centro de comando móvel, depois R2); volte o analógico ao centro e outro movimento desliza de novo. `TLG_PAD_VIEW_GESTURE=0` volta ao View + analógico direito antigo.
 - **Teclado:** Tab (lado esquerdo) e Backspace (lado direito) clicam; **segure Tab e use as setas** para deslizar.
 - **Dois dedos nas duas pontas do touchpad** (levantar o carro de cima do Reggie): **segure View/Select + R1**; no teclado, **segure Tab + Backspace**.
+- **Botões extras** (Share dos controles Xbox Series, as quatro pás do Elite): nada por padrão, então o layout nunca depende deles. Escolha a função de cada um na tela Controles do launcher (ou `ISS_PAD_EXTRA=paddle1=cross,misc1=two_fingers`; paddle1/paddle3 são P1/P2, paddle2/paddle4 são P3/P4): qualquer botão do PS4, um lado do touchpad, interagir ou dois dedos. A função soma ao layout. No Windows as pás só chegam ao jogo se estiverem sem função no app Acessórios Xbox.
 
 | Ação no jogo | DualShock 4 / DualSense | Xbox / outro controle | Teclado |
 |---|---|---|---|
@@ -751,7 +753,7 @@ O jogo pede o sensor de movimento e o touchpad em várias cenas: grafite, absorv
 
 **Launcher:** o quadro **Controle** tem a **Zona morta dos analógicos** (0–40%, padrão 10%). Aumente se o personagem, a câmera ou a inclinação do modo sensor se mexerem sozinhos (drift).
 
-**Variáveis de ambiente:** `ISS_MOTION_BUTTON=<botão do SDL>` troca o botão do modo sensor (padrão `misc1`; o L3+R3 vale sempre), e `ISS_MOTION=off` ignora o giroscópio real (a simulação continua funcionando).
+**Variáveis de ambiente:** `ISS_MOTION_BUTTON=<botão do SDL>` acrescenta um botão para o modo sensor (nenhum por padrão; o L3+R3 vale sempre), e `ISS_MOTION=off` ignora o giroscópio real (a simulação continua funcionando).
 
 **Processadores Intel:** o código do jogo usa instruções SSE4A (EXTRQ), que só existem em processadores AMD. Num Intel o port troca essas instruções por uma emulação na partida (precisa do `iced-x86`, que já vem nos pacotes). Processadores mais antigos (Sandy e Ivy Bridge) também não têm MOVBE, F16C, BMI1 ou LZCNT, que são emulados do mesmo jeito; o AVX continua obrigatório. `ISS_ISA_REWRITE=sse4a` (ou `f16c`, ou uma lista como `f16c,movbe`) força a emulação num processador que tem a instrução (teste), `ISS_ISA_REWRITE=1` força todos os conjuntos emulados (MOVBE, BMI1, LZCNT, F16C, SSE4A) e `ISS_ISA_REWRITE=0` desliga. Detalhes: [port/docs/isa_rewrite.md](port/docs/isa_rewrite.md).
 
