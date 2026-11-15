@@ -1170,7 +1170,9 @@ static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
 static void key_axis(uint8_t *axis, bool negative, bool positive) {
     if (negative || positive) *axis=(uint8_t)(128-(negative ? 128 : 0)+(positive ? 127 : 0));
 }
+void runtime_input_trace_flush(void); /* runtime_input_trace.c (ISS_INPUT_TRACE=1) */
 static void sample_host(PadData *d) {
+    runtime_input_trace_flush();
     power_mouse_dx=power_mouse_dy=0;
     memset(d,0,sizeof(*d));
     d->left_x=d->left_y=d->right_x=d->right_y=128;

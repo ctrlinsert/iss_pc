@@ -1211,6 +1211,43 @@ static void install_iss_touch_reads(const char *app0,Segment *segments,uint64_t 
     iss_touch_reads_active=1;
     puts("Interact auto-detect: watching the game's touchpad reads; the key swipes only while a prompt reads the finger");
 }
+#include "iss_input_trace.h"
+void runtime_input_trace_attach(uintptr_t image);
+uint32_t __attribute__((sysv_abi)) runtime_input_trace_btnk(int32_t kind);
+uint8_t __attribute__((sysv_abi)) runtime_input_trace_down(const void *object,uint32_t mask);
+void __attribute__((ms_abi)) runtime_input_trace_pressed(uintptr_t ctl,uintptr_t mask,uintptr_t ret);
+void __attribute__((ms_abi)) runtime_input_trace_held(uintptr_t ctl,uintptr_t mask,uintptr_t ret);
+/* ISS_INPUT_TRACE=1: log how the game asks for input (iss_input_trace.h). Observation only. */
+static void install_iss_input_trace(const char *app0,Segment *segments,uint64_t count,uint64_t size){
+    const char *e=getenv("ISS_INPUT_TRACE");
+    if(!e || strcmp(e,"1"))return;
+    char path[4096],serial[32]="",version[32]="";
+    snprintf(path,sizeof(path),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
+    sfo_value(path,"TITLE_ID",serial,sizeof(serial),NULL);sfo_value(path,"APP_VER",version,sizeof(version),NULL);
+    int executable=0,data=0;
+    for(uint64_t i=0;i<count;i++){
+        if((segments[i].flags&1) && segments[i].address<=ISS_BTNK_LOOKUP &&
+           ISS_PAD_DOWN+sizeof(iss_pad_down_bytes)<=segments[i].address+segments[i].size)executable=1;
+        if((segments[i].flags&2) && segments[i].address<=ISS_BTNK_TABLE &&
+           ISS_BTNK_TABLE+4*ISS_BTNK_COUNT<=segments[i].address+segments[i].size)data=1;
+    }
+    if(!iss_title_107(serial,version) || !executable || !data || !iss_input_trace_signature(image,size)){
+        puts("Input trace: game code not recognised; off");return;
+    }
+    unsigned char *bridges=allocate(page_size);
+    unsigned n=iss_karma_bridge_ex(bridges,(uintptr_t)runtime_input_trace_pressed,image+ISS_PAD_PRESSED,
+        (uintptr_t)image+ISS_PAD_PRESSED+ISS_PAD_PRESSED_STOLEN,ISS_PAD_PRESSED_STOLEN,8);
+    unsigned m=iss_karma_bridge_ex(bridges+2048,(uintptr_t)runtime_input_trace_held,image+ISS_PAD_HELD,
+        (uintptr_t)image+ISS_PAD_HELD+ISS_PAD_HELD_STOLEN,ISS_PAD_HELD_STOLEN,8);
+    if(n>2048 || m>2048)fail("Input trace bridge overflow");
+    protect(bridges,page_size,5);
+    runtime_input_trace_attach((uintptr_t)image);
+    iss_karma_jump(image+ISS_PAD_PRESSED,(uintptr_t)bridges);
+    iss_karma_jump(image+ISS_PAD_HELD,(uintptr_t)(bridges+2048));
+    iss_karma_jump(image+ISS_BTNK_LOOKUP,(uintptr_t)runtime_input_trace_btnk);
+    iss_karma_jump(image+ISS_PAD_DOWN,(uintptr_t)runtime_input_trace_down);
+    puts("Input trace: logging the game's action and button queries (INPUT_TRACE lines)");
+}
 static void install_iss_aim_assist(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     if(iss_aim_assist_mode(getenv("TLG_AIM_ASSIST"))==ISS_AIM_ASSIST_ON)return;
     char path[4096],serial[32]="",version[32]="";
@@ -1851,6 +1888,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_iss_mouse_aim(app0, segments, ns, size);
     if (gpu_enabled) install_iss_aim_assist(app0, segments, ns, size);
     install_iss_touch_reads(app0, segments, ns, size);
+    install_iss_input_trace(app0, segments, ns, size);
     if (gpu_enabled) install_iss_trophies(app0, segments, ns, size);
     if (gpu_enabled) install_iss_karma(app0, segments, ns, size, karma_before_runtime_rewrites);
     protect(traps, round_page((import_count + 1) * 32), 5);
