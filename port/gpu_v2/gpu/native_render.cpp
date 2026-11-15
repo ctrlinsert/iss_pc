@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include "video_core/amdgpu/regs.h"
+#include "video_core/amdgpu/regs_shader.h"
 
 namespace iss::native_render {
 namespace {
@@ -63,8 +64,14 @@ void LogSpan(PassStats& stats, const Marker& begin, const SpanResult& span, cons
                  span.draws, span.dispatches, int(verdict.size()), verdict.data());
     if (span.verdict == Scan::Unsafe)
         std::fprintf(stderr, " opcode=%02x word=%08x", span.bad_opcode, span.bad_word);
-    std::fprintf(stderr, " target_writes=%u ps=%010llx -> %s\n", span.target_writes,
-                 (unsigned long long)span.ps_address, outcome);
+    // The engine shader's hash (its OrbShdr block): the name shader dumps use (ps_0x<hash>).
+    unsigned long long ps_hash = 0;
+    if (span.ps_address) {
+        const auto* info = AmdGpu::FindBinaryInfo(reinterpret_cast<const u32*>(span.ps_address));
+        if (info) ps_hash = info->shader_hash;
+    }
+    std::fprintf(stderr, " target_writes=%u ps=%010llx ps_hash=%016llx -> %s\n", span.target_writes,
+                 (unsigned long long)span.ps_address, ps_hash, outcome);
 }
 
 /// The images a pass would use: the source T#s of the payload and colour target 0 at BEGIN.
