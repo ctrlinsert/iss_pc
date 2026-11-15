@@ -32,7 +32,7 @@ static_assert(ISS_NR_COPY_PAYLOAD <= ISS_NR_MAX_PAYLOAD && ISS_NR_FXAA_PAYLOAD <
 static_assert(ISS_NR_PASS_POSTBLEND == static_cast<unsigned>(nr::Pass::PostBlend));
 static_assert(ISS_NR_PASS_SMAA == static_cast<unsigned>(nr::Pass::Smaa));
 static_assert(ISS_NR_POSTBLEND_PAYLOAD <= ISS_NR_MAX_PAYLOAD && ISS_NR_SMAA_PAYLOAD <= ISS_NR_MAX_PAYLOAD);
-static_assert(ISS_NR_SITE_COUNT <= ISS_NR_MAX_SITES);
+static_assert(int(ISS_NR_SITE_COUNT) <= int(ISS_NR_MAX_SITES));
 
 namespace {
 
