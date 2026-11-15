@@ -160,6 +160,8 @@ if [[ ${1:-} == --test || ${1:-} == --test-only ]]; then
     out/touch-reads-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_stream_busy.c -Isrc -o out/stream-busy-test
     out/stream-busy-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_native_keys.c -Isrc -o out/native-keys-test
+    out/native-keys-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_rumble_gate.c -Isrc -o out/rumble-gate-test
     out/rumble-gate-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG -pthread "${includes[@]}" -I. -Isrc tests/test_mouse_pad.c "${libraries[@]}" -lm -o out/mouse-pad-test

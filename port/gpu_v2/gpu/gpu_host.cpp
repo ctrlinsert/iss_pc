@@ -242,6 +242,7 @@ extern "C" void tlggpu_input_settings(TlgGpuInputSettings* out) {
     out->sensitivity = s.mouse_sensitivity;
     std::snprintf(out->key_map, sizeof(out->key_map), "%s", s.key_map.c_str());
     std::snprintf(out->menu_key_map, sizeof(out->menu_key_map), "%s", s.menu_key_map.c_str());
+    std::snprintf(out->native_key_map, sizeof(out->native_key_map), "%s", s.native_key_map.c_str());
 }
 extern "C" void tlggpu_mouse_pad_hud(int active, float x, float y, int touching, int clicking) {
     TlgOverlay::SetMousePad(active != 0, x, y, touching != 0, clicking != 0);

@@ -32,6 +32,7 @@
 #include "iss_aim_assist.h"
 #include "iss_menu_mouse.h"
 #include "wheel_steps.h"
+#include "iss_native_keys.h"
 #include <sys/stat.h>
 
 #define ERR_INVALID_ARG ((int32_t)0x80920001)
@@ -287,7 +288,8 @@ static SDL_Gamepad *current_gamepad(void) {
  * the sticks; the rs ones also aim the spray can and pick the direction of a Tab swipe). On a
  * gamepad only interact applies (the right stick picks its swipe). Gamepad sticks, triggers, the
  * real touchpad click and the overlay shortcuts are not remapped. */
-static const struct { const char *name; uint32_t ps; } ps_names[]={
+typedef struct { const char *name; uint32_t ps; } PsName;
+static const PsName ps_names[]={
     {"cross",BTN_CROSS}, {"circle",BTN_CIRCLE}, {"square",BTN_SQUARE}, {"triangle",BTN_TRIANGLE},
     {"l1",BTN_L1}, {"r1",BTN_R1}, {"l2",BTN_L2}, {"r2",BTN_R2}, {"l3",BTN_L3}, {"r3",BTN_R3},
     {"options",BTN_OPTIONS}, {"touchpad",CLICK_LEFT}, {"touchpad_left",CLICK_LEFT}, {"touchpad_right",CLICK_RIGHT},
@@ -353,6 +355,27 @@ static ButtonMap menu_map={{
     {SDL_SCANCODE_P,BTN_OPTIONS},
 },23};
 
+/* The native action keys (iss_native_keys.h), used in gameplay when the game code is recognised:
+ * a key presses one of the game's actions, not a PS4 button, so actions that share a button on
+ * PS4 can have keys of their own (Execute on B, away from Melee on F). Each entry's ps is
+ * 1 << the action's index in iss_native_actions. A key bound here leaves its key_map binding in
+ * gameplay (Esc is pause, not OPTIONS; T is investigate, not the tilt). TLG_NATIVE_KEY_MAP or
+ * tlg.ini native_key_map remap them ("execute=G,jump=Space|Mouse X1"; the action names are
+ * iss_native_actions'); TLG_NATIVE_KEYS=0 turns them off (then key_map applies as before). */
+#define NA(a) (1u<<(a))
+static ButtonMap native_map={{
+    {SDL_SCANCODE_SPACE,NA(ISS_NA_JUMP)}, {SDL_SCANCODE_LSHIFT,NA(ISS_NA_DASH)},
+    {SDL_SCANCODE_F,NA(ISS_NA_MELEE)}, {SDL_SCANCODE_B,NA(ISS_NA_EXECUTE)}, {SDL_SCANCODE_R,NA(ISS_NA_GOOD)},
+    {SDL_SCANCODE_E,NA(ISS_NA_USE)}, {SDL_SCANCODE_E,NA(ISS_NA_DRAIN)}, {SDL_SCANCODE_E,NA(ISS_NA_PUSH)},
+    {MOUSE_RIGHT,NA(ISS_NA_AIM)}, {MOUSE_LEFT,NA(ISS_NA_FIRE)}, {MOUSE_LEFT,NA(ISS_NA_SPRAY)},
+    {SDL_SCANCODE_Q,NA(ISS_NA_SECONDARY)}, {MOUSE_MIDDLE,NA(ISS_NA_HEAVY)}, {SDL_SCANCODE_Z,NA(ISS_NA_IONIC)},
+    {SDL_SCANCODE_X,NA(ISS_NA_PING)}, {SDL_SCANCODE_ESCAPE,NA(ISS_NA_PAUSE)}, {SDL_SCANCODE_T,NA(ISS_NA_INVESTIGATE)},
+},17};
+static PsName native_names[ISS_NA_COUNT];
+static void native_names_init(void) {
+    for (int a=0;a<ISS_NA_COUNT;++a) native_names[a]=(PsName){iss_native_actions[a].name,NA(a)};
+}
+
 static char *trim(char *text) {
     while (*text==' ' || *text=='\t') ++text;
     char *end=text+strlen(text);
@@ -378,7 +401,7 @@ static int source_from_name(const char *name, bool keyboard) {
 
 /* Applies a TLG_PAD_MAP/TLG_KEY_MAP value; returns how many entries were used. Bad entries are
  * logged and skipped, so their PS4 button keeps its default. */
-static int apply_button_map(ButtonMap *map, const char *spec, bool keyboard) {
+static int apply_map(ButtonMap *map, const char *spec, bool keyboard, const PsName *table, size_t name_count, bool host_actions) {
     if (!spec || !*spec) return 0;
     char copy[1024];
     snprintf(copy,sizeof(copy),"%s",spec);
@@ -397,7 +420,7 @@ static int apply_button_map(ButtonMap *map, const char *spec, bool keyboard) {
         char *button=trim(entry), *names=trim(eq+1);
         entry=next;
         uint32_t ps=0;
-        for (size_t i=0;i<sizeof(ps_names)/sizeof(*ps_names);++i) if (!SDL_strcasecmp(button,ps_names[i].name)) ps=ps_names[i].ps;
+        for (size_t i=0;i<name_count;++i) if (!SDL_strcasecmp(button,table[i].name)) ps=table[i].ps;
         const bool none=!SDL_strcasecmp(names,"none");
         int sources[8], count=0;
         for (char *name=names, *bar; name && !none; name=bar) {
@@ -416,7 +439,7 @@ static int apply_button_map(ButtonMap *map, const char *spec, bool keyboard) {
             /* A source bound to a button by the player leaves the host action it had by default
              * (r1=Mouse X2 takes X2 away from interact), so one press does not do both. */
             for (int j=0;j<count && !drop;++j)
-                drop=map->entries[i].source==sources[j] && (map->entries[i].ps & ACT_ALL) && !(ps & ACT_ALL);
+                drop=host_actions && map->entries[i].source==sources[j] && (map->entries[i].ps & ACT_ALL) && !(ps & ACT_ALL);
             if (!drop) map->entries[kept++]=map->entries[i];
         }
         map->count=kept;
@@ -426,6 +449,14 @@ static int apply_button_map(ButtonMap *map, const char *spec, bool keyboard) {
     }
     return used;
 }
+static int apply_button_map(ButtonMap *map, const char *spec, bool keyboard) {
+    return apply_map(map,spec,keyboard,ps_names,sizeof(ps_names)/sizeof(*ps_names),true);
+}
+static int apply_native_map(const char *spec) {
+    native_names_init();
+    return apply_map(&native_map,spec,true,native_names,ISS_NA_COUNT,false);
+}
+static void native_signatures_update(void);
 
 static void load_button_maps(void) {
     static bool loaded;
@@ -439,7 +470,11 @@ static void load_button_maps(void) {
     const int keys=apply_button_map(&key_map,env && *env ? env : in.key_map,true);
     const char *menu_env=getenv("TLG_MENU_KEY_MAP");
     const int menu=apply_button_map(&menu_map,menu_env && *menu_env ? menu_env : in.menu_key_map,true);
-    if (pad || keys || menu) printf("Runtime: pad map: %d gamepad, %d keyboard and %d menu buttons remapped\n",pad,keys,menu);
+    const char *native_env=getenv("TLG_NATIVE_KEY_MAP");
+    const int native=apply_native_map(native_env && *native_env ? native_env : in.native_key_map);
+    if (pad || keys || menu || native)
+        printf("Runtime: pad map: %d gamepad, %d keyboard, %d menu and %d native action keys remapped\n",pad,keys,menu,native);
+    native_signatures_update();
 }
 
 /* Motion (orientation quaternion, acceleration in g, angular velocity in rad/s; axes as SDL's:
@@ -1101,6 +1136,52 @@ static void menu_latch_update(bool menu, const bool *k, uint32_t mouse) {
     menu_latch.mouse&=mouse;
 }
 /* sample_host: the menu layer is in use (window.cpp: Esc goes back instead of freeing the mouse). */
+/* The native action keys (native_map, iss_native_keys.h): on once probe.c installed the game
+ * hooks (runtime_pad_native_attach) unless TLG_NATIVE_KEYS=0, and only outside the game's menus.
+ * The pad sampler publishes the held actions; the hook at the end of the game's pad read takes
+ * them (runtime_pad_native_take), with presses latched so a tap between two reads still counts. */
+static atomic_int native_attached;
+void runtime_pad_native_attach(void) { atomic_store(&native_attached,1); }
+static bool native_keys_on(void) {
+    static int on=-1;
+    if (on<0) { const char *e=getenv("TLG_NATIVE_KEYS"); on=!(e && *e=='0'); }
+    return on && atomic_load(&native_attached);
+}
+static _Atomic uint32_t native_down, native_latched;
+uint32_t runtime_pad_native_take(void) { return atomic_load(&native_down) | atomic_exchange(&native_latched,0); }
+/* Each action's keys as an order-free signature (0: unbound), for the split of actions that
+ * share a PS4 button (iss_native_split). The generation changes when the map does. */
+static uint64_t native_sig[ISS_NA_COUNT];
+static atomic_int native_sig_gen;
+static uint64_t mix64(uint64_t x) {
+    x+=0x9e3779b97f4a7c15ull; x=(x^(x>>30))*0xbf58476d1ce4e5b9ull; x=(x^(x>>27))*0x94d049bb133111ebull; return x^(x>>31);
+}
+static void native_signatures_update(void) {
+    for (int a=0;a<ISS_NA_COUNT;++a) {
+        uint64_t sig=0;
+        for (size_t i=0;i<native_map.count;++i) if (native_map.entries[i].ps>>a & 1) sig+=mix64((uint64_t)native_map.entries[i].source);
+        native_sig[a]=sig;
+    }
+    atomic_fetch_add(&native_sig_gen,1);
+}
+int runtime_pad_native_signatures(uint64_t out[ISS_NA_COUNT]) {
+    const int gen=atomic_load(&native_sig_gen);
+    memcpy(out,native_sig,sizeof(native_sig));
+    return gen;
+}
+/* The gameplay key map with the native keys on: each binding whose key is a native action key
+ * is left out (that key presses its action instead). */
+static uint32_t play_keys(const bool *k, uint32_t mouse, bool native) {
+    if (!native) return map_keys(k,mouse);
+    uint32_t bits=0;
+    for (size_t i=0;i<key_map.count;++i) {
+        const ButtonSource e=key_map.entries[i];
+        const int base=e.source & ~SOURCE_SHIFT;
+        if (map_has_source(&native_map,base) || map_has_source(&native_map,base|SOURCE_SHIFT)) continue;
+        if (source_down(&key_map,k,mouse,e.source)) bits|=e.ps;
+    }
+    return bits;
+}
 static _Atomic int menu_keys_active;
 int runtime_pad_menu_keys_active(void) { return atomic_load(&menu_keys_active); }
 /* TLG_INTERACT_FLICK_SPEED (mouse counts per ms a swipe's flick must reach, default 1.5; 0: off),
@@ -1233,11 +1314,13 @@ static void sample_host(PadData *d) {
     /* Host actions bound to mouse buttons are read after sample_mouse; the motion sensor, sampled
      * first, sees the mouse buttons of the previous sample. */
     static uint32_t last_mouse;
-    const uint32_t early=k ? map_keys(k,last_mouse) & ACT_ALL : 0;
+    const bool native=native_keys_on() && !iss_menu_mouse_scene(runtime_menu_scene());
+    const uint32_t early=k ? play_keys(k,last_mouse,native) & ACT_ALL : 0;
     sample_motion(d,g,early);
     /* The keyboard works with or without a gamepad: its buttons add to the pad's, and a stick
      * follows the keys only while one of them is held. */
     if (!k) {
+        atomic_store(&native_down,0);
         update_aim_assist(pad_input,0);
         apply_interact(d,g,0);
         d->buttons&=~(uint32_t)ACT_ALL;
@@ -1252,7 +1335,8 @@ static void sample_host(PadData *d) {
     /* Esc is the game's (pause in gameplay, back in menus) while a binding has it; otherwise the
      * window takes it to free the mouse. */
     atomic_store(&menu_keys_active,menu ? map_has_source(&menu_map,SDL_SCANCODE_ESCAPE)
-                                        : map_has_source(&key_map,SDL_SCANCODE_ESCAPE));
+                                        : map_has_source(&key_map,SDL_SCANCODE_ESCAPE) ||
+                                          (native && map_has_source(&native_map,SDL_SCANCODE_ESCAPE)));
     static bool filtered_keys[SDL_SCANCODE_COUNT];
     menu_latch_update(menu,k,mouse);
     memcpy(filtered_keys,k,sizeof(filtered_keys));
@@ -1271,12 +1355,15 @@ static void sample_host(PadData *d) {
     /* The interact key held with the right mouse button: two fingers pressing both ends of the
      * touchpad (lifting the car off Reggie), as Tab + Backspace do (play_two_finger). */
     uint32_t two_fingers=0;
-    if (!menu && (map_keys(k,mouse) & ACT_INTERACT) && (mouse>>(MOUSE_RIGHT-MOUSE_SOURCE) & 1)) {
+    if (!menu && (play_keys(k,mouse,native) & ACT_INTERACT) && (mouse>>(MOUSE_RIGHT-MOUSE_SOURCE) & 1)) {
         mouse&=~(1u<<(MOUSE_RIGHT-MOUSE_SOURCE));
         two_fingers=CLICK_LEFT|CLICK_RIGHT;
     }
-    const uint32_t keys=(menu ? menu_keys(k,mouse) : map_keys(k,mouse))|menu_buttons|two_fingers, acts=keys & ACT_ALL;
-    update_aim_assist(pad_input,keys!=0 || mouse!=0 || power_mouse_dx!=0 || power_mouse_dy!=0);
+    const uint32_t keys=(menu ? menu_keys(k,mouse) : play_keys(k,mouse,native))|menu_buttons|two_fingers, acts=keys & ACT_ALL;
+    const uint32_t actions=native ? map_bits(&native_map,k,mouse) : 0;
+    atomic_store(&native_down,actions);
+    if (actions) atomic_fetch_or(&native_latched,actions);
+    update_aim_assist(pad_input,keys!=0 || actions!=0 || mouse!=0 || power_mouse_dx!=0 || power_mouse_dy!=0);
     d->buttons|=keys & ~(uint32_t)ACT_ALL;
     if (d->buttons & BTN_L2) d->l2=255;
     if (d->buttons & BTN_R2) d->r2=255;

@@ -103,6 +103,7 @@ typedef struct {
     float sensitivity;
     char key_map[512];
     char menu_key_map[512];     /* tlg.ini menu_key_map: the menu keys (runtime_pad.c menu_map) */
+    char native_key_map[512];   /* tlg.ini native_key_map: the native action keys (runtime_pad.c native_map) */
 } TlgGpuInputSettings;
 void tlggpu_input_settings(TlgGpuInputSettings *settings);
 /* Touchpad mode of the mouse (runtime_pad.c): while active, a small touchpad with the virtual

@@ -25,7 +25,11 @@ static void record(unsigned kind, uint32_t value, uint32_t mask, uintptr_t ret) 
 void runtime_input_trace_attach(uintptr_t image) { trace_image=image; }
 int runtime_input_trace_active(void) { return trace_image!=0; }
 
-/* Replaces the button kind lookup: the same table read, recorded. */
+/* Replaces the button kind lookup: the same table read, recorded. With the native action keys
+ * on, their lookup (runtime_native_keys.c) replaces it instead and notes each read here. */
+void runtime_input_trace_note_btnk(int32_t kind, uint32_t mask, uintptr_t ret) {
+    record(ISS_TRACE_BTNK,(uint32_t)kind,mask,ret);
+}
 uint32_t __attribute__((sysv_abi)) runtime_input_trace_btnk(int32_t kind) {
     if (kind==-1) return 0;
     const uint32_t mask=((const volatile uint32_t*)(trace_image+ISS_BTNK_TABLE))[kind];
