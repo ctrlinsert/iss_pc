@@ -20,6 +20,7 @@ static void fixture(std::vector<unsigned char>& image){
     for(const auto& s:iss_exposure_sites)memcpy(image.data()+s.offset,s.before,5);
     for(const auto& s:iss_map_rt_sites)memcpy(image.data()+s.offset,s.before,s.length);
     memcpy(image.data()+ISS_MAP_RT_FLOAT_LOAD,iss_map_rt_float_load,sizeof(iss_map_rt_float_load));
+    for(const auto& l:iss_map_clamp_loads)memcpy(image.data()+l.offset,l.bytes,8);
     for(const auto& s:iss_movie_sites)memcpy(image.data()+s.offset,s.before,s.length);
     for(const auto& r:iss_movie_readers)memcpy(image.data()+r.offset,r.bytes,8);
 }
@@ -144,6 +145,10 @@ int main(int argc,char** argv){
         image=original;image[ISS_MAP_RT_FLOAT_LOAD+byte]^=1;auto before=image;
         assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,100,1}));assert(image==before);guards++;
     }
+    for(const auto& l:iss_map_clamp_loads)for(unsigned byte=0;byte<8;byte++){
+        image=original;image[l.offset+byte]^=1;auto before=image;
+        assert(!iss_native_apply(image.data(),image.size(),"CUSA00223","01.07",{5,100,1}));assert(image==before);guards++;
+    }
     image=original;
     assert(!iss_native_apply(image.data(),image.size(),"CUSA00263","01.07",{3,100,1}));assert(image==original);
     assert(!iss_native_apply(image.data(),image.size(),"CUSA00004","01.00",{3,100,1}));assert(image==original);
@@ -168,6 +173,9 @@ int main(int argc,char** argv){
     {float f;memcpy(&f,image.data()+0xae5c9c,4);assert(f==3840.0f);}
     assert(read64(image.data()+0x5a611b)==((uint64_t)1080<<32|3840));
     assert(read32(image.data()+0x5a614b)==3840 && read32(image.data()+0x5a6181)==3841);
+    // Map widgets are as wide as on a 16:9 canvas: each width clamp is 1920/3840.
+    for(uint32_t at:{0xae5cacu,0xae5cb0u,0xae5cb4u}){float f;memcpy(&f,image.data()+at,4);assert(f==0.5f);}
+    assert(iss_map_width_clamp(1920,1080)==1.0f && iss_map_width_clamp(1920,1200)==1.0f && iss_map_width_clamp(2560,1080)==0.75f);
     assert(read32(image.data()+0x5a6189)==1080 && read32(image.data()+0x5a61a4)==1081);
     runtime_native_publish(-1,"Refused",nullptr);assert(runtime_native_status()==-1 && runtime_native_safe_area()==1.0f);
     p.hud_edges=0;runtime_native_publish(1,"Active",&p);assert(runtime_native_safe_area()==0.5f);
