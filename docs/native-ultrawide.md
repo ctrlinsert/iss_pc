@@ -294,6 +294,15 @@ A static audit of the stretched gameplay UI on the 1920x1080 canvas (mode 1) fou
   the menus fill the screen at their own anchors, and full-screen movies are already
   pillarboxed by the game's movie quad.
 
+- Map widgets are sized by `f = min(1.0, (w/h)*H/W, r*w/W)` of the canvas width W (script
+  SET_DISPLAY_RESOLUTION and MAP_RESOLUTION_RATIO, and the widget constructor). On a 16:9
+  canvas the 1.0 clamp holds the pause map (952x512, r=4) to 1920 wide, which its frame art
+  is drawn around; on the real-width canvas it came out 2008 wide (4.6% past its frame, over
+  the details pane) and the script's cursor landed off the player. Each function's clamp is a
+  single-use 1.0f that now becomes `min(1, (16/9)*H/W)`, so every map widget, and the map
+  target sized from it, is exactly as wide as on a 16:9 canvas (three more guarded sites, each
+  with its one reader). Filling the extra width with more map is separate, later work.
+
 Still to confirm in game on the real-width canvas: the map, text wrapping (the auto-wrap width
 reads the canvas width), the menu cursor's look rate, menu backdrops, and the menu slowdown
 seen in October, for which no code-side cause was found. The default stays mode 1 until then.

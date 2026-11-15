@@ -25,6 +25,7 @@ int main(){
  for(const auto&s:iss_exposure_sites)memcpy(original.data()+s.offset,s.before,5);
  for(const auto&s:iss_map_rt_sites)memcpy(original.data()+s.offset,s.before,s.length);
  memcpy(original.data()+ISS_MAP_RT_FLOAT_LOAD,iss_map_rt_float_load,sizeof(iss_map_rt_float_load));
+ for(const auto&l:iss_map_clamp_loads)memcpy(original.data()+l.offset,l.bytes,8);
  for(const auto&s:iss_movie_sites)memcpy(original.data()+s.offset,s.before,s.length);
  for(const auto&r:iss_movie_readers)memcpy(original.data()+r.offset,r.bytes,8);
  assert(iss_native_exposure_guard(original.data(),original.size()));
