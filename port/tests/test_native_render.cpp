@@ -202,6 +202,34 @@ void TestSpanUnsafe() {
     }
 }
 
+void TestKeepGoing() {
+    // The probe's scan goes past unsafe packets to END: it counts them, keeps the first, and
+    // still sees the draws and the pixel shader after them. The verdict stays Unsafe.
+    Dcb dcb;
+    dcb.Mark(kBegin, kProbe, 4);
+    dcb.Packet(0x50, {0x40000000u, 0, 0, 0x1000, 0, 64}); // DMA_DATA
+    dcb.Packet(0x37, {0x500, 0x1000, 0, 1});              // WRITE_DATA
+    dcb.Packet(0x76, {0x08, 0x00123456u, 0});
+    dcb.Draw();
+    dcb.Mark(kEnd, kProbe, 4);
+    const auto stop = ScanFrom(dcb, 0);
+    CHECK(stop.verdict == Scan::Unsafe && stop.bad_opcode == 0x50 && stop.draws == 0);
+    Marker m;
+    CHECK(ParseMarker(dcb.At(0), dcb.words.size(), m));
+    const u32 body = ((dcb.words[0] >> 16) & 0x3FFF) + 1;
+    const auto all = ScanSpan(dcb.At(1 + body), dcb.End(), m, true);
+    CHECK(all.verdict == Scan::Unsafe && all.bad_opcode == 0x50 && all.unsafe_packets == 2);
+    CHECK(all.bad_packet == dcb.At(1 + body));
+    CHECK(all.draws == 1 && all.ps_address == 0x12345600ull && all.end_marker != nullptr);
+    // ACQUIRE_MEM (a cache sync) is allowed.
+    Dcb sync;
+    sync.Mark(kBegin, kProbe, 5);
+    sync.Packet(0x58, {0x28000000u, 0xFFFFFFFFu, 0, 0, 0, 10});
+    sync.Draw();
+    sync.Mark(kEnd, kProbe, 5);
+    CHECK(ScanFrom(sync, 0).verdict == Scan::Ok);
+}
+
 void TestSpanBroken() {
     // No END, an END of another sequence or pass: no span.
     Dcb a;
@@ -258,6 +286,7 @@ int main() {
     TestTexture();
     TestSpanUnsafe();
     TestSpanBroken();
+    TestKeepGoing();
     TestSizes();
     if (failures) {
         std::printf("native_render: %d failure(s)\n", failures);

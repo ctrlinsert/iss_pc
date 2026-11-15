@@ -16,7 +16,7 @@ Off by default. Nothing changes unless `ISS_NATIVE_RENDER` names a pass.
    from the engine's own objects: the guest addresses and sizes of the pass's images.
 2. The command processor, at BEGIN, checks the commands up to the matching END (`ScanSpan`). Only
    when every packet between is register state, index or instance state, a draw or a dispatch,
-   or a cache flush may the pass run natively. A packet that writes or waits on memory, chains to
+   a cache flush or a cache sync (ACQUIRE_MEM) may the pass run natively. A packet that writes or waits on memory, chains to
    another buffer, counts samples (occlusion) or is another marker keeps the engine's commands.
 3. The native pass resolves its images through the texture cache and records its own work, with
    sizes taken from those images. If it cannot (an image not in the cache, a format it does not
@@ -33,7 +33,7 @@ temporal upscaler redirects the UI to output-size images.
 | Variable | Meaning |
 | --- | --- |
 | `ISS_NATIVE_RENDER` | Passes to run natively: names separated by commas, `all`, `-name` to remove one (`all,-bloom`). Empty, `0`, `off`: none (default). |
-| `ISS_NATIVE_RENDER=probe` | Diagnostic: every bracketed span is checked and reported, nothing runs natively and nothing is dropped. For checking a new hook before its pass exists. |
+| `ISS_NATIVE_RENDER=probe` | Diagnostic: every bracketed span is checked and reported, nothing runs natively and nothing is dropped. For checking a new hook before its pass exists. The probe scans the whole span, past unsafe packets: the log shows the first unsafe packet's words, how many there are, the draws, and the engine pixel shader (`ps_hash`, the name its `BB_DUMP_SHADERS` dump has: `fs_0x<hash>`). |
 | `ISS_NATIVE_RENDER_LOG=1` | Prints the first spans of each pass (`NATIVE_RENDER span pass=... draws=... scan=...`) and why a pass declined. |
 
 At most every 10 seconds (on a BEGIN) the log has one `NATIVE_RENDER report` line per pass: how

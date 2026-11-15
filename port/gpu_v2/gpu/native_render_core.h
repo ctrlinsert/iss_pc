@@ -188,6 +188,10 @@ struct SpanResult {
     /// The last pixel shader address the span set (SPI_SHADER_PGM_LO/HI_PS; 0 when none): which
     /// engine shader the pass draws with, for matching a probe span to a shader dump.
     u64 ps_address{};
+    /// Unsafe: the first unsafe packet's header (its words follow, for the log).
+    const u32* bad_packet{};
+    /// With keep_going (probe): how many unsafe packets the whole span has.
+    u32 unsafe_packets{};
 };
 
 /// SPI_SHADER_PGM_LO_PS / _HI_PS, SH register offsets.
@@ -216,8 +220,14 @@ inline bool QuietNop(u32 body_dwords, u32 first_word) {
 /// EVENT_WRITE of cache and pipeline events. Anything that writes or waits on memory, chains to
 /// another buffer, or counts samples is Unsafe: dropping the work around it would change what
 /// it sees.
-inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin) {
+///
+/// keep_going (the probe): an unsafe packet is recorded (the first one in bad_*) and the scan goes
+/// on to END, so the log shows the whole span (draws, shader, every unsafe packet). The verdict is
+/// still Unsafe.
+inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin,
+                           bool keep_going = false) {
     SpanResult r;
+    bool unsafe_seen = false;
     while (p < limit) {
         const u32 header = *p;
         const u32 type = header >> 30;
@@ -245,7 +255,7 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin) 
             Marker m;
             if (ParseMarker(p, std::size_t(limit - p), m)) {
                 if (m.kind == kEnd && m.pass == begin.pass && m.sequence == begin.sequence) {
-                    r.verdict = Scan::Ok;
+                    r.verdict = unsafe_seen ? Scan::Unsafe : Scan::Ok;
                     r.end_marker = p;
                     r.resume = p + 1 + body;
                     return r;
@@ -254,7 +264,7 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin) 
             } else {
                 ok = QuietNop(body, p[1]);
             }
-            if (!ok) r.bad_word = p[1];
+            if (!ok && !unsafe_seen) r.bad_word = p[1];
             break;
         }
         case 0x69: { // SET_CONTEXT_REG
@@ -303,17 +313,27 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin) 
         case 0x46: { // EVENT_WRITE: cache flushes and partial flushes only, no sample counts
             const u32 index = (p[1] >> 8) & 0xF;
             ok = index == 0 || index == 4 || index == 7;
-            r.bad_word = p[1];
+            if (!ok && !unsafe_seen) r.bad_word = p[1];
             break;
         }
+        case 0x58: // ACQUIRE_MEM: cache flush/invalidate and wait for it; writes no memory
+            ok = true;
+            break;
         default:
             ok = false;
             break;
         }
         if (!ok) {
-            r.verdict = Scan::Unsafe;
-            r.bad_opcode = opcode;
-            return r;
+            ++r.unsafe_packets;
+            if (!unsafe_seen) {
+                r.bad_opcode = opcode;
+                r.bad_packet = p;
+            }
+            unsafe_seen = true;
+            if (!keep_going) {
+                r.verdict = Scan::Unsafe;
+                return r;
+            }
         }
         p += 1 + body;
     }

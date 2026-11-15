@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "native_render.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <atomic>
@@ -62,8 +63,16 @@ void LogSpan(PassStats& stats, const Marker& begin, const SpanResult& span, cons
                  "scan=%.*s",
                  int(name.size()), name.data(), begin.sequence, begin.payload_words, span.packets,
                  span.draws, span.dispatches, int(verdict.size()), verdict.data());
-    if (span.verdict == Scan::Unsafe)
-        std::fprintf(stderr, " opcode=%02x word=%08x", span.bad_opcode, span.bad_word);
+    if (span.verdict == Scan::Unsafe) {
+        std::fprintf(stderr, " opcode=%02x word=%08x unsafe_packets=%u", span.bad_opcode, span.bad_word,
+                     span.unsafe_packets);
+        // The first unsafe packet's words, to tell what it does (a copy's source and size...).
+        if (span.bad_packet && span.bad_opcode < 0x100) {
+            const u32 n = std::min<u32>(((span.bad_packet[0] >> 16) & 0x3FFF) + 2, 8);
+            std::fprintf(stderr, " packet=");
+            for (u32 i = 0; i < n; ++i) std::fprintf(stderr, "%s%08x", i ? "," : "", span.bad_packet[i]);
+        }
+    }
     // The engine shader's hash (its OrbShdr block): the name shader dumps use (ps_0x<hash>).
     unsigned long long ps_hash = 0;
     if (span.ps_address) {
@@ -136,9 +145,11 @@ const u32* OnBegin(const Services& services, const u32* packet, const u32* limit
     auto& stats = s.stats[begin.pass < kPassCount ? begin.pass : 0];
     ++stats.begins;
     const u32 body = ((packet[0] >> 16) & 0x3FFF) + 1;
-    const SpanResult span = ScanSpan(packet + 1 + body, limit, begin);
+    // The probe scans the whole span (every unsafe packet, the draws and shader after them).
+    const bool probing = !wanted || begin.pass == static_cast<u32>(Pass::Probe);
+    const SpanResult span = ScanSpan(packet + 1 + body, limit, begin, probing);
     ++stats.scans[static_cast<u32>(span.verdict)];
-    if (!wanted || begin.pass == static_cast<u32>(Pass::Probe)) {
+    if (probing) {
         LogImages(stats, begin, services.regs);
         LogSpan(stats, begin, span, "probe");
         return nullptr;

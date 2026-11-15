@@ -820,7 +820,11 @@ static void iss_native_render_hook_report(void) {
     fprintf(stderr, "NATIVE_RENDER hooks: calls=%u markers_written=%u not_written=%u sites:", iss_nr_state.sequence,
             iss_nr_state.written, iss_nr_state.failed);
     for (int i = 0; i < ISS_NR_SITE_COUNT && i < ISS_NR_MAX_SITES; ++i)
-        fprintf(stderr, " %s@%#x=%u", iss_nr_sites[i].pass == ISS_NR_PASS_FXAA ? "fxaa" : "copy",
+        fprintf(stderr, " %s@%#x=%u",
+                iss_nr_sites[i].pass == ISS_NR_PASS_FXAA        ? "fxaa"
+                : iss_nr_sites[i].pass == ISS_NR_PASS_POSTBLEND ? "postblend"
+                : iss_nr_sites[i].pass == ISS_NR_PASS_SMAA      ? "smaa"
+                                                                : "copy",
                 (unsigned)iss_nr_sites[i].at, iss_nr_state.site_calls[i]);
     fprintf(stderr, "\n");
     fflush(stderr);
