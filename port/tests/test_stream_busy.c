@@ -115,11 +115,11 @@ int main(void) {
     assert(iss_stream_kill_dispatch_bytes[ISS_STREAM_KILL_STOP - ISS_STREAM_KILL_DISPATCH + 8] == 0x08);
     assert(!memcmp(iss_stream_kill_dispatch_bytes + (ISS_STREAM_KILL_SKIP - ISS_STREAM_KILL_DISPATCH), "\x48\x89\xdf\xe8", 4));
     /* Entries 1 and 7 move to the stub; the others stay. */
-    uintptr_t near = (uintptr_t)big + ISS_STREAM_KILL_TABLE + 0x1000;
-    assert(iss_stream_kill_table(big, near));
+    uintptr_t near_page = (uintptr_t)big + ISS_STREAM_KILL_TABLE + 0x1000;
+    assert(iss_stream_kill_table(big, near_page));
     for (int i = 0; i < 8; ++i) {
         int32_t e; memcpy(&e, big + ISS_STREAM_KILL_TABLE + 4 * i, 4);
-        if (i == 1 || i == 7) assert((uintptr_t)(big + ISS_STREAM_KILL_TABLE) + e == near);
+        if (i == 1 || i == 7) assert((uintptr_t)(big + ISS_STREAM_KILL_TABLE) + e == near_page);
         else assert(!memcmp(big + ISS_STREAM_KILL_TABLE + 4 * i, iss_stream_kill_table_bytes + 4 * i, 4));
     }
     static unsigned char copy[sizeof big]; memcpy(copy, big, sizeof big);

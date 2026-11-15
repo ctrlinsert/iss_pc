@@ -54,8 +54,8 @@ static int entered_game;
 static int gpu_enabled;
 static unsigned cpu_missing_sets; /* CPU_SET_* the host lacks; the guest code needs them rewritten */
 static IsaTable *isa_table; /* rewritten sites (--isa-rewrite); the fault handlers and the report read it */
-#ifndef _WIN32
 static unsigned char *near_patch_page; /* within rel32 reach of the image, see main */
+#ifndef _WIN32
 static uintptr_t guest_code_end; /* end of the image and its stub areas (emulation, red zone); TLG_CLOBBER_RED_ZONE */
 #endif
 static void isa_report_hook(void) { isa_rewrite_report(isa_table, stdout); }
