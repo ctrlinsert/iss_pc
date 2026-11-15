@@ -902,8 +902,8 @@ void NativeRenderingTab() {
     // The custom output (any display size): the header plans with it from here on.
     iss_native_set_custom(uint32_t(s.iss_native_width.load()),uint32_t(s.iss_native_height.load()));
     char custom_label[64];
-    if(iss_native_custom_w)std::snprintf(custom_label,sizeof(custom_label),TL("Custom  %u x %u","Personalizada  %u x %u"),iss_native_custom_w,iss_native_custom_h);
-    else std::snprintf(custom_label,sizeof(custom_label),"%s",TL("Custom (set the size below)","Personalizada (defina o tamanho abaixo)"));
+    if(iss_native_custom_w)std::snprintf(custom_label,sizeof(custom_label),"Custom  %u x %u",iss_native_custom_w,iss_native_custom_h);
+    else std::snprintf(custom_label,sizeof(custom_label),"%s","Custom (set the size below)");
     const char* outputs[]={TL("Off (original game)","Desligado (jogo original)"),"1080p  1920 x 1080","1440p  2560 x 1440",
         "3440 x 1440 (21:9)","4K  3840 x 2160","5120 x 1440 (32:9)","7680 x 2160 (32:9)",custom_label};
     int output=s.iss_native_output, percent=s.iss_native_percent;
@@ -918,10 +918,10 @@ void NativeRenderingTab() {
     if(output==ISS_NATIVE_CUSTOM){
         // Any display: width x height, or the size of the display the game window is on.
         int size[2]={s.iss_native_width.load(),s.iss_native_height.load()};
-        if(ImGui::InputInt2(TL("Custom size (width x height)","Tamanho personalizado (largura x altura)"),size)){
+        if(ImGui::InputInt2("Custom size (width x height)",size)){
             s.iss_native_width=std::clamp(size[0],0,int(ISS_NATIVE_CUSTOM_MAX_W));s.iss_native_height=std::clamp(size[1],0,int(ISS_NATIVE_CUSTOM_MAX_H));dirty=true;}
         if(ImGui::IsItemDeactivatedAfterEdit())native_commit=true;
-        if(ImGui::Button(TL("Match this display","Usar o tamanho desta tela"))){
+        if(ImGui::Button("Match this display")){
             SDL_Window* window=SDL_GetKeyboardFocus();
             const SDL_DisplayID display=window?SDL_GetDisplayForWindow(window):SDL_GetPrimaryDisplay();
             if(const SDL_DisplayMode* mode=display?SDL_GetDesktopDisplayMode(display):nullptr){
@@ -931,7 +931,7 @@ void NativeRenderingTab() {
             }
         }
         iss_native_set_custom(uint32_t(s.iss_native_width.load()),uint32_t(s.iss_native_height.load()));
-        if(!iss_native_custom_w)ImGui::TextWrapped(TL("Pick an even size from %d x %d up to %d x %d, 16:9 or wider (21:9, 32:9...).","Escolha um tamanho par de %d x %d até %d x %d, 16:9 ou mais largo (21:9, 32:9...)."),
+        if(!iss_native_custom_w)ImGui::TextWrapped("Pick an even size from %d x %d up to %d x %d, 16:9 or wider (21:9, 32:9...).",
             int(ISS_NATIVE_CUSTOM_MIN_W),int(ISS_NATIVE_CUSTOM_MIN_H),int(ISS_NATIVE_CUSTOM_MAX_W),int(ISS_NATIVE_CUSTOM_MAX_H));
     }
     const int step=output?iss_native_step_for_percent(output,percent):-1;
@@ -948,7 +948,7 @@ void NativeRenderingTab() {
                 std::snprintf(label,sizeof(label),pick.error?TL("%up  about %u x %u (%d%%)","%up  cerca de %u x %u (%d%%)"):"%up  %u x %u (%d%%)",
                               iss_native_step_heights[i],pick.width,pick.height,pick.percent);
             else if(status==ISS_NATIVE_PICK_BUDGET)
-                std::snprintf(label,sizeof(label),TL("%up  over the 8K pixel limit","%up  acima do limite de pixels de 8K"),iss_native_step_heights[i]);
+                std::snprintf(label,sizeof(label),"%up  over the 8K pixel limit",iss_native_step_heights[i]);
             else std::snprintf(label,sizeof(label),TL("%up  out of range for this output","%up  fora do alcance desta saída"),iss_native_step_heights[i]);
             ImGui::BeginDisabled(status!=ISS_NATIVE_PICK_OK);
             if(ImGui::Selectable(label,i==step)){s.iss_native_percent=percent=pick.percent;dirty=true;native_commit=true;}
@@ -988,8 +988,7 @@ void NativeRenderingTab() {
                 }
             }
         }
-    }else ImGui::TextWrapped("%s",TL("This output or scale cannot be used: over the 8K pixel limit, or a custom size that is not set. The game would refuse it at startup and run unchanged.",
-        "Esta saída ou escala não pode ser usada: passa do limite de pixels de 8K, ou é um tamanho personalizado não definido. O jogo a recusaria na partida e abriria sem mudança."));
+    }else ImGui::TextWrapped("%s","This output or scale cannot be used: over the 8K pixel limit, or a custom size that is not set. The game would refuse it at startup and run unchanged.");
     ImGui::TextWrapped("%s",TL("Takes effect the next time the game starts.","Vale na próxima vez que o jogo iniciar."));
     ImGui::Separator();
     ImGui::TextWrapped("%s",runtime_native_reason());
