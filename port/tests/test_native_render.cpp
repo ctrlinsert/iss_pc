@@ -101,6 +101,7 @@ void TestSpanOk() {
     dcb.Mark(kBegin, kProbe, 5, {0xABC});
     dcb.SetContext(0x318, 0x1234); // a render target register
     dcb.Packet(0x10, {0x68750005u}); // sharp hint NOP
+    dcb.Packet(0x10, {0x68754000u, 0, 0, 0x3F400000u, 0x3E2A0000u}); // embedded data, 16-aligned
     dcb.SetSh(0x0C, 0xDEAD);
     dcb.Draw();
     dcb.words.push_back(0x80000000u); // type-2 filler
@@ -165,6 +166,7 @@ void TestSpanUnsafe() {
         {"indirect buffer", [](Dcb& d) { d.Packet(0x3F, {0x1000, 0, 16}); }, 0x3F},
         {"occlusion count", [](Dcb& d) { d.Packet(0x46, {0x00000101u, 0x1000, 0}); }, 0x46},
         {"flip marker", [](Dcb& d) { d.Packet(0x10, {0x68750777u, 0}); }, 0x10},
+        {"flip with label", [](Dcb& d) { d.Packet(0x10, {0x68750778u, 0, 0}); }, 0x10},
         {"shadow marker", [](Dcb& d) { d.Packet(0x10, {0x49534801u, 0, 0}); }, 0x10},
         {"nested begin", [](Dcb& d) { d.Mark(kBegin, kProbe, 6); }, 0x10},
     };

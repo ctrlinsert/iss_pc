@@ -186,11 +186,14 @@ inline constexpr u32 kColorTargetFirst = 0x318;
 inline constexpr u32 kColorTargetEnd = 0x390;
 
 /// Whether a NOP with this first data word may sit inside a dropped span. Plain padding, the
-/// CB/DB size hints and the gnmdriver sharp/debug hints may. Any other marker (flip, engine,
+/// CB/DB size hints, the gnmdriver sharp/debug hints and embedded data may. Any other marker (flip, engine,
 /// G-buffer, shadow, temporal, another native BEGIN) may not: something acts on it.
 inline bool QuietNop(u32 body_dwords, u32 first_word) {
     if (body_dwords == 0 || first_word == 0) return true;
     if (first_word >= 0x68750001u && first_word <= 0x6875000Eu) return true; // debug, sharp hints
+    // Data the engine placed in the command buffer (constants its shaders read): the NOP's first
+    // word is 0x68750000 | (alignment log2 << 12), then padding and the data. Nothing acts on it.
+    if ((first_word & 0xFFFF0FFFu) == 0x68750000u) return true;
     return false;
 }
 
