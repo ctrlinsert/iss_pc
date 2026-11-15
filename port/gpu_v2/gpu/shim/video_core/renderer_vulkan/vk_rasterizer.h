@@ -374,6 +374,10 @@ public:
     void NativeGbufferRangeEnd(const iss::native_gbuffer::Batch* batch);
     /// The game hook's temporal upscaler marker (gpu/iss_temporal_upscaler.h): `payload` is the NOP body.
     void IssTemporalMarker(const u32* payload, u32 dwords);
+    /// A native pass's BEGIN marker (native_render.h): `packet` its header, `limit` the end of
+    /// the command buffer. Returns the END marker when the pass recorded natively (the command
+    /// processor drops the span's draws and dispatches up to it), nullptr otherwise.
+    const u32* NativeRenderBegin(const u32* packet, const u32* limit, bool blocked);
     void NativeGbufferVerifyFinish(bool complete);
     void NativeGbufferVerifyNative();
     RenderState NativeGbufferVerifyTargets(const RenderState& render);

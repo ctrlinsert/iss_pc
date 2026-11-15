@@ -3,6 +3,7 @@
 #include <cstring>
 #include <shared_mutex>
 #include "../../../src/iss_native_resolution.h"
+#include "../native_render.h"
 #include "../../../src/iss_warning_budget.h"
 #include <algorithm>
 #include "parallel.h"
@@ -6618,6 +6619,23 @@ void Rasterizer::IssTemporalMarker(const u32* payload, u32 dwords) {
         iss_temporal = std::make_unique<IssTemporal::Upscaler>(instance, scheduler, runtime, texture_cache);
     }
     iss_temporal->OnMarker(payload, dwords, iss_depth_targets);
+}
+
+const u32* Rasterizer::NativeRenderBegin(const u32* packet, const u32* limit, bool blocked) {
+    if (!iss::native_render::AnyEnabled()) {
+        return nullptr;
+    }
+    // As at the temporal marker: what precedes the pass is recorded first, and the pass changes
+    // images under the cached bindings.
+    DrainDrawPipe(5);
+    blocked = blocked || iss::pause_guard::Blocked() || (iss_temporal && iss_temporal->UiActive());
+    const iss::native_render::Services services{instance, scheduler, runtime, texture_cache};
+    const u32* end = iss::native_render::OnBegin(services, packet, limit, blocked);
+    if (end) {
+        BumpBindEpoch();
+        fast_draw.valid = false;
+    }
+    return end;
 }
 
 void Rasterizer::ScopeMarkerBegin(const std::string_view& str, bool from_guest) {

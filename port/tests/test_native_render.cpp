@@ -1,0 +1,213 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// The pure parts of the native renderer (gpu_v2/gpu/native_render_core.h): the BEGIN/END markers,
+// the ISS_NATIVE_RENDER switch, the check that a pass's span may be dropped, and the size math every
+// native pass uses so it works at any output size and aspect.
+#include "../gpu_v2/gpu/native_render_core.h"
+
+#include <cmath>
+#include <cstdio>
+#include <vector>
+
+using namespace iss::native_render;
+
+static int failures = 0;
+#define CHECK(condition)                                                                       \
+    do {                                                                                       \
+        if (!(condition)) {                                                                    \
+            std::printf("FAIL line %d: %s\n", __LINE__, #condition);                           \
+            ++failures;                                                                        \
+        }                                                                                      \
+    } while (0)
+
+namespace {
+
+constexpr u32 kProbe = static_cast<u32>(Pass::Probe);
+
+// A command buffer builder for the span tests.
+struct Dcb {
+    std::vector<u32> words;
+    void Packet(u32 opcode, std::initializer_list<u32> body) {
+        words.push_back(Type3(opcode, u32(body.size())));
+        words.insert(words.end(), body);
+    }
+    void Mark(u32 kind, u32 pass, u32 seq, std::initializer_list<u32> payload = {}) {
+        std::vector<u32> p(payload);
+        u32 tmp[1 + kHeaderWords + kMaxPayload];
+        const u32 n = WriteMarker(tmp, std::size(tmp), kind, pass, seq, p.data(), u32(p.size()));
+        words.insert(words.end(), tmp, tmp + n);
+    }
+    void Draw() { Packet(0x27, {0xFFFF, 0x1000, 0, 3, 0}); }     // DRAW_INDEX_2
+    void DrawAuto() { Packet(0x2D, {3, 2}); }                     // DRAW_INDEX_AUTO
+    void Dispatch() { Packet(0x15, {120, 68, 1, 1}); }            // DISPATCH_DIRECT
+    void SetContext(u32 reg, u32 value) { Packet(0x69, {reg, value}); }
+    void SetSh(u32 reg, u32 value) { Packet(0x76, {reg, value}); }
+    const u32* At(std::size_t i) const { return words.data() + i; }
+    const u32* End() const { return words.data() + words.size(); }
+};
+
+SpanResult ScanFrom(const Dcb& dcb, std::size_t begin_at) {
+    Marker m;
+    if (!ParseMarker(dcb.At(begin_at), dcb.words.size() - begin_at, m)) return {};
+    const u32 body = ((dcb.words[begin_at] >> 16) & 0x3FFF) + 1;
+    return ScanSpan(dcb.At(begin_at + 1 + body), dcb.End(), m);
+}
+
+void TestMarkers() {
+    const u32 payload[3] = {0x12340000u, 0x1, 7680};
+    u32 words[16]{};
+    const u32 n = WriteMarker(words, 16, kBegin, kProbe, 42, payload, 3);
+    CHECK(n == 1 + kHeaderWords + 3);
+    CHECK(words[0] == Type3(0x10, kHeaderWords + 3));
+    Marker m;
+    CHECK(ParseMarker(words, n, m));
+    CHECK(m.kind == kBegin && m.pass == kProbe && m.sequence == 42);
+    CHECK(m.payload_words == 3 && m.payload[2] == 7680);
+    // Too short for its own body, wrong magic, wrong kind, not a NOP: rejected.
+    CHECK(!ParseMarker(words, n - 1, m));
+    words[1] = 0x49535301u; // the engine marker 'ISS'
+    CHECK(!ParseMarker(words, n, m));
+    words[1] = kMagic | 7;
+    CHECK(!ParseMarker(words, n, m));
+    words[1] = kMagic | kEnd;
+    words[0] = Type3(0x76, kHeaderWords + 3);
+    CHECK(!ParseMarker(words, n, m));
+    // Payload larger than the limit is refused when writing.
+    std::vector<u32> big(kMaxPayload + 1);
+    u32 room[64];
+    CHECK(WriteMarker(room, 64, kBegin, kProbe, 0, big.data(), u32(big.size())) == 0);
+    CHECK(WriteMarker(room, 3, kBegin, kProbe, 0, nullptr, 0) == 0);
+}
+
+void TestSwitches() {
+    CHECK(ParseSwitches(nullptr).mask == 0);
+    CHECK(ParseSwitches("").mask == 0);
+    CHECK(ParseSwitches("0").mask == 0);
+    CHECK(ParseSwitches("off").mask == 0);
+    const auto all = ParseSwitches("all");
+    CHECK(all.Enabled(Pass::Probe));
+    CHECK(!all.Enabled(Pass::None)); // bit 0 is never a pass
+    CHECK(ParseSwitches("probe").Enabled(Pass::Probe));
+    CHECK(!ParseSwitches("all,-probe").Enabled(Pass::Probe));
+    CHECK(!ParseSwitches("probe off").Enabled(Pass::Probe));
+    const auto unknown = ParseSwitches(" bloom , probe,,tonemapx");
+    CHECK(unknown.Enabled(Pass::Probe));
+    CHECK(unknown.unknown == 2);
+}
+
+void TestSpanOk() {
+    Dcb dcb;
+    dcb.SetContext(0x100, 1);
+    const std::size_t begin = dcb.words.size();
+    dcb.Mark(kBegin, kProbe, 5, {0xABC});
+    dcb.SetContext(0x318, 0x1234); // a render target register
+    dcb.Packet(0x10, {0x68750005u}); // sharp hint NOP
+    dcb.SetSh(0x0C, 0xDEAD);
+    dcb.Draw();
+    dcb.words.push_back(0x80000000u); // type-2 filler
+    dcb.DrawAuto();
+    dcb.Packet(0x46, {0x00000416u}); // EVENT_WRITE CS_PARTIAL_FLUSH (index 4)
+    dcb.Dispatch();
+    const std::size_t end = dcb.words.size();
+    dcb.Mark(kEnd, kProbe, 5);
+    dcb.Draw(); // after END: not part of the span
+    const auto r = ScanFrom(dcb, begin);
+    CHECK(r.verdict == Scan::Ok);
+    CHECK(r.end_marker == dcb.At(end));
+    CHECK(r.resume == dcb.At(end + 1 + kHeaderWords));
+    CHECK(r.draws == 2 && r.dispatches == 1);
+}
+
+void TestSpanUnsafe() {
+    struct Case {
+        const char* what;
+        void (*add)(Dcb&);
+        u32 opcode;
+    };
+    const Case cases[] = {
+        {"write data", [](Dcb& d) { d.Packet(0x37, {0x500, 0x1000, 0, 1}); }, 0x37},
+        {"wait reg mem", [](Dcb& d) { d.Packet(0x3C, {0x13, 0x1000, 0, 1, 1, 4}); }, 0x3C},
+        {"dma", [](Dcb& d) { d.Packet(0x50, {0, 0, 0, 0, 0, 64}); }, 0x50},
+        {"eop fence", [](Dcb& d) { d.Packet(0x47, {0x528, 0x1000, 0x20000000, 1, 0}); }, 0x47},
+        {"indirect buffer", [](Dcb& d) { d.Packet(0x3F, {0x1000, 0, 16}); }, 0x3F},
+        {"occlusion count", [](Dcb& d) { d.Packet(0x46, {0x00000101u, 0x1000, 0}); }, 0x46},
+        {"flip marker", [](Dcb& d) { d.Packet(0x10, {0x68750777u, 0}); }, 0x10},
+        {"shadow marker", [](Dcb& d) { d.Packet(0x10, {0x49534801u, 0, 0}); }, 0x10},
+        {"nested begin", [](Dcb& d) { d.Mark(kBegin, kProbe, 6); }, 0x10},
+    };
+    for (const auto& c : cases) {
+        Dcb dcb;
+        dcb.Mark(kBegin, kProbe, 5);
+        dcb.Draw();
+        c.add(dcb);
+        dcb.Draw();
+        dcb.Mark(kEnd, kProbe, 5);
+        const auto r = ScanFrom(dcb, 0);
+        if (r.verdict != Scan::Unsafe || r.bad_opcode != c.opcode) {
+            std::printf("FAIL unsafe case '%s': verdict %u opcode %02x\n", c.what,
+                        unsigned(r.verdict), r.bad_opcode);
+            ++failures;
+        }
+    }
+}
+
+void TestSpanBroken() {
+    // No END, an END of another sequence or pass: no span.
+    Dcb a;
+    a.Mark(kBegin, kProbe, 1);
+    a.Draw();
+    CHECK(ScanFrom(a, 0).verdict == Scan::NoEnd);
+    a.Mark(kEnd, kProbe, 2);
+    a.Draw();
+    CHECK(ScanFrom(a, 0).verdict == Scan::Unsafe); // a foreign native marker is not skipped
+    // A packet that runs past the buffer.
+    Dcb b;
+    b.Mark(kBegin, kProbe, 1);
+    b.words.push_back(Type3(0x69, 8));
+    b.words.push_back(0x100);
+    CHECK(ScanFrom(b, 0).verdict == Scan::Malformed);
+}
+
+void TestSizes() {
+    CHECK(Groups(0, 8) == 0);
+    CHECK(Groups(1920, 8) == 240);
+    CHECK(Groups(7680, 16) == 480);
+    CHECK(Groups(2161, 16) == 136);
+    CHECK(Groups(5, 0) == 0);
+    // Downsample chains follow the real size: 7680x2160 down 4 levels, odd sizes round down.
+    const Extent uw{7680, 2160};
+    CHECK(Level(uw, 4).width == 480 && Level(uw, 4).height == 135);
+    CHECK(Level(uw, 5).width == 240 && Level(uw, 5).height == 67);
+    CHECK(Level({3, 1}, 3).width == 1 && Level({3, 1}, 3).height == 1);
+    // Aspect at the shapes the port must support, narrower and wider than 16:9.
+    struct Shape {
+        Extent e;
+        float aspect;
+    };
+    const Shape shapes[] = {{{1280, 800}, 1.6f},      {{1920, 1080}, 16.0f / 9.0f},
+                            {{3440, 1440}, 43.0f / 18.0f}, {{5120, 2160}, 64.0f / 27.0f},
+                            {{7680, 2160}, 32.0f / 9.0f}};
+    for (const auto& s : shapes) {
+        CHECK(std::fabs(Aspect(s.e) - s.aspect) < 1e-5f);
+        const auto t = InverseSize(s.e);
+        CHECK(std::fabs(t.x * float(s.e.width) - 1.0f) < 1e-6f);
+        CHECK(std::fabs(t.y * float(s.e.height) - 1.0f) < 1e-6f);
+    }
+    CHECK(InverseSize({0, 0}).x == 0.0f);
+}
+
+} // namespace
+
+int main() {
+    TestMarkers();
+    TestSwitches();
+    TestSpanOk();
+    TestSpanUnsafe();
+    TestSpanBroken();
+    TestSizes();
+    if (failures) {
+        std::printf("native_render: %d failure(s)\n", failures);
+        return 1;
+    }
+    std::printf("native_render: ok\n");
+    return 0;
+}
