@@ -229,7 +229,23 @@ inline bool QuietNop(u32 body_dwords, u32 first_word) {
     // Data the engine placed in the command buffer (constants its shaders read): the NOP's first
     // word is 0x68750000 | (alignment log2 << 12), then padding and the data. Nothing acts on it.
     if ((first_word & 0xFFFF0FFFu) == 0x68750000u) return true;
+    // The shader setup's register-update hints (gnmdriver writes 0xC01E0000 | register, then the
+    // value, for PA_CL_VS_OUT_CNTL and the like). The command processor ignores them.
+    if (body_dwords == 2 && (first_word & 0xFFFF0000u) == 0xC01E0000u) return true;
     return false;
+}
+
+/// A colour or depth target's size hint: the one-word NOP gnmdriver writes right after the
+/// SET_CONTEXT_REG of CB_COLORn_BASE/CMASK or DB_Z_INFO. The command processor reads it as part of
+/// that register write (which the span still interprets), not on its own.
+inline bool TargetSizeHint(u32 body_dwords, u32 previous_opcode) {
+    return body_dwords == 1 && previous_opcode == 0x69;
+}
+
+/// DMA_DATA to the dummy register 0x3022C: gnm's prefetch into L2. The command processor skips
+/// it (liverpool.cpp), and it writes nothing the pass could depend on.
+inline bool L2Prefetch(const u32* p, u32 body_dwords) {
+    return body_dwords == 6 && p[4] == 0x3022Cu && p[5] == 0;
 }
 
 /// From `p` (the packet after the BEGIN marker) to `limit`, the END of `begin`'s pass and
@@ -247,6 +263,7 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin,
     SpanResult r;
     bool unsafe_seen = false;
     u64 cs_address = 0;
+    u32 previous_opcode = 0;
     while (p < limit) {
         const u32 header = *p;
         const u32 type = header >> 30;
@@ -281,7 +298,7 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin,
                 }
                 ok = false; // nested or mismatched native marker
             } else {
-                ok = QuietNop(body, p[1]);
+                ok = QuietNop(body, p[1]) || TargetSizeHint(body, previous_opcode);
             }
             if (!ok && !unsafe_seen) r.bad_word = p[1];
             break;
@@ -341,6 +358,9 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin,
         case 0x58: // ACQUIRE_MEM: cache flush/invalidate and wait for it; writes no memory
             ok = true;
             break;
+        case 0x50: // DMA_DATA: only the L2 prefetch form
+            ok = L2Prefetch(p, body);
+            break;
         default:
             ok = false;
             break;
@@ -357,6 +377,7 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin,
                 return r;
             }
         }
+        previous_opcode = opcode;
         p += 1 + body;
     }
     r.verdict = Scan::NoEnd;

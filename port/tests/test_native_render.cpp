@@ -155,6 +155,31 @@ void TestDrawShaders() {
     CHECK(r.dispatch_cs[0] == ((0x02ull << 40) | (0x300ull << 8)));
 }
 
+void TestEngineHints() {
+    // The three packet kinds the run-4 probe flagged in PostBlend, SMAA and FXAA spans.
+    Dcb dcb;
+    dcb.Mark(kBegin, kProbe, 5);
+    dcb.Packet(0x50, {0x60000000u, 0xfc774700u, 0x10, 0x3022Cu, 0, 0x2820007cu}); // L2 prefetch
+    dcb.SetContext(0x318, 1);                                                    // CB_COLOR0_BASE
+    dcb.Packet(0x10, {0x08701e00u});                                             // its size hint
+    dcb.Packet(0x10, {0xc01e0207u, 0});                                          // register hint
+    dcb.Draw();
+    dcb.Mark(kEnd, kProbe, 5);
+    CHECK(ScanFrom(dcb, 0).verdict == Scan::Ok);
+    // A real copy is still unsafe, and so is a one-word NOP that follows no register write.
+    Dcb copy;
+    copy.Mark(kBegin, kProbe, 5);
+    copy.Packet(0x50, {0x60000000u, 0xfc774700u, 0x10, 0x00010000u, 0x10, 0x0000007cu});
+    copy.Mark(kEnd, kProbe, 5);
+    CHECK(ScanFrom(copy, 0).verdict == Scan::Unsafe);
+    Dcb lone;
+    lone.Mark(kBegin, kProbe, 5);
+    lone.Draw();
+    lone.Packet(0x10, {0x08701e00u});
+    lone.Mark(kEnd, kProbe, 5);
+    CHECK(ScanFrom(lone, 0).verdict == Scan::Unsafe);
+}
+
 void TestTargetWrites() {
     // Writes below, across the start of, and past the colour target registers.
     Dcb dcb;
@@ -304,6 +329,7 @@ int main() {
     TestTargetWrites();
     TestPixelShader();
     TestDrawShaders();
+    TestEngineHints();
     TestTexture();
     TestSpanUnsafe();
     TestSpanBroken();
