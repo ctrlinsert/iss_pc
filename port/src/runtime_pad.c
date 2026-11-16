@@ -1216,9 +1216,10 @@ static const InteractParams *interact_params(void) {
  * so pressing it on the move is still a tap. On a gamepad the right stick picks the direction. */
 /* Steering latch: V pressed at a prompt that reads the finger's position (the hand scanner,
  * door swipes) puts a finger down that the mouse moves, with no key held, until the prompt stops
- * reading it or V is pressed again. A flick still swipes. Not in the game's menus (the pause
+ * reading it or V is pressed again. Only a tap latches; a flick still swipes. Not in the game's menus (the pause
  * menu reads the finger too: its tabs). */
 static bool steer_latched;
+static uint64_t steer_tap_at; /* when V last tapped (keyboard), for the latch */
 static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
     static uint32_t dirs_at_press;
     static bool was_held;
@@ -1228,16 +1229,16 @@ static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
     was_held=key_held;
     const bool in_menu=iss_menu_mouse_scene(runtime_menu_scene());
     const bool reading=iss_touch_reads_active && !in_menu && interact_params()->steer>0.0f && touch_swipe_wanted(d->timestamp);
-    /* The press that opens a scanner may come just before its reads start: a press counts for 1 s. */
-    static uint64_t press_at;
-    if (press) press_at=d->timestamp ? d->timestamp : 1;
-    const bool recent=press_at && d->timestamp-press_at<1000000u;
+    /* A tap of V (no flick, no hold) latches: flicks (door swipes, also mid-fight) and held swipes
+     * (the mobile command centre) work as before. The tap that opens a scanner may come just
+     * before its reads start, so a tap counts for 1 s. */
+    const bool recent=steer_tap_at && d->timestamp-steer_tap_at<1000000u;
     if (steer_latched && (!reading || (press && interact.state==INTERACT_STEER))) {
-        steer_latched=false; press_at=0;
+        steer_latched=false; steer_tap_at=0;
         if (interact.state==INTERACT_STEER) { interact.swiped=0; interact.state=press ? INTERACT_SPENT : INTERACT_IDLE; } /* this press only lifts it */
         puts("Runtime: interact steer off");
     } else if (recent && reading && !pad_held && !steer_latched) {
-        press_at=0;
+        steer_tap_at=0;
         steer_latched=true;
         puts("Runtime: interact steer on (the mouse moves the finger until the prompt ends or V again)");
     }
@@ -1272,6 +1273,7 @@ static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
                                     no_swipe || (!pad_held && interact_mouse_moving),interact_vx,interact_vy);
     interact_mouse.dx=interact_mouse.dy=0;
     if (interact.state!=was && interact.state==INTERACT_STEER) puts("Runtime: interact steer (the mouse moves the finger)");
+    if (interact.state!=was && interact.state==INTERACT_TAP && !pad_held) steer_tap_at=d->timestamp ? d->timestamp : 1;
     if (interact.state!=was && (interact.state==INTERACT_TAP || interact.state==INTERACT_HOLD || interact.state==INTERACT_SWIPE))
         printf("Runtime: interact %s%s\n",interact.state==INTERACT_TAP ? "tap" : interact.state==INTERACT_HOLD ? "hold" : "swipe ",
                interact.state!=INTERACT_SWIPE ? "" : interact.dx<0 ? "left" : interact.dx>0 ? "right" : interact.dy<0 ? "up" : "down");
