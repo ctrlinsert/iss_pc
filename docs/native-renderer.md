@@ -16,7 +16,7 @@ Off by default. Nothing changes unless `ISS_NATIVE_RENDER` names a pass.
    from the engine's own objects: the guest addresses and sizes of the pass's images.
 2. The command processor, at BEGIN, checks the commands up to the matching END (`ScanSpan`). Only
    when every packet between is register state, index or instance state, a draw or a dispatch,
-   a cache flush or a cache sync (ACQUIRE_MEM), or one of gnm's hints the command processor ignores (an L2 prefetch, a target size hint, a register-update hint) may the pass run natively. A packet that writes or waits on memory, chains to
+   a cache flush or a cache sync (ACQUIRE_MEM), or one of gnm's hints the command processor ignores (an L2 prefetch, a target size hint, a register-update hint, the native-passes token after a draw) may the pass run natively. A packet that writes or waits on memory, chains to
    another buffer, counts samples (occlusion) or is another marker keeps the engine's commands.
 3. The native pass resolves its images through the texture cache and records its own work, with
    sizes taken from those images. If it cannot (an image not in the cache, a format it does not

@@ -229,9 +229,10 @@ inline bool QuietNop(u32 body_dwords, u32 first_word) {
     // Data the engine placed in the command buffer (constants its shaders read): the NOP's first
     // word is 0x68750000 | (alignment log2 << 12), then padding and the data. Nothing acts on it.
     if ((first_word & 0xFFFF0FFFu) == 0x68750000u) return true;
-    // The shader setup's register-update hints (gnmdriver writes 0xC01E0000 | register, then the
-    // value, for PA_CL_VS_OUT_CNTL and the like). The command processor ignores them.
-    if (body_dwords == 2 && (first_word & 0xFFFF0000u) == 0xC01E0000u) return true;
+    // The shader setup's register-update hints (gnmdriver writes 0xC01E0000 | register, then one or
+    // two values, for PA_CL_VS_OUT_CNTL, SPI_SHADER_COL_FORMAT and the like). The command processor ignores them.
+    if ((body_dwords == 2 || body_dwords == 3) && (first_word & 0xFFFF0000u) == 0xC01E0000u)
+        return true;
     return false;
 }
 
@@ -240,6 +241,17 @@ inline bool QuietNop(u32 body_dwords, u32 first_word) {
 /// that register write (which the span still interprets), not on its own.
 inline bool TargetSizeHint(u32 body_dwords, u32 previous_opcode) {
     return body_dwords == 1 && previous_opcode == 0x69;
+}
+
+/// The native-passes token (native_passes.cpp, 'NPS'): written into the NOP that trails a draw
+/// the engine thread recorded into a segment. The command processor releases that segment
+/// unused when it drops the draw (DropNativeRenderWork), and interprets what follows END as usual.
+inline constexpr u32 kNativePassesToken = 0x4E505300u;
+inline bool IsDraw(u32 opcode) {
+    return opcode == 0x27 || opcode == 0x2D || opcode == 0x35 || opcode == 0x24 || opcode == 0x25;
+}
+inline bool DrawToken(u32 body_dwords, u32 first_word, u32 previous_opcode) {
+    return body_dwords >= 1 && first_word == kNativePassesToken && IsDraw(previous_opcode);
 }
 
 /// DMA_DATA to the dummy register 0x3022C: gnm's prefetch into L2. The command processor skips
@@ -298,7 +310,8 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin,
                 }
                 ok = false; // nested or mismatched native marker
             } else {
-                ok = QuietNop(body, p[1]) || TargetSizeHint(body, previous_opcode);
+                ok = QuietNop(body, p[1]) || TargetSizeHint(body, previous_opcode) ||
+                     DrawToken(body, p[1], previous_opcode);
             }
             if (!ok && !unsafe_seen) r.bad_word = p[1];
             break;

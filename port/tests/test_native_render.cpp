@@ -163,7 +163,9 @@ void TestEngineHints() {
     dcb.SetContext(0x318, 1);                                                    // CB_COLOR0_BASE
     dcb.Packet(0x10, {0x08701e00u});                                             // its size hint
     dcb.Packet(0x10, {0xc01e0207u, 0});                                          // register hint
+    dcb.Packet(0x10, {0xc01e01c4u, 0, 4});                                       // two values
     dcb.Draw();
+    dcb.Packet(0x10, {0x4E505300u, 0xc8a, 0x30a69233u});                         // NPS token
     dcb.Mark(kEnd, kProbe, 5);
     CHECK(ScanFrom(dcb, 0).verdict == Scan::Ok);
     // A real copy is still unsafe, and so is a one-word NOP that follows no register write.
@@ -178,6 +180,13 @@ void TestEngineHints() {
     lone.Packet(0x10, {0x08701e00u});
     lone.Mark(kEnd, kProbe, 5);
     CHECK(ScanFrom(lone, 0).verdict == Scan::Unsafe);
+    // The NPS token only counts right after a draw.
+    Dcb token;
+    token.Mark(kBegin, kProbe, 5);
+    token.SetSh(0x0C, 1);
+    token.Packet(0x10, {0x4E505300u, 0xc8a, 0x30a69233u});
+    token.Mark(kEnd, kProbe, 5);
+    CHECK(ScanFrom(token, 0).verdict == Scan::Unsafe);
 }
 
 void TestTargetWrites() {
