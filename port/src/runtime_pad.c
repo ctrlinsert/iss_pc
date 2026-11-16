@@ -1360,12 +1360,14 @@ static void sample_host(PadData *d) {
         mouse&=~(1u<<(MOUSE_RIGHT-MOUSE_SOURCE));
         two_fingers=CLICK_LEFT|CLICK_RIGHT;
     }
-    /* Use, drain and push are touchpad actions: the game (and its scripts, which read the touch
-     * points) expects a finger on the pad, so their keys touch and click it (push: two fingers)
-     * instead of pressing the game's action bits. */
+    /* Use, drain and push are touchpad actions: the game reads the touchpad itself (a finger
+     * down is use, a click is drain, two fingers and a click is push), so their keys touch it
+     * instead of pressing the game's action bits: use puts a finger down, drain also clicks,
+     * push uses two fingers. */
     uint32_t actions=native && !menu ? map_bits(&native_map,k,mouse) : 0;
     uint32_t touch=0;
-    if (actions & (NA(ISS_NA_USE)|NA(ISS_NA_DRAIN))) touch|=CLICK_LEFT;
+    if (actions & NA(ISS_NA_DRAIN)) touch|=CLICK_LEFT;
+    const bool use_finger=(actions & NA(ISS_NA_USE)) && !(actions & (NA(ISS_NA_DRAIN)|NA(ISS_NA_PUSH))); /* a finger, no click */
     if (actions & NA(ISS_NA_PUSH)) touch|=CLICK_LEFT|CLICK_RIGHT;
     actions&=~(uint32_t)(NA(ISS_NA_USE)|NA(ISS_NA_DRAIN)|NA(ISS_NA_PUSH));
     const uint32_t keys=(menu ? menu_keys(k,mouse) : play_keys(k,mouse,native))|menu_buttons|two_fingers|touch, acts=keys & ACT_ALL;
@@ -1384,6 +1386,7 @@ static void sample_host(PadData *d) {
     d->buttons&=~(uint32_t)ACT_ALL;
     if (!interact_out.owns) apply_swipe(d,g,(keys & CLICK_LEFT)!=0,acts);
     apply_mouse_touch(d);
+    if (use_finger && !d->touch_count) { d->touches[0]=(PadTouch){.x=960,.y=471,.id=22}; d->touch_count=1; }
 }
 
 /* TLG_PAD_FILE=<file>: scripted input for automated runs. The file holds whitespace-separated
