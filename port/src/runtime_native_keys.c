@@ -16,9 +16,6 @@ typedef void (__attribute__((sysv_abi)) *PadConsume)(uintptr_t ctl, uint32_t mas
 static uintptr_t native_image;
 static uintptr_t keys_ctl;          /* the controller the keyboard plays on (the last one read) */
 static IssActionState keys;
-/* Counts the player's action-set queries (the gameplay controls asking for input): runtime_pad.c
- * reads it to tell when a minigame has taken the input over (the queries stop). */
-extern volatile uint64_t runtime_act_player_queries; /* runtime_pad.c */
 
 void runtime_native_keys_attach(uintptr_t image) { native_image=image; iss_action_reset(&keys); }
 
@@ -96,7 +93,6 @@ static void consume_set(uintptr_t ctl, uint32_t set) {
     pad_consume(ctl,mask);
 }
 static uint32_t any_set(uintptr_t player, uint32_t set, float window, int held) {
-    __atomic_add_fetch(&runtime_act_player_queries,1,__ATOMIC_RELAXED);
     set&=*(const volatile uint32_t*)(native_image+ISS_ACT_ENABLED);
     const uintptr_t ctl=player_ctl(player);
     uint32_t hits=0;
