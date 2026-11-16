@@ -1239,7 +1239,15 @@ uint32_t __attribute__((sysv_abi)) runtime_input_trace_btnk(int32_t kind);
 uint8_t __attribute__((sysv_abi)) runtime_input_trace_down(const void *object,uint32_t mask);
 void __attribute__((ms_abi)) runtime_input_trace_pressed(uintptr_t ctl,uintptr_t mask,uintptr_t ret);
 void __attribute__((ms_abi)) runtime_input_trace_held(uintptr_t ctl,uintptr_t mask,uintptr_t ret);
+#include "iss_native_keys.h"
+void runtime_native_keys_attach(uintptr_t image);
+uint32_t __attribute__((sysv_abi)) runtime_native_lookup(int32_t kind);
+uint32_t __attribute__((sysv_abi)) runtime_native_karma_good(uintptr_t obj);
+uint32_t __attribute__((sysv_abi)) runtime_native_karma_evil(uintptr_t obj);
+void __attribute__((ms_abi)) runtime_native_pad(uintptr_t ctl,uintptr_t unused);
+void runtime_pad_native_attach(void);
 /* ISS_INPUT_TRACE=1: log how the game asks for input (iss_input_trace.h). Observation only. */
+static int input_trace_lookup; /* the trace replaced the action kind lookup (native keys take it over) */
 static void install_iss_input_trace(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     const char *e=getenv("ISS_INPUT_TRACE");
     if(!e || strcmp(e,"1"))return;
@@ -1267,8 +1275,47 @@ static void install_iss_input_trace(const char *app0,Segment *segments,uint64_t 
     iss_karma_jump(image+ISS_PAD_PRESSED,(uintptr_t)bridges);
     iss_karma_jump(image+ISS_PAD_HELD,(uintptr_t)(bridges+2048));
     iss_karma_jump(image+ISS_BTNK_LOOKUP,(uintptr_t)runtime_input_trace_btnk);
+    input_trace_lookup=1;
     iss_karma_jump(image+ISS_PAD_DOWN,(uintptr_t)runtime_input_trace_down);
     puts("Input trace: logging the game's action and button queries (INPUT_TRACE lines)");
+}
+/* Native keyboard and mouse actions (iss_native_keys.h): the action kind lookup and the end of
+ * the pad read. TLG_NATIVE_KEYS=0: off (the keys then press PS4 buttons, runtime_pad.c key_map). */
+static void install_iss_native_keys(const char *app0,Segment *segments,uint64_t count,uint64_t size){
+    const char *e=getenv("TLG_NATIVE_KEYS");
+    if(e && *e=='0'){puts("Native keys: off (TLG_NATIVE_KEYS=0)");return;}
+    char path[4096],serial[32]="",version[32]="";
+    snprintf(path,sizeof(path),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
+    sfo_value(path,"TITLE_ID",serial,sizeof(serial),NULL);sfo_value(path,"APP_VER",version,sizeof(version),NULL);
+    int executable=0,pad=0,data=0;
+    for(uint64_t i=0;i<count;i++){
+        if(!(segments[i].flags&1)){
+            if((segments[i].flags&2) && segments[i].address<=ISS_BTNK_TABLE &&
+               ISS_BTNK_TABLE+4*ISS_BTNK_COUNT<=segments[i].address+segments[i].size)data=1;
+            continue;
+        }
+        if(segments[i].address<=ISS_BTNK_LOOKUP && ISS_BTNK_LOOKUP+sizeof(iss_btnk_lookup_bytes)<=segments[i].address+segments[i].size)executable=1;
+        if(segments[i].address<=ISS_PAD_READ && ISS_PAD_READ_SITE+ISS_PAD_READ_STOLEN<=segments[i].address+segments[i].size &&
+           ISS_KARMA_EVIL_GETTER+ISS_KARMA_GETTER_SIZE<=segments[i].address+segments[i].size)pad=1;
+    }
+    if(!iss_title_107(serial,version) || !executable || !pad || !data || size<=ISS_BTNK_LOOKUP+sizeof(iss_btnk_lookup_bytes) ||
+       (!input_trace_lookup && memcmp(image+ISS_BTNK_LOOKUP,iss_btnk_lookup_bytes,sizeof(iss_btnk_lookup_bytes))) ||
+       !iss_native_keys_signature(image,size)){
+        puts("Native keys: game code not recognised; the keys press PS4 buttons");return;
+    }
+    unsigned char *bridge=allocate(page_size);
+    unsigned n=iss_karma_bridge_ex(bridge,(uintptr_t)runtime_native_pad,image+ISS_PAD_READ_SITE,
+        (uintptr_t)image+ISS_PAD_READ_SITE+ISS_PAD_READ_STOLEN,ISS_PAD_READ_STOLEN,3);
+    if(n>page_size)fail("Native keys bridge overflow");
+    protect(bridge,page_size,5);
+    runtime_native_keys_attach((uintptr_t)image);
+    iss_karma_jump(image+ISS_PAD_READ_SITE,(uintptr_t)bridge);
+    /* Replaces the trace's lookup too, if it is on: this one notes each read to the trace. */
+    iss_karma_jump(image+ISS_BTNK_LOOKUP,(uintptr_t)runtime_native_lookup);
+    iss_karma_jump(image+ISS_KARMA_GOOD_GETTER,(uintptr_t)runtime_native_karma_good);
+    iss_karma_jump(image+ISS_KARMA_EVIL_GETTER,(uintptr_t)runtime_native_karma_evil);
+    runtime_pad_native_attach();
+    puts("Native keys: gameplay keys press the game's actions (TLG_NATIVE_KEYS=0: PS4 buttons)");
 }
 static void install_iss_aim_assist(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     if(iss_aim_assist_mode(getenv("TLG_AIM_ASSIST"))==ISS_AIM_ASSIST_ON)return;
@@ -1913,6 +1960,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_iss_aim_assist(app0, segments, ns, size);
     install_iss_touch_reads(app0, segments, ns, size);
     install_iss_input_trace(app0, segments, ns, size);
+    install_iss_native_keys(app0, segments, ns, size);
     if (gpu_enabled) install_iss_trophies(app0, segments, ns, size);
     install_iss_stream_busy(segments, ns, size);
     if (gpu_enabled) install_iss_karma(app0, segments, ns, size, karma_before_runtime_rewrites);

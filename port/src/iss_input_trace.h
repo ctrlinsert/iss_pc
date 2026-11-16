@@ -40,6 +40,8 @@ static inline int iss_input_trace_signature(const unsigned char *image, uint64_t
         !memcmp(image+ISS_PAD_DOWN,iss_pad_down_bytes,sizeof(iss_pad_down_bytes));
 }
 
+#define ISS_TRACE_KARMA_SIDE 0xefadbcu   /* s32 */
+#define ISS_TRACE_KARMA_FLAGS 0x1d0d0f4u  /* u32 */
 enum { ISS_TRACE_BTNK=1, ISS_TRACE_PRESSED, ISS_TRACE_HELD, ISS_TRACE_DOWN };
 /* A fixed open-addressing set of what was seen. Keys are never 0. */
 #define ISS_TRACE_SLOTS 4096u

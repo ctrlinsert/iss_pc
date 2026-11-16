@@ -191,6 +191,7 @@ struct Values {
     std::atomic<float> iss_power_glow{2.04f};
     /// Menu key remap (TLG_MENU_KEY_MAP syntax, runtime_pad.c menu_map); written by Load only, read once.
     std::string menu_key_map;
+    std::string native_key_map;
 };
 
 Values& Get();
