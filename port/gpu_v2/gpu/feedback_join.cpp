@@ -11,6 +11,8 @@
 #include <cstdlib>
 #include <mutex>
 
+extern "C" uint64_t iss_gpu_image_base();
+
 namespace iss::feedback_join {
 const bool enabled = [] { const char* p = std::getenv("ISS_FEEDBACK_JOIN"); return p && p[0]=='1'; }();
 namespace {
@@ -33,6 +35,7 @@ struct Event {
     u64 ns{}, submitted{}, completed{}, latest{};
     u64 frame{};
     bool handled{};
+    u32 value{}; ///< read_end: the word the game read (the count at +4), after the readback
 };
 std::array<Event, 32768> events{};
 thread_local std::array<u64, 64> pending{};
@@ -57,13 +60,13 @@ Candidate Latest(u64 record, u64 physical, u64 epoch) {
     return result;
 }
 void Row(const char* event, const ReadTicket& t, const Candidate& c, bool handled,
-         u64 latest_sequence = 0) {
+         u64 latest_sequence = 0, u32 value = 0) {
     if(rows>=32768) return;
     if(sealed) return;
     events[rows++] = {event,t,c,Common::Perf::NowNs(),
         c.scheduler?c.scheduler->SubmittedTick():0,
         c.scheduler?c.scheduler->GetWorkSemaphore()->KnownGpuTick():0,
-        latest_sequence,Common::Perf::GuestFrameCounter().load(std::memory_order_relaxed),handled};
+        latest_sequence,Common::Perf::GuestFrameCounter().load(std::memory_order_relaxed),handled,value};
 }
 void FlushAfterWindow() {
     const auto frame=Common::Perf::GuestFrameCounter().load(std::memory_order_relaxed);
@@ -81,19 +84,19 @@ void FlushAfterWindow() {
         const char* p=std::getenv("ISS_FEEDBACK_JOIN_LOG");
         auto* f=p?std::fopen(p,"w"):nullptr;
         if(f) { std::setvbuf(f,nullptr,_IOFBF,1<<20);
-            std::fputs("event,ns,frame,ticket,rip,fault_address,consumer_owner,consumer_record,consumer_physical,read_epoch,read_buffer_generation,before_sequence,writer_sequence,writer_address,writer_physical,shader_hash,stage,engine_qid,gpu_queue,writer_tick,submitted_tick,known_complete_tick,writer_epoch,writer_buffer_generation,bind_ns,enqueue_ns,identity_owner,identity_shader,identity_sequence,identity_reuses,handled,latest_sequence\n",f); }
+            std::fputs("event,ns,frame,ticket,rip,fault_address,consumer_owner,consumer_record,consumer_physical,read_epoch,read_buffer_generation,before_sequence,writer_sequence,writer_address,writer_physical,shader_hash,stage,engine_qid,gpu_queue,writer_tick,submitted_tick,known_complete_tick,writer_epoch,writer_buffer_generation,bind_ns,enqueue_ns,identity_owner,identity_shader,identity_sequence,identity_reuses,handled,latest_sequence,value\n",f); }
         return f;
     }();
     if(!file)return;
     for(u64 i=0;i<count;++i) {
     const auto& e=events[i];const auto& t=e.ticket;const auto& c=e.candidate;
     std::fprintf(file,
-        "%s,%llu,%llu,%llu,0x%llx,0x%llx,0x%llx,0x%llx,0x%llx,%llu,%llu,%llu,%llu,0x%llx,0x%llx,0x%llx,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%llu,%llu,0x%llx,0x%llx,%llu,%llu,%u,%llu\n",
+        "%s,%llu,%llu,%llu,0x%llx,0x%llx,0x%llx,0x%llx,0x%llx,%llu,%llu,%llu,%llu,0x%llx,0x%llx,0x%llx,%u,%u,%u,%llu,%llu,%llu,%llu,%llu,%llu,%llu,0x%llx,0x%llx,%llu,%llu,%u,%llu,%u\n",
         e.name,e.ns,e.frame,
         t.id,t.rip,t.address,t.owner,t.record,t.physical,t.epoch,t.buffer_generation,t.before_sequence,
         c.sequence,c.address,c.physical,c.hash,c.stage,c.qid,c.gpu_queue,c.tick,e.submitted,e.completed,
         c.epoch,c.buffer_generation,c.bind_ns,c.enqueue_ns,c.identity.owner_object,c.identity.shader_object,
-        c.identity.sequence,c.identity.address_reuses,unsigned(e.handled),e.latest);
+        c.identity.sequence,c.identity.address_reuses,unsigned(e.handled),e.latest,e.value);
     }
     std::fclose(file);
 }
@@ -136,7 +139,8 @@ void Recorded() {
 }
 ReadTicket BeginRead(u64 rip,u64 address,u64 owner,u64 record,u64 buffer_generation) {
     if(!enabled || !Active())return {};
-    static const auto base=Number("ISS_FEEDBACK_JOIN_EBOOT_BASE",0x10000000);
+    // The game's image base as loaded (ISS_FEEDBACK_JOIN_EBOOT_BASE overrides it).
+    static const auto base=Number("ISS_FEEDBACK_JOIN_EBOOT_BASE",iss_gpu_image_base());
     if(!((rip==base+0x3f3eff && address==record+4) ||
          (rip==base+0x3f3fcc && address==record+0x28)))return {};
     auto* memory=Core::Memory::Instance();
@@ -157,7 +161,9 @@ void EndRead(const ReadTicket& original,bool handled,u64 buffer_generation) {
     std::scoped_lock lock{mutex};
     const auto& entry=history[t.before_sequence%history.size()];
     const auto frozen=entry.sequence==t.before_sequence?entry:Candidate{};
-    Row("read_end",t,frozen,handled,Latest(t.record,t.physical,t.epoch).sequence);
+    // The page is readable again once the read was handled: the value the game gets.
+    const u32 value=handled?*reinterpret_cast<const volatile u32*>(t.address):0;
+    Row("read_end",t,frozen,handled,Latest(t.record,t.physical,t.epoch).sequence,value);
     --outstanding;
 }
 }
