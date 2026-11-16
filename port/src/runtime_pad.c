@@ -366,12 +366,12 @@ static ButtonMap menu_map={{
 static ButtonMap native_map={{
     {SDL_SCANCODE_SPACE,NA(ISS_NA_JUMP)}, {SDL_SCANCODE_LSHIFT,NA(ISS_NA_DASH)},
     {SDL_SCANCODE_F,NA(ISS_NA_MELEE)}, {SDL_SCANCODE_B,NA(ISS_NA_EXECUTE)}, {SDL_SCANCODE_R,NA(ISS_NA_GOOD)},
-    {SDL_SCANCODE_E,NA(ISS_NA_USE)}, {SDL_SCANCODE_E,NA(ISS_NA_DRAIN)}, {SDL_SCANCODE_E,NA(ISS_NA_PUSH)},
+    {SDL_SCANCODE_E,NA(ISS_NA_USE)}, {SDL_SCANCODE_E,NA(ISS_NA_DRAIN)},
     {MOUSE_RIGHT,NA(ISS_NA_AIM)}, {MOUSE_LEFT,NA(ISS_NA_FIRE)}, {MOUSE_LEFT,NA(ISS_NA_SPRAY)},
     {SDL_SCANCODE_Q,NA(ISS_NA_SECONDARY)}, {MOUSE_MIDDLE,NA(ISS_NA_HEAVY)}, {SDL_SCANCODE_Z,NA(ISS_NA_IONIC)},
     {SDL_SCANCODE_ESCAPE,NA(ISS_NA_PAUSE)}, {SDL_SCANCODE_T,NA(ISS_NA_INVESTIGATE)},
-},16};
-/* ping has no default key: no game code was seen reading it (static search and play traces). */
+},15};
+/* push (two fingers on the touchpad) has no default key: V + right click does it. ping has no default key: no game code was seen reading it (static search and play traces). */
 static PsName native_names[ISS_NA_COUNT];
 static void native_names_init(void) {
     for (int a=0;a<ISS_NA_COUNT;++a) native_names[a]=(PsName){iss_native_actions[a].name,NA(a)};
@@ -1360,8 +1360,15 @@ static void sample_host(PadData *d) {
         mouse&=~(1u<<(MOUSE_RIGHT-MOUSE_SOURCE));
         two_fingers=CLICK_LEFT|CLICK_RIGHT;
     }
-    const uint32_t keys=(menu ? menu_keys(k,mouse) : play_keys(k,mouse,native))|menu_buttons|two_fingers, acts=keys & ACT_ALL;
-    const uint32_t actions=native ? map_bits(&native_map,k,mouse) : 0;
+    /* Use, drain and push are touchpad actions: the game (and its scripts, which read the touch
+     * points) expects a finger on the pad, so their keys touch and click it (push: two fingers)
+     * instead of pressing the game's action bits. */
+    uint32_t actions=native && !menu ? map_bits(&native_map,k,mouse) : 0;
+    uint32_t touch=0;
+    if (actions & (NA(ISS_NA_USE)|NA(ISS_NA_DRAIN))) touch|=CLICK_LEFT;
+    if (actions & NA(ISS_NA_PUSH)) touch|=CLICK_LEFT|CLICK_RIGHT;
+    actions&=~(uint32_t)(NA(ISS_NA_USE)|NA(ISS_NA_DRAIN)|NA(ISS_NA_PUSH));
+    const uint32_t keys=(menu ? menu_keys(k,mouse) : play_keys(k,mouse,native))|menu_buttons|two_fingers|touch, acts=keys & ACT_ALL;
     atomic_store(&native_down,actions);
     if (actions) atomic_fetch_or(&native_latched,actions);
     update_aim_assist(pad_input,keys!=0 || actions!=0 || mouse!=0 || power_mouse_dx!=0 || power_mouse_dy!=0);
