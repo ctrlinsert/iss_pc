@@ -729,7 +729,8 @@ static void apply_swipe(PadData *d, SDL_Gamepad *g, bool key_held, uint32_t acts
     }
 }
 /* Touchpad mode: the mouse as a finger on the touchpad (src/mouse_touch.h). While the mode key
- * is held (TLG_MOUSE_PAD_KEY, default "Mouse X1"; Left Ctrl is drop; TLG_MOUSE_PAD_MODE=toggle makes a
+ * is held (TLG_MOUSE_PAD_KEY, no key by default: it is on its way out, as each touchpad use
+ * becomes an action; e.g. "Mouse X1"; TLG_MOUSE_PAD_MODE=toggle makes a
  * press switch it on and off) the mouse stops turning the camera and moves a finger instead:
  * left button = finger down and click (hold = hold the touchpad; drag = swipe), middle = finger
  * without a click, right = two fingers at both ends of the pad (lift the car off Reggie).
@@ -756,7 +757,7 @@ static void load_pad_mode(void) {
     if (pad_mode_cfg.params.drag<0) pad_mode_cfg.params.drag=0;
     e=getenv("TLG_MOUSE_PAD_KEY");
     char copy[256];
-    snprintf(copy,sizeof(copy),"%s",e && *e ? e : "Mouse X1");
+    snprintf(copy,sizeof(copy),"%s",e && *e ? e : "");
     for (char *name=copy, *bar; name; name=bar) {
         if ((bar=strchr(name,'|'))) *bar++=0;
         if (!*trim(name)) continue;

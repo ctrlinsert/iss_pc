@@ -64,6 +64,7 @@ static PadData move(float dx, float dy, int samples) {
 
 int main(void) {
     setenv("SDL_VIDEODRIVER","dummy",1);
+    setenv("TLG_MOUSE_PAD_KEY","Mouse X1",1); /* no key by default */
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT,"0x1d50/0x6189");
     assert(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMEPAD));
     assert(pad_init()==0 && pad_open(1,0,0,NULL)==1);
