@@ -131,6 +131,8 @@ int main(void) {
     ONLY(SDL_SCANCODE_SPACE); assert(map_bits(&native_map,kb,0)==NJ && play_keys(kb,0,true)==0 && play_keys(kb,0,false)==BTN_CROSS);
     ONLY(SDL_SCANCODE_F); assert(map_bits(&native_map,kb,0)==NM && play_keys(kb,0,true)==0);
     ONLY(SDL_SCANCODE_B); assert(map_bits(&native_map,kb,0)==NE);
+    ONLY(SDL_SCANCODE_LSHIFT); assert(map_bits(&native_map,kb,0)==(1u<<ISS_NA_DASH));
+    ONLY(SDL_SCANCODE_C); assert(map_bits(&native_map,kb,0)==(1u<<ISS_NA_DROP) && play_keys(kb,0,true)==0);
     ONLY(SDL_SCANCODE_E); assert(map_bits(&native_map,kb,0)==((1u<<ISS_NA_USE)|(1u<<ISS_NA_DRAIN)));
     ONLY(SDL_SCANCODE_ESCAPE); assert(map_bits(&native_map,kb,0)==(1u<<ISS_NA_PAUSE) && play_keys(kb,0,true)==0);
     ONLY(SDL_SCANCODE_T); assert(map_bits(&native_map,kb,0)==(1u<<ISS_NA_INVESTIGATE) && play_keys(kb,0,true)==0);

@@ -371,7 +371,8 @@ static ButtonMap native_map={{
     {MOUSE_RIGHT,NA(ISS_NA_AIM)}, {MOUSE_LEFT,NA(ISS_NA_FIRE)}, {MOUSE_LEFT,NA(ISS_NA_SPRAY)},
     {SDL_SCANCODE_Q,NA(ISS_NA_SECONDARY)}, {MOUSE_MIDDLE,NA(ISS_NA_HEAVY)}, {SDL_SCANCODE_Z,NA(ISS_NA_KARMA_BOMB)},
     {SDL_SCANCODE_ESCAPE,NA(ISS_NA_PAUSE)}, {SDL_SCANCODE_T,NA(ISS_NA_INVESTIGATE)},
-},15};
+    {SDL_SCANCODE_C,NA(ISS_NA_DROP)},
+},16};
 /* push (two fingers on the touchpad) has no default key: V + right click does it. ping has no default key: no game code was seen reading it (static search and play traces). */
 static PsName native_names[ISS_NA_COUNT];
 static void native_names_init(void) {
