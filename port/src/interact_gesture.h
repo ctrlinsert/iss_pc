@@ -37,8 +37,9 @@ typedef struct {
     int swipe_hold;   /* after a swipe, a still-held key keeps the finger at the end (default 1) */
     float flick_speed;/* a swipe needs one sample this fast, counts per ms (default 1.5; 0: off) */
     int clicks;       /* a tap clicks the pad and a hold presses it (default 0: touch only) */
-    float steer;      /* at a swipe prompt, a press held without a flick puts a finger down that
-                       * the mouse steers: pad widths per mouse unit (default 1/400; 0: off) */
+    float steer;      /* while steering (the caller starts it: a tap of the key at a prompt that
+                       * reads the finger), the finger moves this many pad widths per mouse unit
+                       * (default 1/400; 0: off). A held press never steers: it waits for a flick. */
 } InteractParams;
 
 enum { INTERACT_IDLE, INTERACT_DECIDING, INTERACT_TAP, INTERACT_HOLD, INTERACT_SWIPE, INTERACT_SPENT, INTERACT_STEER };
@@ -133,17 +134,6 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
         else if (p->threshold>0 && flick_clear && interact_decided(fx,fy,need)) {
             interact_snap(fx,fy,&g->dx,&g->dy);
             g->swiped=1; interact_begin(g,INTERACT_SWIPE,now);
-        } else if (now-g->since>=p->hold_us && g->swipe_prompt && p->steer>0.0f && !g->mouse_off) {
-            /* A swipe prompt and no flick: the finger goes down and the mouse steers it (a
-             * scanner wants the finger moved to a spot), from the centre plus the slow motion
-             * so far. */
-            interact_begin(g,INTERACT_STEER,now);
-            g->sx=fminf(fmaxf(0.5f+g->ax*p->steer,0.02f),0.98f);
-            g->sy=fminf(fmaxf(0.5f+g->ay*p->steer*(1920.0f/943.0f),0.02f),0.98f);
-            g->swiped=g->ax!=0.0f || g->ay!=0.0f;
-            g->ax=g->ay=0.0f; g->last=now;
-            o.touch=1; o.x=g->sx; o.y=g->sy; o.owns=1; o.id=g->id;
-            return o;
         } else if (now-g->since>=p->hold_us && !g->swipe_prompt) {
             interact_begin(g,INTERACT_HOLD,now);
             g->ax=g->ay=0.0f; g->peak=0.0f; g->last=0; /* a flick during the hold starts afresh */
