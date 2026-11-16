@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <string>
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
@@ -24,6 +25,11 @@
 #endif
 
 namespace Vulkan {
+
+namespace {
+/// iss: the in-game VSync setting the swapchain was last created with (FindPresentMode).
+bool applied_vsync = true;
+} // namespace
 extern bool g_iss_full_screen_exclusive;
 
 // Adapted from axylpup/shadPS4 second-son-v1.1, 5e96c249 + f6f32614:
@@ -72,6 +78,9 @@ void Swapchain::ReleaseExclusive(){
 bool Swapchain::SyncExclusiveState(){
     const bool wanted=window.WantsExclusive();
     if(wanted!=exclusive_requested)needs_recreation=true;
+    // iss: VSync toggled in the in-game menu: the next present recreates the swapchain with the
+    // matching present mode (FindPresentMode).
+    if(TlgSettings::Get().vsync.load()!=applied_vsync)needs_recreation=true;
     if(!window.CanPresent()){
         ReleaseExclusive();return false;
     }
@@ -414,7 +423,23 @@ void Swapchain::FindPresentMode() {
         return;
     }
 
-    const auto requested_mode = EmulatorSettings.GetPresentMode();
+    // iss: BB_PRESENT_MODE (Mailbox/Fifo/Immediate) when set; else the in-game menu's VSync: on is
+    // Fifo (no tearing; it waits for the display only once frames come faster than its refresh, so
+    // VSync caps the frame rate at the refresh rate and nothing below it), off is Mailbox (no cap,
+    // no tearing), else Immediate. SyncExclusiveState recreates the swapchain when VSync changes.
+    applied_vsync = TlgSettings::Get().vsync.load();
+    const char* explicit_mode = std::getenv("BB_PRESENT_MODE");
+    const auto has = [&](vk::PresentModeKHR mode) { return std::ranges::find(modes, mode) != modes.cend(); };
+    if (!explicit_mode || !*explicit_mode) {
+        present_mode = applied_vsync ? vk::PresentModeKHR::eFifo
+                       : has(vk::PresentModeKHR::eMailbox) ? vk::PresentModeKHR::eMailbox
+                       : has(vk::PresentModeKHR::eImmediate) ? vk::PresentModeKHR::eImmediate
+                                                             : vk::PresentModeKHR::eFifo;
+        std::fprintf(stderr, "Swapchain: VSync %s (%s)\n", applied_vsync ? "on" : "off",
+                     vk::to_string(present_mode).c_str());
+        return;
+    }
+    const std::string requested_mode = explicit_mode;
     if (requested_mode == "Mailbox") {
         present_mode = vk::PresentModeKHR::eMailbox;
     } else if (requested_mode == "Fifo") {
@@ -422,8 +447,7 @@ void Swapchain::FindPresentMode() {
     } else if (requested_mode == "Immediate") {
         present_mode = vk::PresentModeKHR::eImmediate;
     } else {
-        LOG_ERROR(Render_Vulkan, "Unknown present mode {}, defaulting to Mailbox.",
-                  EmulatorSettings.GetPresentMode());
+        LOG_ERROR(Render_Vulkan, "Unknown present mode {}, defaulting to Mailbox.", requested_mode);
         present_mode = vk::PresentModeKHR::eMailbox;
     }
 

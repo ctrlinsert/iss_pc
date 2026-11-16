@@ -92,4 +92,19 @@ inline int PresentLimit(int limit, int engine_fps) {
     return limit == 0 ? 0 : EffectiveFps(limit, engine_fps);
 }
 
+/// Renderer v2 (inFAMOUS): whether a queued flip is presented as soon as it arrives instead of on
+/// the next vblank tick. The game steps by measured time (a variable timestep) and paces itself on
+/// its own flip queue, so nothing ties it to the vblank rate. Only its 30 FPS lock (guest flip
+/// rate above 0) or an ISS_FLIP_RATE override keeps the vblank grid.
+inline bool ImmediateFlips(int guest_flip_rate, int forced_flip_rate) {
+    return forced_flip_rate < 0 && guest_flip_rate == 0;
+}
+
+/// Renderer v2's frame limit: BB_FPS_LIMIT when set above 0, else the in-game menu's limit
+/// (0 = unlimited). VSync is not a limit here: it presents through FIFO, which waits for the
+/// display only once frames come faster than its refresh rate.
+inline int V2FrameLimit(long env_limit, int menu_limit) {
+    return env_limit > 0 ? int(env_limit) : ParseFpsLimit(menu_limit);
+}
+
 } // namespace TlgGraphics
