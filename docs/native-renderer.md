@@ -65,9 +65,10 @@ call site and markers written, so a marker that is written but never reaches the
 | Markers, span check, switch, fallback, command processor suppression | done (`native_render_core.h`, `native_render.cpp`, `liverpool.cpp`) |
 | Game hooks: the post chain's FXAA and texture-copy draws bracketed (`src/iss_native_render_hook.h`, installed only when `ISS_NATIVE_RENDER` is set) | done; check in game with `ISS_NATIVE_RENDER=probe ISS_NATIVE_RENDER_LOG=1` |
 | Hooks around PostBlend and SMAA T2x, the per-frame passes (the first probe runs showed FXAA and the copy are not per frame: the default anti-aliasing is SMAA T2x) | done; probe to confirm |
-| First native pass: PostBlend (`postblend`, `native_postblend.cpp`, `iss_native_postblend.frag`) | written; needs an in-game comparison against the engine's |
+| First native pass: PostBlend (`postblend`, `native_postblend.cpp`, `iss_native_postblend.frag`) | done; checked in game at 7680x2160 (no visible difference from the engine's, every frame native after the first) |
+| Shared full-screen pass plumbing (`native_fullscreen.h`): the draw's program, images, constants and target, and our pipeline per target format | done |
 | Native copy pass (`copy`): frame capture only | later |
-| Native FXAA (`fxaa`), written from the public FXAA 3.11 algorithm | after the copy |
+| Native FXAA (`fxaa`, `native_fxaa.cpp`, `iss_native_fxaa.frag`), our own implementation of the public FXAA quality algorithm | written; FXAA only runs when the anti-aliasing mode is FXAA, so it needs that mode to check in game |
 
 ## PostBlend
 
@@ -94,6 +95,16 @@ different resource list, a write mask or blending, a target that is not 8- or 10
 scene that is not the target's size. Try it with `ISS_NATIVE_RENDER=postblend ISS_NATIVE_RENDER_LOG=1`:
 the log prints the first native draw's target, the game's values, the vignette scale and the noise
 tiling, and each fallback's reason.
+
+## FXAA
+
+The engine's FXAA draw reads the composite's output (luma in alpha) and four tuning values. The
+native pass draws our own FXAA shader into the same target with the game's tuning (sub-pixel amount,
+edge threshold, minimum threshold) and a texel step from the target's real size, not the engine's
+1/size constants (`native_fxaa_core.h`). The edge walk uses growing steps of 1, 1.5, 2, 4 and 12
+texels. It declines for the shader variant with a second input image, an input that is not the image
+the hook reported, a target of another size or format, or blending. Try it with
+`ISS_NATIVE_RENDER=postblend,fxaa ISS_NATIVE_RENDER_LOG=1`.
 
 Unit tests: `port/tests/test_native_render.cpp` and `test_native_render_hook.cpp` (ctest `native_render`,
 `native_render_hook`; the hook test also checks the sites against the real eboot when `ISS_TEST_EBOOT_ELF`

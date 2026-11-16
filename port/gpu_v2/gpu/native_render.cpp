@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "native_fxaa.h"
 #include "native_postblend.h"
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/regs_shader.h"
@@ -21,7 +22,7 @@ namespace {
 constexpr std::array<RunFn, kPassCount> kRun = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
 // Passes that replace their span's draws one at a time (DrawFn): accepted at BEGIN when the span
 // is safe, and each draw falls back to the engine's on its own when the pass declines it.
-constexpr std::array<DrawFn, kPassCount> kDraw = {nullptr, nullptr, nullptr, nullptr,
+constexpr std::array<DrawFn, kPassCount> kDraw = {nullptr, nullptr, nullptr, &FxaaDraw,
                                                   &PostBlendDraw, nullptr};
 
 struct PassStats {

@@ -3,6 +3,7 @@
 // the ISS_NATIVE_RENDER switch, the check that a pass's span may be dropped, and the size math every
 // native pass uses so it works at any output size and aspect.
 #include "../gpu_v2/gpu/native_render_core.h"
+#include "../gpu_v2/gpu/native_fxaa_core.h"
 #include "../gpu_v2/gpu/native_postblend_core.h"
 
 #include <cmath>
@@ -359,6 +360,21 @@ void TestPostBlendPush() {
     CHECK(mono.f[22] == 0.0f && mono.f[20] == 1.0f && mono.f[21] == 1.0f);
 }
 
+
+void TestFxaaPush() {
+    // The game's tuning (dwords 4..6) is passed through; its own 1/size (0/1) is ignored for the
+    // real target's.
+    const float cb[kFxaaConstants] = {1.0f / 1920.0f, 1.0f / 1080.0f, 0, 0, 0.75f, 0.166f, 0.0833f, 0};
+    const Extent sizes[] = {{1920, 1080}, {3440, 1440}, {7680, 2160}, {1280, 800}};
+    for (const auto& size : sizes) {
+        const auto p = MakeFxaaPush(cb, size, {2, 1, 0, 3});
+        CHECK(std::fabs(p.f[0] * float(size.width) - 1.0f) < 1e-6f);
+        CHECK(std::fabs(p.f[1] * float(size.height) - 1.0f) < 1e-6f);
+        CHECK(p.f[2] == 0.75f && p.f[3] == 0.166f && p.f[4] == 0.0833f);
+        CHECK(p.swizzle[0] == 2 && p.swizzle[3] == 3);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -375,6 +391,7 @@ int main() {
     TestKeepGoing();
     TestSizes();
     TestPostBlendPush();
+    TestFxaaPush();
     if (failures) {
         std::printf("native_render: %d failure(s)\n", failures);
         return 1;
