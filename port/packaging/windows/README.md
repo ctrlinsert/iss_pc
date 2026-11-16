@@ -23,12 +23,11 @@ Then, in the repository:
 ```bash
 git submodule update --init --recursive
 bash build.sh                      # out/tlg-probe.exe, out/tlg-gpu-capabilities.exe, out/tlg-play.exe
-TLG_GAME_DIR=F:/path/to/CUSA00223 python run.py
+python launcher/infamous_run.py     # prepares and plays the game chosen in the launcher's settings
 python launcher/infamous_launcher_qt.py   # the Qt launcher (needs PySide6); infamous_launcher.py is the Tk one
 bash packaging/windows/package.sh  # dist/infamous-windows-x86_64.zip: inFAMOUS Second Son.exe + DLLs
 ```
 
-`run.py` is the Windows `run.sh` (same variables; works from a plain Windows Python too).
 The package freezes the launchers with PyInstaller (a private venv in `out/pyenv`, from a
 python.org Python) into `inFAMOUS Second Son.exe` (Qt) and `inFAMOUS Second Son (classic).exe` (Tk).
 Both also run the preparation scripts (`--script`) and the game without the window (`--play`):
@@ -36,8 +35,8 @@ players need no Python.
 `Play inFAMOUS Second Son.exe` (`packaging/windows/play.c`) is a small native program that runs
 the launcher's `--play` from its folder and waits for it, for players who want to start the
 game directly with the saved settings.
-`scripts/patches.py` applies the built-in patches only to the game build they were checked against
-(by `eboot.bin` sha256; `TLG_FORCE_PATCHES=1` overrides); other builds run unpatched.
+`scripts/infamous_patches.py` builds the game's patch file; its built-in patches apply only to the
+game build they were checked against.
 From a source tree it adds `C:\msys64\clang64\bin` (or `$MSYS2_ROOT`) to `PATH` for the DLLs.
 
 The shared core also carries FSR 4 helpers in `tools/` that inFAMOUS does not use. NVIDIA DLSS for
@@ -62,7 +61,7 @@ window).
 | Guest thread stacks from `runtime_low_map` | Windows allocates them, fully committed (`pthread_attr_setstacksize`): guest code has no stack probes and would skip the guard page. The main thread stack is 16 MiB committed. |
 | glibc `nanosleep`, monotonic condition variables | High-resolution waitable timers (`compat_sleep_ns`; winpthreads' sleep rounds to 15.6 ms); semaphore deadlines use `CLOCK_REALTIME` (winpthreads rejects monotonic condition variables). |
 | `libtlggpu.so` | `libtlggpu.a`, linked into `tlg-probe.exe` by CMake (`gpu/CMakeLists.txt`), with a manifest for UTF-8 paths and long paths. |
-| `execlp bash run.sh` (in-game restart) | `run.py` puts its command line in `TLG_RESTART_COMMAND`; the new launch waits for the old process (`--after PID`). The launcher keeps the game in a job object. |
+| In-game restart: `sh -c "$TLG_RESTART_COMMAND"` replaces the process | `CreateProcess` of `TLG_RESTART_COMMAND` (the launcher's command line, from `infamous_run.py`), then the old process ends. The launcher keeps the game in a job object. |
 | Mod overlay with symlinks | Symlinks when allowed (Developer Mode), else junctions for folders and hard links for files. |
 
 Diagnostics added on the way: `TLG_FRAME_DUMP_TRIGGER=<file>` writes the guest display buffer
