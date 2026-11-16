@@ -598,8 +598,13 @@ void PerformanceTab() {
         static const char* const fps_labels[] = {"30", "60", "120", "240", TL("Unlimited", "Sem limite")};
         static_assert(sizeof(fps_labels) / sizeof(fps_labels[0]) == G::FpsLimits.size(),
                       "Every FPS limit must have a matching dropdown label");
+#ifdef TLG_RENDERER_V2
+        ChoiceRow(TL("Frame rate limit", "Limite de FPS"), s.fps_limit, fps_labels, G::FpsLimits.data(), int(G::FpsLimits.size()),
+                  "Caps the presented frames. Unlimited by default; VSync (Image tab) only holds frames above the display's refresh rate.");
+#else
         ChoiceRow(TL("Frame rate limit", "Limite de FPS"), s.fps_limit, fps_labels, G::FpsLimits.data(), int(G::FpsLimits.size()),
                   TL("Caps the presented frames. The game runs at 30 FPS (as on PS4).", "Limita os quadros apresentados. O jogo roda a 30 FPS (como no PS4)."));
+#endif
         static const char* const queued_labels[] = {TL("1 (lowest latency)", "1 (menor atraso)"), "2", TL("Unlimited", "Sem limite")};
         ChoiceRow(TL("Frames queued", "Quadros na fila"), s.frames_queued, queued_labels, G::FramesQueued.data(),
                   int(G::FramesQueued.size()), TL("More frames queued: steadier FPS, slower response to input.", "Mais quadros na fila: FPS mais estável, resposta mais lenta."));

@@ -16,8 +16,13 @@
 #include "imgui/renderer/imgui_core.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
+#include "tlg_graphics.h"
+#include "tlg_settings.h"
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <thread>
 
 extern std::unique_ptr<Vulkan::Presenter> presenter;
 extern std::unique_ptr<AmdGpu::Liverpool> liverpool;
@@ -414,6 +419,7 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
                                 frame->ready_tick, static_cast<u64>(frame->id));
         }
     }
+    request_cv.notify_one();
 }
 
 void VideoOutDriver::PresentThread(std::stop_token token) {
@@ -455,25 +461,69 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         const char* value = std::getenv("ISS_FLIP_RATE");
         return value && *value ? std::atoi(value) : -1;
     }();
-    // BB_FPS_LIMIT=n (launcher "FPS limit", 0 = off): a flip is taken only once 1/n s passed since
-    // the last one (half a vblank of tolerance, so jitter does not cost a whole tick); the guest
-    // waits for its queued flip, which paces the game itself.
-    const u32 frame_limit = EmulatorSettings.GetFrameLimit();
-    const auto min_flip_interval =
-        frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit) - vblank_period / 2
-                    : std::chrono::nanoseconds(0);
-    if (frame_limit) std::fprintf(stderr, "VIDEOOUT fps_limit=%u\n", frame_limit);
-    auto last_flip = std::chrono::steady_clock::time_point{};
+    // iss: unlimited frame rate. The game steps by measured time and paces itself on its own flip
+    // queue (it waits while more than 5 flips are pending), so a flip is presented as soon as it is
+    // queued (TlgGraphics::ImmediateFlips), not on the next vblank tick: the tick grid capped the
+    // game at BB_VBLANK_HZ. The game's 30 FPS lock (guest flip rate 1) and ISS_FLIP_RATE keep the
+    // grid. VSync (in-game menu) is FIFO presentation (vk_swapchain.cpp), which holds frames only
+    // once they come faster than the display refreshes. The vblank ticks themselves keep their rate.
+    // Frame limit: BB_FPS_LIMIT=n (launcher, fixed) or the in-game menu's "Frame rate limit" (live),
+    // 0 = off. A flip waits for its slot; slots advance by one period (no drift) but never lag
+    // behind by more than one, and the guest waits for its queued flip, which paces the game itself.
+    const long env_limit = [] {
+        const char* value = std::getenv("BB_FPS_LIMIT");
+        return value && *value ? std::strtol(value, nullptr, 10) : 0L;
+    }();
+    const auto current_limit = [env_limit] {
+        return u32(TlgGraphics::V2FrameLimit(env_limit, TlgSettings::Get().fps_limit.load()));
+    };
+    u32 frame_limit = current_limit();
+    auto frame_period = frame_limit ? std::chrono::nanoseconds(1000000000 / frame_limit)
+                                    : std::chrono::nanoseconds(0);
+    auto next_flip = std::chrono::steady_clock::now();
+    std::fprintf(stderr, "VIDEOOUT vblank=%u Hz fps_limit=%u (0 = unlimited)\n",
+                 EmulatorSettings.GetVblankFrequency(), frame_limit);
     s32 seen_flip_rate = -1;
     bool was_paused = false;
+    bool was_immediate = false;
+    // Takes the next queued flip if there is one and presents it; false when the queue was empty.
+    const auto take_flip = [&](u64 vblank_count, s32 flip_rate, u64& presented_trace_id) {
+        u64 queue_depth{};
+        const auto request = receive_request(vblank_count, flip_rate, queue_depth);
+        if (!request) {
+            return false;
+        }
+        if (frame_limit) {
+            const auto now = std::chrono::steady_clock::now();
+            next_flip = std::max(next_flip + frame_period, now - frame_period);
+        }
+        presented_trace_id = request.trace_id;
+        Flip(request, vblank_count);
+        FRAME_END;
+        return true;
+    };
     while (!token.stop_requested()) {
         timer.Start();
+        const auto tick_deadline = std::chrono::steady_clock::now() + vblank_period;
         if (main_port.flip_rate != seen_flip_rate) {
             seen_flip_rate = main_port.flip_rate;
             std::fprintf(stderr, "VIDEOOUT flip_rate=%d (guest) forced=%d\n", seen_flip_rate,
                          forced_flip_rate);
         }
         const s32 flip_rate = forced_flip_rate >= 0 ? forced_flip_rate : main_port.flip_rate;
+        const bool immediate = TlgGraphics::ImmediateFlips(main_port.flip_rate, forced_flip_rate);
+        if (immediate != was_immediate) {
+            was_immediate = immediate;
+            std::fprintf(stderr, "VIDEOOUT flips %s\n",
+                         immediate ? "immediate (unlimited)" : "on vblank ticks");
+        }
+        if (const u32 limit = current_limit(); limit != frame_limit) {
+            frame_limit = limit;
+            frame_period = limit ? std::chrono::nanoseconds(1000000000 / limit)
+                                 : std::chrono::nanoseconds(0);
+            next_flip = std::chrono::steady_clock::now();
+            std::fprintf(stderr, "VIDEOOUT fps_limit=%u (0 = unlimited)\n", limit);
+        }
 
         const bool paused = DebugState.IsGuestThreadsPaused();
         if (iss::timeline::enabled && paused != was_paused) {
@@ -491,13 +541,9 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         auto& vblank_status = main_port.vblank_status;
         const u64 vblank_count = vblank_status.count;
         u64 presented_trace_id{};
-        const bool limit_ok =
-            frame_limit == 0 || std::chrono::steady_clock::now() - last_flip >= min_flip_interval;
+        const bool limit_ok = frame_limit == 0 || std::chrono::steady_clock::now() >= next_flip;
         if (vblank_status.count % (flip_rate + 1) == 0 && limit_ok) {
-            u64 queue_depth{};
-            const auto request = receive_request(vblank_count, flip_rate,
-                                                 queue_depth);
-            if (!request) {
+            if (!take_flip(vblank_count, flip_rate, presented_trace_id)) {
                 if (timer.GetTotalWait().count() < 0) { // Dont draw too fast
                     if (!main_port.is_open) {
                         DrawBlankFrame();
@@ -505,11 +551,6 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
                         DrawLastFrame();
                     }
                 }
-            } else {
-                presented_trace_id = request.trace_id;
-                last_flip = std::chrono::steady_clock::now();
-                Flip(request, vblank_count);
-                FRAME_END;
             }
         }
 
@@ -547,6 +588,31 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
                                 vblank_event_count);
         }
 
+        if (!immediate) {
+            timer.End();
+            continue;
+        }
+        // Immediate flips: until the next vblank tick, present each flip as it is queued (after
+        // its frame limit slot, when there is a limit).
+        while (!token.stop_requested() && !DebugState.IsGuestThreadsPaused()) {
+            {
+                std::unique_lock lk{mutex};
+                if (!request_cv.wait_until(lk, tick_deadline,
+                                           [&] { return !requests.empty(); })) {
+                    break; // next vblank
+                }
+            }
+            if (frame_limit && std::chrono::steady_clock::now() < next_flip) {
+                if (next_flip >= tick_deadline) {
+                    break;
+                }
+                std::this_thread::sleep_until(next_flip);
+            }
+            u64 trace_id{};
+            take_flip(new_vblank_count, flip_rate, trace_id);
+        }
+        // The tick's whole period is spent here, so the timer carries no wait into the next one.
+        std::this_thread::sleep_until(tick_deadline);
         timer.End();
     }
 }

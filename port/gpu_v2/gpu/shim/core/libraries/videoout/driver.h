@@ -124,6 +124,7 @@ private:
     VideoOutPort main_port{};
     std::jthread present_thread;
     std::queue<Request> requests;
+    std::condition_variable request_cv; ///< iss: a flip was queued (immediate flips)
 };
 
 } // namespace Libraries::VideoOut
