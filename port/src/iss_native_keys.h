@@ -33,14 +33,14 @@ static inline int iss_native_keys_signature(const unsigned char *image, uint64_t
 /* The bindable actions; each presses one or more of the game's action kinds. */
 enum {
     ISS_NA_JUMP, ISS_NA_DASH, ISS_NA_MELEE, ISS_NA_EXECUTE, ISS_NA_GOOD, ISS_NA_USE, ISS_NA_DRAIN,
-    ISS_NA_PUSH, ISS_NA_AIM, ISS_NA_FIRE, ISS_NA_SECONDARY, ISS_NA_HEAVY, ISS_NA_IONIC, ISS_NA_PING,
+    ISS_NA_PUSH, ISS_NA_AIM, ISS_NA_FIRE, ISS_NA_SECONDARY, ISS_NA_HEAVY, ISS_NA_KARMA_BOMB, ISS_NA_PING,
     ISS_NA_PAUSE, ISS_NA_INVESTIGATE, ISS_NA_SPRAY, ISS_NA_COUNT
 };
 typedef struct { const char *name; unsigned char kinds[4]; unsigned char count; } IssNativeAction;
 static const IssNativeAction iss_native_actions[ISS_NA_COUNT]={
     {"jump",{0},1}, {"dash",{2},1}, {"melee",{3},1}, {"execute",{4},1}, {"good_choice",{5},1},
     {"use",{6,7,23},3}, {"drain",{8},1}, {"push",{25},1}, {"aim",{9},1}, {"fire",{10},1},
-    {"secondary_power",{11},1}, {"heavy_power",{12},1}, {"ionic_power",{13},1}, {"ping",{14},1},
+    {"secondary_power",{11},1}, {"heavy_power",{12},1}, {"karma_bomb",{13},1}, {"ping",{14},1},
     {"pause",{15},1}, {"investigate",{16,17,18,24},4}, {"spray",{22},1},
 };
 

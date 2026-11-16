@@ -369,7 +369,7 @@ static ButtonMap native_map={{
     {SDL_SCANCODE_F,NA(ISS_NA_MELEE)}, {SDL_SCANCODE_B,NA(ISS_NA_EXECUTE)}, {SDL_SCANCODE_R,NA(ISS_NA_GOOD)},
     {SDL_SCANCODE_E,NA(ISS_NA_USE)}, {SDL_SCANCODE_E,NA(ISS_NA_DRAIN)},
     {MOUSE_RIGHT,NA(ISS_NA_AIM)}, {MOUSE_LEFT,NA(ISS_NA_FIRE)}, {MOUSE_LEFT,NA(ISS_NA_SPRAY)},
-    {SDL_SCANCODE_Q,NA(ISS_NA_SECONDARY)}, {MOUSE_MIDDLE,NA(ISS_NA_HEAVY)}, {SDL_SCANCODE_Z,NA(ISS_NA_IONIC)},
+    {SDL_SCANCODE_Q,NA(ISS_NA_SECONDARY)}, {MOUSE_MIDDLE,NA(ISS_NA_HEAVY)}, {SDL_SCANCODE_Z,NA(ISS_NA_KARMA_BOMB)},
     {SDL_SCANCODE_ESCAPE,NA(ISS_NA_PAUSE)}, {SDL_SCANCODE_T,NA(ISS_NA_INVESTIGATE)},
 },15};
 /* push (two fingers on the touchpad) has no default key: V + right click does it. ping has no default key: no game code was seen reading it (static search and play traces). */
