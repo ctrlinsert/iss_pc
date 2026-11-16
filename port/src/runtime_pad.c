@@ -369,8 +369,9 @@ static ButtonMap native_map={{
     {SDL_SCANCODE_E,NA(ISS_NA_USE)}, {SDL_SCANCODE_E,NA(ISS_NA_DRAIN)}, {SDL_SCANCODE_E,NA(ISS_NA_PUSH)},
     {MOUSE_RIGHT,NA(ISS_NA_AIM)}, {MOUSE_LEFT,NA(ISS_NA_FIRE)}, {MOUSE_LEFT,NA(ISS_NA_SPRAY)},
     {SDL_SCANCODE_Q,NA(ISS_NA_SECONDARY)}, {MOUSE_MIDDLE,NA(ISS_NA_HEAVY)}, {SDL_SCANCODE_Z,NA(ISS_NA_IONIC)},
-    {SDL_SCANCODE_X,NA(ISS_NA_PING)}, {SDL_SCANCODE_ESCAPE,NA(ISS_NA_PAUSE)}, {SDL_SCANCODE_T,NA(ISS_NA_INVESTIGATE)},
-},17};
+    {SDL_SCANCODE_ESCAPE,NA(ISS_NA_PAUSE)}, {SDL_SCANCODE_T,NA(ISS_NA_INVESTIGATE)},
+},16};
+/* ping has no default key: no game code was seen reading it (static search and play traces). */
 static PsName native_names[ISS_NA_COUNT];
 static void native_names_init(void) {
     for (int a=0;a<ISS_NA_COUNT;++a) native_names[a]=(PsName){iss_native_actions[a].name,NA(a)};
