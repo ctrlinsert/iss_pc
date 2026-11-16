@@ -38,7 +38,7 @@ enum {
 };
 typedef struct { const char *name; unsigned char kinds[4]; unsigned char count; } IssNativeAction;
 static const IssNativeAction iss_native_actions[ISS_NA_COUNT]={
-    {"jump",{0},1}, {"dash",{2},1}, {"melee",{3},1}, {"execute",{4},1}, {"good_choice",{5},1},
+    {"jump",{0},1}, {"dash",{2,1},2}, {"melee",{3},1}, {"execute",{4},1}, {"good_choice",{5},1},
     {"use",{6,7,23},3}, {"drain",{8},1}, {"push",{25},1}, {"aim",{9},1}, {"fire",{10},1},
     {"secondary_power",{11},1}, {"heavy_power",{12},1}, {"karma_bomb",{13},1}, {"ping",{14},1},
     {"pause",{15},1}, {"investigate",{16,17,18,24},4}, {"spray",{22},1},

@@ -15,6 +15,7 @@ int main(void) {
     assert(melee==1ull<<3 && execute==1ull<<4);
     assert(iss_native_kinds(1u<<ISS_NA_USE)==(1ull<<6|1ull<<7|1ull<<23));
     assert(iss_native_kinds(1u<<ISS_NA_INVESTIGATE)==(1ull<<16|1ull<<17|1ull<<18|1ull<<24));
+    assert(iss_native_kinds(1u<<ISS_NA_DASH)==(1ull<<2|1ull<<1));   /* dash also drops, as circle does */
     assert(iss_native_kinds(0)==0);
     for (int a=0;a<ISS_NA_COUNT;++a)
         for (int i=0;i<iss_native_actions[a].count;++i) assert(iss_native_actions[a].kinds[i]<ISS_ACT_KINDS);
