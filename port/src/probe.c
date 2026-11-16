@@ -1242,6 +1242,8 @@ void __attribute__((ms_abi)) runtime_input_trace_held(uintptr_t ctl,uintptr_t ma
 #include "iss_native_keys.h"
 void runtime_native_keys_attach(uintptr_t image);
 uint32_t __attribute__((sysv_abi)) runtime_native_lookup(int32_t kind);
+uint32_t __attribute__((sysv_abi)) runtime_native_karma_good(uintptr_t obj);
+uint32_t __attribute__((sysv_abi)) runtime_native_karma_evil(uintptr_t obj);
 void __attribute__((ms_abi)) runtime_native_pad(uintptr_t ctl,uintptr_t unused);
 void runtime_pad_native_attach(void);
 /* ISS_INPUT_TRACE=1: log how the game asks for input (iss_input_trace.h). Observation only. */
@@ -1293,7 +1295,8 @@ static void install_iss_native_keys(const char *app0,Segment *segments,uint64_t 
             continue;
         }
         if(segments[i].address<=ISS_BTNK_LOOKUP && ISS_BTNK_LOOKUP+sizeof(iss_btnk_lookup_bytes)<=segments[i].address+segments[i].size)executable=1;
-        if(segments[i].address<=ISS_PAD_READ && ISS_PAD_READ_SITE+ISS_PAD_READ_STOLEN<=segments[i].address+segments[i].size)pad=1;
+        if(segments[i].address<=ISS_PAD_READ && ISS_PAD_READ_SITE+ISS_PAD_READ_STOLEN<=segments[i].address+segments[i].size &&
+           ISS_KARMA_EVIL_GETTER+ISS_KARMA_GETTER_SIZE<=segments[i].address+segments[i].size)pad=1;
     }
     if(!iss_title_107(serial,version) || !executable || !pad || !data || size<=ISS_BTNK_LOOKUP+sizeof(iss_btnk_lookup_bytes) ||
        (!input_trace_lookup && memcmp(image+ISS_BTNK_LOOKUP,iss_btnk_lookup_bytes,sizeof(iss_btnk_lookup_bytes))) ||
@@ -1309,6 +1312,8 @@ static void install_iss_native_keys(const char *app0,Segment *segments,uint64_t 
     iss_karma_jump(image+ISS_PAD_READ_SITE,(uintptr_t)bridge);
     /* Replaces the trace's lookup too, if it is on: this one notes each read to the trace. */
     iss_karma_jump(image+ISS_BTNK_LOOKUP,(uintptr_t)runtime_native_lookup);
+    iss_karma_jump(image+ISS_KARMA_GOOD_GETTER,(uintptr_t)runtime_native_karma_good);
+    iss_karma_jump(image+ISS_KARMA_EVIL_GETTER,(uintptr_t)runtime_native_karma_evil);
     runtime_pad_native_attach();
     puts("Native keys: gameplay keys press the game's actions (TLG_NATIVE_KEYS=0: PS4 buttons)");
 }

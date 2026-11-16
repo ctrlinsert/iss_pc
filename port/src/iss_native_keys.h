@@ -39,6 +39,15 @@ static inline int iss_native_plain_caller(uint32_t ret) {
     return 0;
 }
 
+/* The karma choice's two button getters (object +0x5b8 / +0x5c8 kind -> lookup, tail call). The
+ * game's scripts read them through a generic native dispatcher to draw the choice, so their
+ * return address names no caller: probe.c replaces them with plain-mask versions. */
+#define ISS_KARMA_GOOD_GETTER 0x56b2b0u
+#define ISS_KARMA_EVIL_GETTER 0x56b2c0u
+#define ISS_KARMA_GETTER_SIZE 16u
+static const unsigned char iss_karma_good_getter_bytes[]={0x8b,0xbf,0xb8,0x05,0x00,0x00,0xe9,0x25,0x2b,0xbf,0xff};
+static const unsigned char iss_karma_evil_getter_bytes[]={0x8b,0xbf,0xc8,0x05,0x00,0x00,0xe9,0x15,0x2b,0xbf,0xff};
+
 static const unsigned char iss_pad_read_bytes[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,
     0x48,0x83,0xec,0x28,0x48,0x89,0xfb,0x41,0xb6,0x7f};
 static const unsigned char iss_pad_read_site_bytes[]={0x48,0x8d,0xbb,0x20,0x04,0x00,0x00,0x48,0x8d,0x4b,0x14,
@@ -56,6 +65,8 @@ static inline int iss_native_plain_callers_valid(const unsigned char *image, uin
 }
 static inline int iss_native_keys_signature(const unsigned char *image, uint64_t size) {
     return size>ISS_PAD_READ_SITE+ISS_PAD_READ_STOLEN && iss_native_plain_callers_valid(image,size) &&
+        !memcmp(image+ISS_KARMA_GOOD_GETTER,iss_karma_good_getter_bytes,sizeof(iss_karma_good_getter_bytes)) &&
+        !memcmp(image+ISS_KARMA_EVIL_GETTER,iss_karma_evil_getter_bytes,sizeof(iss_karma_evil_getter_bytes)) &&
         !memcmp(image+ISS_PAD_READ,iss_pad_read_bytes,sizeof(iss_pad_read_bytes)) &&
         !memcmp(image+ISS_PAD_READ_SITE,iss_pad_read_site_bytes,sizeof(iss_pad_read_site_bytes));
 }

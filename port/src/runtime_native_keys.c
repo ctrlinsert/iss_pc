@@ -42,6 +42,14 @@ uint32_t __attribute__((sysv_abi)) runtime_native_lookup(int32_t kind) {
     return mask;
 }
 
+/* The karma choice's button getters (ISS_KARMA_GOOD_GETTER/EVIL): the plain mask, so the choice
+ * is drawn with its button and karma style. */
+static uint32_t plain_lookup(int32_t kind) {
+    return kind==-1 ? 0 : ((const volatile uint32_t*)(native_image+ISS_BTNK_TABLE))[kind];
+}
+uint32_t __attribute__((sysv_abi)) runtime_native_karma_good(uintptr_t obj) { return plain_lookup(*(const int32_t*)(obj+0x5b8)); }
+uint32_t __attribute__((sysv_abi)) runtime_native_karma_evil(uintptr_t obj) { return plain_lookup(*(const int32_t*)(obj+0x5c8)); }
+
 /* Bridged at the end of the pad read (saved RBX: the controller): adds the held actions. A
  * controller with no pad open, or one the game is not reading, is left alone. */
 void __attribute__((ms_abi)) runtime_native_pad(uintptr_t ctl, uintptr_t unused) {
