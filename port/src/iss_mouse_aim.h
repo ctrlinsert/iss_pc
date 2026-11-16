@@ -18,7 +18,7 @@ static const unsigned char iss_mouse_limits[]={0xc4,0xc1,0x78,0x10,0x8f,0xc0,1,0
     0xc4,0xc1,0x78,0x10,0x84,0x24,0xc0,1,0,0};
 static inline int iss_mouse_signature(const unsigned char *p,uint64_t n){
     static const unsigned char follow[]={0x48,0x8d,0x05,0xcb,0xd8,0xcc,0};
-    return n>0xe16c40u && !memcmp(p+0x14ebc5,iss_mouse_expected,sizeof(iss_mouse_expected)) &&
+    return n>0xe16c41u && !memcmp(p+0x14ebc5,iss_mouse_expected,sizeof(iss_mouse_expected)) &&
         !memcmp(p+0x14936e,follow,sizeof(follow)) &&
         !memcmp(p+0x14dfb2,iss_mouse_data,sizeof(iss_mouse_data)) &&
         !memcmp(p+0x14ea75,iss_mouse_context,sizeof(iss_mouse_context)) &&
