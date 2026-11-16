@@ -1391,6 +1391,9 @@ static void sample_host(PadData *d) {
         const uint32_t keys_now=play_keys(k,last_mouse,native_keys_on() && !iss_menu_mouse_scene(runtime_menu_scene()));
         move_owner=input_channel_update(&move_channel,d->left_x!=128 || d->left_y!=128,(keys_now & ACT_LS)!=0);
         look_owner=input_channel_update(&look_channel,d->right_x!=128 || d->right_y!=128,mouse_moved || (keys_now & ACT_RS)!=0);
+        /* The keys only set the axes they press, so the losing stick is centred first: holding
+         * the stick forward and pressing A must turn left, not move forward and left. */
+        if (move_owner==INPUT_DEVICE_KBM) d->left_x=d->left_y=128;
         if (look_owner==INPUT_DEVICE_KBM) d->right_x=d->right_y=128;
         else mouse_look_blocked=true;
     }
@@ -1413,7 +1416,12 @@ static void sample_host(PadData *d) {
     uint32_t mouse=sample_mouse(d,can_aiming(early),k,early); /* adds to the right stick */
     runtime_mouse_aim_hold_follow(look_owner==INPUT_DEVICE_KBM);
     last_mouse=mouse;
-    mouse_moved=fabsf(power_mouse_dx)+fabsf(power_mouse_dy)>=INPUT_DEVICE_MOUSE_COUNTS;
+    /* The mouse stays "in use" for a moment after it last moved, so slow motion (a few counts
+     * a read) holds the camera against a held stick instead of flickering back to it. */
+    static uint64_t mouse_moved_at;
+    if (fabsf(power_mouse_dx)+fabsf(power_mouse_dy)>=INPUT_DEVICE_MOUSE_SLOW) mouse_moved_at=d->timestamp ? d->timestamp : 1;
+    mouse_moved=fabsf(power_mouse_dx)+fabsf(power_mouse_dy)>=INPUT_DEVICE_MOUSE_COUNTS ||
+                (mouse_moved && mouse_moved_at && d->timestamp-mouse_moved_at<INPUT_DEVICE_MOUSE_LINGER_US);
     uint32_t menu_buttons=0;
     const bool menu_layer=menu_keys_on();
     const bool in_menu=!mouse_pad.active && iss_menu_mouse_scene(runtime_menu_scene());

@@ -14,6 +14,10 @@ enum { INPUT_DEVICE_KBM, INPUT_DEVICE_PAD };
 /* Mouse motion, in counts per pad read, that counts as using the mouse (a hand resting on it
  * stays below this). */
 #define INPUT_DEVICE_MOUSE_COUNTS 6.0f
+/* Once in use, slower motion (at least this many counts a read) keeps it in use, and it stays in
+ * use this long after its last such motion. */
+#define INPUT_DEVICE_MOUSE_SLOW 1.0f
+#define INPUT_DEVICE_MOUSE_LINGER_US 150000u
 
 #define INPUT_DEVICE_IDLE_US 200000u
 
