@@ -457,7 +457,6 @@ static int apply_native_map(const char *spec) {
     native_names_init();
     return apply_map(&native_map,spec,true,native_names,ISS_NA_COUNT,false);
 }
-static void native_signatures_update(void);
 
 static void load_button_maps(void) {
     static bool loaded;
@@ -475,7 +474,6 @@ static void load_button_maps(void) {
     const int native=apply_native_map(native_env && *native_env ? native_env : in.native_key_map);
     if (pad || keys || menu || native)
         printf("Runtime: pad map: %d gamepad, %d keyboard, %d menu and %d native action keys remapped\n",pad,keys,menu,native);
-    native_signatures_update();
 }
 
 /* Motion (orientation quaternion, acceleration in g, angular velocity in rad/s; axes as SDL's:
@@ -1150,25 +1148,15 @@ static bool native_keys_on(void) {
 }
 static _Atomic uint32_t native_down, native_latched;
 uint32_t runtime_pad_native_take(void) { return atomic_load(&native_down) | atomic_exchange(&native_latched,0); }
-/* Each action's keys as an order-free signature (0: unbound), for the split of actions that
- * share a PS4 button (iss_native_split). The generation changes when the map does. */
-static uint64_t native_sig[ISS_NA_COUNT];
-static atomic_int native_sig_gen;
-static uint64_t mix64(uint64_t x) {
-    x+=0x9e3779b97f4a7c15ull; x=(x^(x>>30))*0xbf58476d1ce4e5b9ull; x=(x^(x>>27))*0x94d049bb133111ebull; return x^(x>>31);
-}
-static void native_signatures_update(void) {
-    for (int a=0;a<ISS_NA_COUNT;++a) {
-        uint64_t sig=0;
-        for (size_t i=0;i<native_map.count;++i) if (native_map.entries[i].ps>>a & 1) sig+=mix64((uint64_t)native_map.entries[i].source);
-        native_sig[a]=sig;
-    }
-    atomic_fetch_add(&native_sig_gen,1);
-}
-int runtime_pad_native_signatures(uint64_t out[ISS_NA_COUNT]) {
-    const int gen=atomic_load(&native_sig_gen);
-    memcpy(out,native_sig,sizeof(native_sig));
-    return gen;
+/* Actions the game reads as a PS4 button rather than by action kind (pause opens on OPTIONS, the
+ * graffiti spray is R2, the hunts and starting a mission are d-pad up): their keys also press
+ * that button, until those reads are hooked as actions. */
+static uint32_t native_raw_buttons(uint32_t actions) {
+    uint32_t b=0;
+    if (actions & NA(ISS_NA_PAUSE)) b|=BTN_OPTIONS;
+    if (actions & NA(ISS_NA_SPRAY)) b|=BTN_R2;
+    if (actions & NA(ISS_NA_INVESTIGATE)) b|=BTN_UP;
+    return b;
 }
 /* The gameplay key map with the native keys on: each binding whose key is a native action key
  * is left out (that key presses its action instead). */
@@ -1370,7 +1358,8 @@ static void sample_host(PadData *d) {
     const bool use_finger=(actions & NA(ISS_NA_USE)) && !(actions & (NA(ISS_NA_DRAIN)|NA(ISS_NA_PUSH))); /* a finger, no click */
     if (actions & NA(ISS_NA_PUSH)) touch|=CLICK_LEFT|CLICK_RIGHT;
     actions&=~(uint32_t)(NA(ISS_NA_USE)|NA(ISS_NA_DRAIN)|NA(ISS_NA_PUSH));
-    const uint32_t keys=(menu ? menu_keys(k,mouse) : play_keys(k,mouse,native))|menu_buttons|two_fingers|touch, acts=keys & ACT_ALL;
+    const uint32_t keys=(menu ? menu_keys(k,mouse) : play_keys(k,mouse,native))|menu_buttons|two_fingers|touch|
+                        native_raw_buttons(actions), acts=keys & ACT_ALL;
     atomic_store(&native_down,actions);
     if (actions) atomic_fetch_or(&native_latched,actions);
     update_aim_assist(pad_input,keys!=0 || actions!=0 || mouse!=0 || power_mouse_dx!=0 || power_mouse_dy!=0);

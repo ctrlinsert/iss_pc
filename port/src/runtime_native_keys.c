@@ -1,63 +1,124 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* Native keyboard and mouse actions (iss_native_keys.h): the game-side half. probe.c replaces
- * the action kind lookup with runtime_native_lookup and bridges the end of the pad read to
- * runtime_native_pad; runtime_pad.c samples the keys. */
+/* Native keyboard and mouse actions: the game-side half (iss_action_input.h, iss_native_keys.h).
+ * probe.c replaces the game's action input functions with the ones below and bridges the end of
+ * the pad read to runtime_native_pad; runtime_pad.c samples the keys. Each answer is the pad's
+ * (the game's own controller code, with the kind's plain mask) or the keyboard's (per kind). */
+#include "iss_action_input.h"
 #include "iss_native_keys.h"
 #include "iss_input_trace.h"
-#include <stdatomic.h>
 
 uint32_t runtime_pad_native_take(void);
-int runtime_pad_native_signatures(uint64_t out[ISS_NA_COUNT]);
-void runtime_input_trace_note_btnk(int32_t kind, uint32_t mask, uintptr_t ret);
-int runtime_input_trace_active(void);
+
+typedef uint32_t (__attribute__((sysv_abi)) *PadPressed)(uintptr_t ctl, uint32_t mask, float window);
+typedef uint32_t (__attribute__((sysv_abi)) *PadMask)(uintptr_t ctl, uint32_t mask);
+typedef void (__attribute__((sysv_abi)) *PadConsume)(uintptr_t ctl, uint32_t mask);
 
 static uintptr_t native_image;
-static uint32_t table_seen[ISS_NATIVE_KINDS], action_bit[ISS_NA_COUNT];
-static _Atomic uint32_t vbit[ISS_NATIVE_KINDS];
-static int split_gen=-1;
+static uintptr_t keys_ctl;          /* the controller the keyboard plays on (the last one read) */
+static IssActionState keys;
 
-void runtime_native_keys_attach(uintptr_t image) { native_image=image; }
+void runtime_native_keys_attach(uintptr_t image) { native_image=image; iss_action_reset(&keys); }
 
-/* The split follows the control scheme (the table is refilled when it changes) and the key map. */
-static void refresh(const volatile uint32_t *table) {
-    uint32_t now[ISS_NATIVE_KINDS];
-    for (unsigned k=0;k<ISS_NATIVE_KINDS;++k) now[k]=table[k];
-    uint64_t sig[ISS_NA_COUNT];
-    const int gen=runtime_pad_native_signatures(sig);
-    if (gen==split_gen && !memcmp(now,table_seen,sizeof(now))) return;
-    split_gen=gen; memcpy(table_seen,now,sizeof(now));
-    uint32_t bits[ISS_NATIVE_KINDS];
-    iss_native_split(now,sig,bits,action_bit);
-    for (unsigned k=0;k<ISS_NATIVE_KINDS;++k) atomic_store_explicit(&vbit[k],bits[k],memory_order_relaxed);
+static int32_t clock_now(void) { return *(const volatile int32_t*)(native_image+ISS_ACT_CLOCK); }
+static uint32_t kind_mask(int32_t kind) {
+    if (kind<0 || (uint32_t)kind>=ISS_BTNK_COUNT) return 0;
+    return ((const volatile uint32_t*)(native_image+ISS_BTNK_TABLE))[kind];
+}
+static uintptr_t vt(uintptr_t ctl, unsigned slot) { return (*(const uintptr_t*const*)ctl)[slot]; }
+static uint32_t pad_pressed(uintptr_t ctl, uint32_t mask, float window) { return mask ? ((PadPressed)vt(ctl,0))(ctl,mask,window) : 0; }
+static uint32_t pad_held(uintptr_t ctl, uint32_t mask) { return mask ? ((PadMask)vt(ctl,1))(ctl,mask) : 0; }
+static void pad_consume(uintptr_t ctl, uint32_t mask) { if (mask) ((PadConsume)vt(ctl,2))(ctl,mask); }
+static IssActionPause pause_of(uintptr_t ctl) {
+    return (IssActionPause){*(const volatile uint8_t*)(ctl+0xb8),*(const volatile int32_t*)(ctl+0xbc),
+                            *(const volatile int32_t*)(ctl+0xc0)};
+}
+static int keyboard(uintptr_t ctl) { return ctl && ctl==keys_ctl; }
+static int key_pressed(uintptr_t ctl, int32_t kind, float window) {
+    return keyboard(ctl) && kind>=0 && iss_action_pressed(&keys,(unsigned)kind,window,clock_now(),pause_of(ctl));
+}
+static int key_held(uintptr_t ctl, int32_t kind) { return keyboard(ctl) && kind>=0 && iss_action_held(&keys,(unsigned)kind); }
+static int key_down(uintptr_t ctl, int32_t kind) { return keyboard(ctl) && kind>=0 && iss_action_down(&keys,(unsigned)kind); }
+static void key_consume(uintptr_t ctl, int32_t kind) { if (keyboard(ctl) && kind>=0) iss_action_consume(&keys,(unsigned)kind); }
+static uintptr_t script_ctl(uintptr_t object) {
+    const uintptr_t ctl=*(const uintptr_t*)(object+0x28);
+    return ctl ? ctl : *(const uintptr_t*)(native_image+ISS_PAD_DEFAULT);
+}
+static uintptr_t player_ctl(uintptr_t player) { return *(const uintptr_t*)(*(const uintptr_t*)(player+0x38)+0x4b0); }
+
+/* The replacements. */
+uint8_t __attribute__((sysv_abi)) runtime_act_pressed(uintptr_t ctl, int32_t kind, float window) {
+    const uint32_t hits=pad_pressed(ctl,kind_mask(kind),window);
+    if (hits) pad_consume(ctl,hits);
+    const int key=key_pressed(ctl,kind,window);
+    if (key) key_consume(ctl,kind);
+    return hits || key;
+}
+uint8_t __attribute__((sysv_abi)) runtime_act_held_consume(uintptr_t ctl, int32_t kind) {
+    const uint32_t hits=pad_held(ctl,kind_mask(kind));
+    if (hits) pad_consume(ctl,hits);
+    const int key=key_held(ctl,kind);
+    if (key) key_consume(ctl,kind);
+    return hits || key;
+}
+uint8_t __attribute__((sysv_abi)) runtime_act_pressed_keep(uintptr_t ctl, int32_t kind, float window) {
+    return pad_pressed(ctl,kind_mask(kind),window) || key_pressed(ctl,kind,window);
+}
+uint8_t __attribute__((sysv_abi)) runtime_act_held(uintptr_t ctl, int32_t kind) {
+    return pad_held(ctl,kind_mask(kind)) || key_held(ctl,kind);
+}
+uint8_t __attribute__((sysv_abi)) runtime_act_down(uintptr_t ctl, int32_t kind) {
+    return (*(const volatile uint32_t*)(ctl+ISS_PAD_STATE) & kind_mask(kind)) || key_down(ctl,kind);
+}
+void __attribute__((sysv_abi)) runtime_act_consume(uintptr_t ctl, int32_t kind) {
+    pad_consume(ctl,kind_mask(kind));
+    key_consume(ctl,kind);
+}
+uint8_t __attribute__((sysv_abi)) runtime_act_script_pressed(uintptr_t object, int32_t kind, float window) {
+    return runtime_act_pressed(script_ctl(object),kind,window);
+}
+uint8_t __attribute__((sysv_abi)) runtime_act_script_pressed_keep(uintptr_t object, int32_t kind, float window) {
+    return runtime_act_pressed_keep(script_ctl(object),kind,window);
+}
+uint8_t __attribute__((sysv_abi)) runtime_act_script_down(uintptr_t object, int32_t kind) {
+    return runtime_act_down(script_ctl(object),kind);
 }
 
-/* Replaces the action kind lookup: the table's mask plus the kind's split bits. */
-uint32_t __attribute__((sysv_abi)) runtime_native_lookup(int32_t kind) {
-    if (kind==-1) return 0;
-    uint32_t mask=((const volatile uint32_t*)(native_image+ISS_BTNK_TABLE))[kind];
-    const uintptr_t ret=(uintptr_t)__builtin_return_address(0);
-    if ((uint32_t)kind<ISS_NATIVE_KINDS && !iss_native_plain_caller((uint32_t)(ret-native_image)))
-        mask|=atomic_load_explicit(&vbit[kind],memory_order_relaxed);
-    if (runtime_input_trace_active()) runtime_input_trace_note_btnk(kind,mask,ret);
-    return mask;
+/* The set functions: kinds by index (ISS_ACT_SET_KINDS); the hits are consumed by kind. */
+static int32_t set_kind(unsigned index) {
+    return index<ISS_ACT_SET_COUNT ? ((const int32_t*)(native_image+ISS_ACT_SET_KINDS))[index] : -1;
+}
+static void consume_set(uintptr_t ctl, uint32_t set) {
+    uint32_t mask=0;
+    for (unsigned i=0;i<ISS_ACT_SET_COUNT;++i) if (set>>i & 1) { mask|=kind_mask(set_kind(i)); key_consume(ctl,set_kind(i)); }
+    pad_consume(ctl,mask);
+}
+static uint32_t any_set(uintptr_t player, uint32_t set, float window, int held) {
+    set&=*(const volatile uint32_t*)(native_image+ISS_ACT_ENABLED);
+    const uintptr_t ctl=player_ctl(player);
+    uint32_t hits=0;
+    for (unsigned i=0;i<ISS_ACT_SET_COUNT;++i) {
+        if (!(set>>i & 1)) continue;
+        const int32_t kind=set_kind(i);
+        if (held ? runtime_act_held(ctl,kind) : runtime_act_pressed_keep(ctl,kind,window)) hits|=1u<<i;
+    }
+    if (hits) consume_set(player_ctl(player),hits);
+    return hits;
+}
+uint32_t __attribute__((sysv_abi)) runtime_act_any_pressed(uintptr_t player, uint32_t set, float window) {
+    return any_set(player,set,window,0);
+}
+uint32_t __attribute__((sysv_abi)) runtime_act_any_held(uintptr_t player, uint32_t set) {
+    return any_set(player,set,0.0f,1);
+}
+void __attribute__((sysv_abi)) runtime_act_consume_set(uintptr_t player, uint32_t set) {
+    consume_set(player_ctl(player),set);
 }
 
-/* The karma choice's button getters (ISS_KARMA_GOOD_GETTER/EVIL): the plain mask, so the choice
- * is drawn with its button and karma style. */
-static uint32_t plain_lookup(int32_t kind) {
-    return kind==-1 ? 0 : ((const volatile uint32_t*)(native_image+ISS_BTNK_TABLE))[kind];
-}
-uint32_t __attribute__((sysv_abi)) runtime_native_karma_good(uintptr_t obj) { return plain_lookup(*(const int32_t*)(obj+0x5b8)); }
-uint32_t __attribute__((sysv_abi)) runtime_native_karma_evil(uintptr_t obj) { return plain_lookup(*(const int32_t*)(obj+0x5c8)); }
-
-/* Bridged at the end of the pad read (saved RBX: the controller): adds the held actions. A
- * controller with no pad open, or one the game is not reading, is left alone. */
+/* Bridged at the end of the pad read (saved RBX: the controller): the held actions' kinds go
+ * down on the keyboard side. A controller with no pad open is left alone. */
 void __attribute__((ms_abi)) runtime_native_pad(uintptr_t ctl, uintptr_t unused) {
     (void)unused;
     if (!native_image || *(const volatile int32_t*)(ctl+ISS_PAD_HANDLE)<0) return;
-    const volatile uint32_t *table=(const volatile uint32_t*)(native_image+ISS_BTNK_TABLE);
-    refresh(table);
-    const uint32_t actions=runtime_pad_native_take();
-    if (!actions) return;
-    *(volatile uint32_t*)(ctl+ISS_PAD_STATE)|=iss_native_state(table_seen,action_bit,actions);
+    keys_ctl=ctl;
+    iss_action_update(&keys,iss_native_kinds(runtime_pad_native_take()),clock_now());
 }

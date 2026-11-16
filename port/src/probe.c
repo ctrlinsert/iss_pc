@@ -1240,14 +1240,23 @@ uint8_t __attribute__((sysv_abi)) runtime_input_trace_down(const void *object,ui
 void __attribute__((ms_abi)) runtime_input_trace_pressed(uintptr_t ctl,uintptr_t mask,uintptr_t ret);
 void __attribute__((ms_abi)) runtime_input_trace_held(uintptr_t ctl,uintptr_t mask,uintptr_t ret);
 #include "iss_native_keys.h"
+#include "iss_action_input.h"
 void runtime_native_keys_attach(uintptr_t image);
-uint32_t __attribute__((sysv_abi)) runtime_native_lookup(int32_t kind);
-uint32_t __attribute__((sysv_abi)) runtime_native_karma_good(uintptr_t obj);
-uint32_t __attribute__((sysv_abi)) runtime_native_karma_evil(uintptr_t obj);
 void __attribute__((ms_abi)) runtime_native_pad(uintptr_t ctl,uintptr_t unused);
+uint8_t __attribute__((sysv_abi)) runtime_act_pressed(uintptr_t ctl,int32_t kind,float window);
+uint8_t __attribute__((sysv_abi)) runtime_act_held_consume(uintptr_t ctl,int32_t kind);
+uint8_t __attribute__((sysv_abi)) runtime_act_pressed_keep(uintptr_t ctl,int32_t kind,float window);
+uint8_t __attribute__((sysv_abi)) runtime_act_held(uintptr_t ctl,int32_t kind);
+uint8_t __attribute__((sysv_abi)) runtime_act_down(uintptr_t ctl,int32_t kind);
+void __attribute__((sysv_abi)) runtime_act_consume(uintptr_t ctl,int32_t kind);
+uint8_t __attribute__((sysv_abi)) runtime_act_script_pressed(uintptr_t object,int32_t kind,float window);
+uint8_t __attribute__((sysv_abi)) runtime_act_script_pressed_keep(uintptr_t object,int32_t kind,float window);
+uint8_t __attribute__((sysv_abi)) runtime_act_script_down(uintptr_t object,int32_t kind);
+uint32_t __attribute__((sysv_abi)) runtime_act_any_pressed(uintptr_t player,uint32_t set,float window);
+uint32_t __attribute__((sysv_abi)) runtime_act_any_held(uintptr_t player,uint32_t set);
+void __attribute__((sysv_abi)) runtime_act_consume_set(uintptr_t player,uint32_t set);
 void runtime_pad_native_attach(void);
 /* ISS_INPUT_TRACE=1: log how the game asks for input (iss_input_trace.h). Observation only. */
-static int input_trace_lookup; /* the trace replaced the action kind lookup (native keys take it over) */
 static void install_iss_input_trace(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     const char *e=getenv("ISS_INPUT_TRACE");
     if(!e || strcmp(e,"1"))return;
@@ -1275,32 +1284,45 @@ static void install_iss_input_trace(const char *app0,Segment *segments,uint64_t 
     iss_karma_jump(image+ISS_PAD_PRESSED,(uintptr_t)bridges);
     iss_karma_jump(image+ISS_PAD_HELD,(uintptr_t)(bridges+2048));
     iss_karma_jump(image+ISS_BTNK_LOOKUP,(uintptr_t)runtime_input_trace_btnk);
-    input_trace_lookup=1;
     iss_karma_jump(image+ISS_PAD_DOWN,(uintptr_t)runtime_input_trace_down);
     puts("Input trace: logging the game's action and button queries (INPUT_TRACE lines)");
 }
-/* Native keyboard and mouse actions (iss_native_keys.h): the action kind lookup and the end of
- * the pad read. TLG_NATIVE_KEYS=0: off (the keys then press PS4 buttons, runtime_pad.c key_map). */
+/* Native keyboard and mouse actions (iss_action_input.h): the game's action input functions are
+ * replaced (each answers the pad's state or the keyboard's, by action kind) and the end of the pad
+ * read is bridged to take the held keys. TLG_NATIVE_KEYS=0: off (the keys then press PS4 buttons,
+ * runtime_pad.c key_map). */
 static void install_iss_native_keys(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     const char *e=getenv("TLG_NATIVE_KEYS");
     if(e && *e=='0'){puts("Native keys: off (TLG_NATIVE_KEYS=0)");return;}
     char path[4096],serial[32]="",version[32]="";
     snprintf(path,sizeof(path),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
     sfo_value(path,"TITLE_ID",serial,sizeof(serial),NULL);sfo_value(path,"APP_VER",version,sizeof(version),NULL);
-    int executable=0,pad=0,data=0;
-    for(uint64_t i=0;i<count;i++){
-        if(!(segments[i].flags&1)){
-            if((segments[i].flags&2) && segments[i].address<=ISS_BTNK_TABLE &&
-               ISS_BTNK_TABLE+4*ISS_BTNK_COUNT<=segments[i].address+segments[i].size)data=1;
-            continue;
-        }
-        if(segments[i].address<=ISS_BTNK_LOOKUP && ISS_BTNK_LOOKUP+sizeof(iss_btnk_lookup_bytes)<=segments[i].address+segments[i].size)executable=1;
-        if(segments[i].address<=ISS_PAD_READ && ISS_PAD_READ_SITE+ISS_PAD_READ_STOLEN<=segments[i].address+segments[i].size &&
-           ISS_KARMA_EVIL_GETTER+ISS_KARMA_GETTER_SIZE<=segments[i].address+segments[i].size)pad=1;
+    static const uintptr_t targets[]={(uintptr_t)runtime_act_pressed,(uintptr_t)runtime_act_held_consume,
+        (uintptr_t)runtime_act_pressed_keep,(uintptr_t)runtime_act_held,(uintptr_t)runtime_act_down,
+        (uintptr_t)runtime_act_consume,(uintptr_t)runtime_act_script_pressed,(uintptr_t)runtime_act_script_pressed_keep,
+        (uintptr_t)runtime_act_script_down,(uintptr_t)runtime_act_any_pressed,(uintptr_t)runtime_act_any_held,
+        (uintptr_t)runtime_act_consume_set};
+    enum{HOOKS=sizeof(iss_action_signatures)/sizeof(iss_action_signatures[0])};
+    _Static_assert(sizeof(targets)/sizeof(targets[0])==HOOKS,"one replacement per action function");
+    int executable=1,data=0,set_table=0;
+    for(unsigned h=0;h<HOOKS+1;h++){
+        const uint64_t lo=h<HOOKS ? iss_action_signatures[h].address : ISS_PAD_READ;
+        const uint64_t hi=h<HOOKS ? lo+ISS_ACT_HOOK_BYTES : ISS_PAD_READ_SITE+ISS_PAD_READ_STOLEN;
+        int in=0;
+        for(uint64_t i=0;i<count;i++)
+            if((segments[i].flags&1) && segments[i].address<=lo && hi<=segments[i].address+segments[i].size)in=1;
+        if(!in)executable=0;
     }
-    if(!iss_title_107(serial,version) || !executable || !pad || !data || size<=ISS_BTNK_LOOKUP+sizeof(iss_btnk_lookup_bytes) ||
-       (!input_trace_lookup && memcmp(image+ISS_BTNK_LOOKUP,iss_btnk_lookup_bytes,sizeof(iss_btnk_lookup_bytes))) ||
-       !iss_native_keys_signature(image,size)){
+    for(uint64_t i=0;i<count;i++){
+        const uint64_t lo=segments[i].address,hi=lo+segments[i].size;
+        if((segments[i].flags&2) && lo<=ISS_BTNK_TABLE && ISS_BTNK_TABLE+4*ISS_BTNK_COUNT<=hi &&
+           lo<=ISS_ACT_ENABLED && ISS_ACT_ENABLED+4<=hi && lo<=ISS_ACT_CLOCK && ISS_ACT_CLOCK+4<=hi)data=1;
+        if(lo<=ISS_ACT_SET_KINDS && ISS_ACT_SET_KINDS+4*ISS_ACT_SET_COUNT<=hi)set_table=1;
+    }
+    int code=executable && iss_native_keys_signature(image,size);
+    for(unsigned h=0;code && h<HOOKS;h++)
+        if(memcmp(image+iss_action_signatures[h].address,iss_action_signatures[h].bytes,sizeof(iss_action_signatures[h].bytes)))code=0;
+    if(!iss_title_107(serial,version) || !code || !data || !set_table){
         puts("Native keys: game code not recognised; the keys press PS4 buttons");return;
     }
     unsigned char *bridge=allocate(page_size);
@@ -1310,12 +1332,9 @@ static void install_iss_native_keys(const char *app0,Segment *segments,uint64_t 
     protect(bridge,page_size,5);
     runtime_native_keys_attach((uintptr_t)image);
     iss_karma_jump(image+ISS_PAD_READ_SITE,(uintptr_t)bridge);
-    /* Replaces the trace's lookup too, if it is on: this one notes each read to the trace. */
-    iss_karma_jump(image+ISS_BTNK_LOOKUP,(uintptr_t)runtime_native_lookup);
-    iss_karma_jump(image+ISS_KARMA_GOOD_GETTER,(uintptr_t)runtime_native_karma_good);
-    iss_karma_jump(image+ISS_KARMA_EVIL_GETTER,(uintptr_t)runtime_native_karma_evil);
+    for(unsigned h=0;h<HOOKS;h++)iss_karma_jump(image+iss_action_signatures[h].address,targets[h]);
     runtime_pad_native_attach();
-    puts("Native keys: gameplay keys press the game's actions (TLG_NATIVE_KEYS=0: PS4 buttons)");
+    puts("Native keys: the game's action input answers the keys by action (TLG_NATIVE_KEYS=0: PS4 buttons)");
 }
 static void install_iss_aim_assist(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     if(iss_aim_assist_mode(getenv("TLG_AIM_ASSIST"))==ISS_AIM_ASSIST_ON)return;

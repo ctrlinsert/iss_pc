@@ -140,13 +140,8 @@ int main(void) {
     memset(kb,0,sizeof(kb));
     assert(map_bits(&native_map,kb,mleft)==((1u<<ISS_NA_FIRE)|(1u<<ISS_NA_SPRAY)) && play_keys(kb,mleft,true)==0);
     assert(map_bits(&native_map,kb,mright)==(1u<<ISS_NA_AIM));
-    /* Remapped by action name; melee and execute get different signatures, one key one signature. */
+    /* Remapped by action name. */
     ButtonMap saved_native=native_map;
-    native_signatures_update();
-    uint64_t sig[ISS_NA_COUNT];
-    runtime_pad_native_signatures(sig);
-    assert(sig[ISS_NA_MELEE] && sig[ISS_NA_EXECUTE] && sig[ISS_NA_MELEE]!=sig[ISS_NA_EXECUTE]);
-    assert(sig[ISS_NA_USE]==sig[ISS_NA_DRAIN] && sig[ISS_NA_FIRE]==sig[ISS_NA_SPRAY]);
     assert(apply_native_map("execute=G,jump=Space|Mouse X1")==2);
     ONLY(SDL_SCANCODE_G); assert(map_bits(&native_map,kb,0)==NE);
     ONLY(SDL_SCANCODE_B); assert(map_bits(&native_map,kb,0)==0);
@@ -154,7 +149,9 @@ int main(void) {
     assert(apply_native_map("execute=none")==1);
     ONLY(SDL_SCANCODE_G); assert(map_bits(&native_map,kb,0)==0);
     native_map=saved_native;
-    native_signatures_update();
+    /* Actions the game still reads as a PS4 button press that button too. */
+    assert(native_raw_buttons(1u<<ISS_NA_PAUSE)==BTN_OPTIONS && native_raw_buttons(1u<<ISS_NA_SPRAY)==BTN_R2);
+    assert(native_raw_buttons(1u<<ISS_NA_INVESTIGATE)==BTN_UP && native_raw_buttons(NM|NE|NJ)==0);
     /* The game hook takes the held actions and each press once. */
     atomic_store(&native_down,0); atomic_store(&native_latched,NJ);
     assert(runtime_pad_native_take()==NJ && runtime_pad_native_take()==0);
