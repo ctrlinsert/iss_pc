@@ -24,7 +24,6 @@
 #include "iss_mouse_aim.h"
 #include "iss_power_wheel.h"
 #include "power_wheel_input.h"
-#include "mouse_touch.h"
 #include "interact_gesture.h"
 #include "iss_touch_reads.h"
 #include "rumble_gate.h"
@@ -728,47 +727,6 @@ static void apply_swipe(PadData *d, SDL_Gamepad *g, bool key_held, uint32_t acts
         ++d->touch_count;
     }
 }
-/* Touchpad mode: the mouse as a finger on the touchpad (src/mouse_touch.h). While the mode key
- * is held (TLG_MOUSE_PAD_KEY, no key by default: it is on its way out, as each touchpad use
- * becomes an action; e.g. "Mouse X1"; TLG_MOUSE_PAD_MODE=toggle makes a
- * press switch it on and off) the mouse stops turning the camera and moves a finger instead:
- * left button = finger down and click (hold = hold the touchpad; drag = swipe), middle = finger
- * without a click, right = two fingers at both ends of the pad (lift the car off Reggie).
- * TLG_MOUSE_PAD=0 turns the mode off, TLG_MOUSE_PAD_SENS scales the finger's speed and
- * TLG_MOUSE_PAD_DRAG (touchpad units, default 80; 0 never) is how far a drag with the left
- * button goes before the click is released and it slides as a swipe. */
-enum { PAD_KEY_MAX=4, MOUSE_BUTTONS_MASK=(1u<<(MOUSE_X2-MOUSE_SOURCE+1))-1 };
-static struct {
-    bool loaded, enabled, toggle;
-    int keys[PAD_KEY_MAX], key_count;
-    MouseTouchParams params;
-} pad_mode_cfg;
-static void load_pad_mode(void) {
-    if (pad_mode_cfg.loaded) return;
-    pad_mode_cfg.loaded=true;
-    const char *e=getenv("TLG_MOUSE_PAD");
-    pad_mode_cfg.enabled=!(e && *e=='0');
-    e=getenv("TLG_MOUSE_PAD_MODE");
-    pad_mode_cfg.toggle=e && !SDL_strcasecmp(e,"toggle");
-    e=getenv("TLG_MOUSE_PAD_SENS");
-    pad_mode_cfg.params.sensitivity=e && *e ? (float)atof(e) : 1.0f;
-    e=getenv("TLG_MOUSE_PAD_DRAG");
-    pad_mode_cfg.params.drag=e && *e ? (float)atof(e) : 80.0f;
-    if (pad_mode_cfg.params.drag<0) pad_mode_cfg.params.drag=0;
-    e=getenv("TLG_MOUSE_PAD_KEY");
-    char copy[256];
-    snprintf(copy,sizeof(copy),"%s",e && *e ? e : "");
-    for (char *name=copy, *bar; name; name=bar) {
-        if ((bar=strchr(name,'|'))) *bar++=0;
-        if (!*trim(name)) continue;
-        const int source=source_from_name(trim(name),true);
-        if (source<0) printf("Runtime: touchpad mode: unknown key '%s'\n",trim(name));
-        else if (pad_mode_cfg.key_count<PAD_KEY_MAX) pad_mode_cfg.keys[pad_mode_cfg.key_count++]=source;
-    }
-    if (!pad_mode_cfg.key_count) pad_mode_cfg.enabled=false;
-}
-/* What sample_mouse decided for this sample; sample_host turns it into touches and buttons. */
-static struct { bool active, two_fingers; MouseTouch finger; MouseTouchOut out; } mouse_pad;
 
 /* The mouse: native camera motion, buttons and wheel steps as source bits (1 << (source -
  * MOUSE_SOURCE)). A wheel notch is one press counted in the game's pad reads (wheel_steps.h), so
@@ -873,12 +831,8 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
         mouse_shake_reset(&mouse_shake);
         mouse_shaking=0;
         was_captured=false;
-        mouse_pad.active=mouse_pad.two_fingers=false;
-        mouse_touch_lift(&mouse_pad.finger);
-        tlggpu_mouse_pad_hud(0,0,0,0,0);
         return 0;
     }
-    load_pad_mode();
     if (!was_captured) { m.dx=m.dy=0; was_captured=true; } /* motion from before the game read the pad */
     ++mouse_samples;
     const uint32_t raw=m.held|m.pressed;
@@ -931,54 +885,7 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
         interact_mouse.dx+=cdx; interact_mouse.dy+=cdy;
         if ((deciding && !interact_mouse_moving && !interact_no_swipe) || interact_out.owns_mouse) m.dx=m.dy=0; /* else the camera keeps it too */
     }
-    /* Touchpad mode: the mode key (a keyboard key or a mouse button). Not in the game's menus
-     * while the menu keys are on: there the mouse buttons are the menu's (the thumb buttons go
-     * left / right), and the mode comes back on leaving the menu if it was toggled on. */
-    const bool menu_mouse=menu_keys_on() && iss_menu_mouse_scene(runtime_menu_scene());
-    bool key_down=false;
-    for (int i=0;i<pad_mode_cfg.key_count && !menu_mouse;++i) {
-        const int source=pad_mode_cfg.keys[i];
-        key_down|=source>=MOUSE_SOURCE ? source<MOUSE_SOURCE_END && (raw>>(source-MOUSE_SOURCE) & 1)
-                                       : source<SDL_SCANCODE_COUNT && k && k[source];
-    }
-    static bool key_was_down, toggled;
-    bool pad_mode=false;
-    if (pad_mode_cfg.enabled) {
-        if (pad_mode_cfg.toggle) {
-            if (key_down && !key_was_down) {
-                toggled=!toggled;
-                const int pt=ui_portuguese();
-                tlggpu_overlay_notice(toggled ? (pt ? "Mouse: modo touchpad LIGADO (esquerdo toca, arrastar desliza, direito = dois dedos)"
-                                                    : "Mouse: touchpad mode ON (left touches, drag swipes, right = two fingers)")
-                                              : (pt ? "Mouse: câmera" : "Mouse: camera"), 2.5f);
-            }
-            pad_mode=toggled;
-        } else pad_mode=key_down;
-        if (menu_mouse) pad_mode=false;
-    }
-    key_was_down=key_down;
-    if (pad_mode!=mouse_pad.active) {
-        printf("Runtime: touchpad mode %s\n",pad_mode ? "on" : "off");
-        mouse_pad.two_fingers=false;
-        if (!pad_mode) mouse_touch_lift(&mouse_pad.finger);
-        else if (!mouse_pad.finger.id) mouse_touch_init(&mouse_pad.finger);
-    }
-    mouse_pad.active=pad_mode;
-    if (pad_mode) {
-        const int left=(raw>>(MOUSE_LEFT-MOUSE_SOURCE)) & 1, middle=(raw>>(MOUSE_MIDDLE-MOUSE_SOURCE)) & 1;
-        const int right=(raw>>(MOUSE_RIGHT-MOUSE_SOURCE)) & 1;
-        mouse_pad.two_fingers=right;
-        mouse_pad.out=mouse_touch_update(&mouse_pad.finger,&pad_mode_cfg.params,m.dx,m.dy,right ? 0 : left,right ? 0 : middle,now);
-        if (right) mouse_touch_lift(&mouse_pad.finger);
-        tlggpu_mouse_pad_hud(1,mouse_pad.out.x/MOUSE_TOUCH_W,mouse_pad.out.y/MOUSE_TOUCH_H,
-                             mouse_pad.out.touch || right,mouse_pad.out.click || right);
-        m.dx=m.dy=0;
-    } else {
-        tlggpu_mouse_pad_hud(0,0,0,0,0);
-    }
-    if (pad_mode) {
-        /* nothing: the finger took the motion */
-    } else if (aiming_can) {
+    if (aiming_can) {    } else if (aiming_can) {
         /* Sensor mode / T / G (the graffiti spray can): the mouse points the can, like the arrow
          * keys and the sticks do there (sample_motion), and leaves the camera alone. */
         /* A quick back-and-forth of the mouse (or the wheel) shakes the can (mouse_shake.h); the
@@ -1006,11 +913,10 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
         if (mouse_look_blocked) m.dx=m.dy=0; /* the right stick has the camera (input_device.h) */
         runtime_mouse_aim_motion(m.dx,m.dy,in.sensitivity,in.invert_y,!iss_menu_mouse_scene(runtime_menu_scene()));
     }
-    if(aiming_can || pad_mode)runtime_mouse_aim_motion(0,0,in.sensitivity,in.invert_y,0);
-    if (!aiming_can || pad_mode) { mouse_shake_reset(&mouse_shake); mouse_shaking=0; }
+    if(aiming_can)runtime_mouse_aim_motion(0,0,in.sensitivity,in.invert_y,0);
+    if (!aiming_can) { mouse_shake_reset(&mouse_shake); mouse_shaking=0; }
     const uint8_t base_x=d->right_x, base_y=d->right_y;
     uint32_t bits=raw;
-    if (pad_mode) bits&=~(uint32_t)MOUSE_BUTTONS_MASK; /* the buttons are fingers now */
     const int vertical=wheel_axis_read(&wheel[0],m.wheel_up,m.wheel_down);
     const int horizontal=wheel_axis_read(&wheel[1],m.wheel_left,m.wheel_right);
     if (vertical) bits|=1u<<((vertical<0 ? WHEEL_UP : WHEEL_DOWN)-MOUSE_SOURCE);
@@ -1019,29 +925,15 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
     if (log_state<0) { const char *a=getenv("TLG_MOUSE_LOG"), *b=getenv("TLG_MOUSE_TEST"); log_state=(a && *a=='1') || (b && *b=='1'); }
     if (log_state) {
         static bool was_active;
-        const bool active=bits || d->right_x!=base_x || d->right_y!=base_y || pad_mode;
+        const bool active=bits || d->right_x!=base_x || d->right_y!=base_y;
         if ((active && now-last_log>=250000) || (was_active && !active)) {
-            printf("Runtime: mouse dx=%.1f dy=%.1f -> right stick %u,%u, mouse buttons 0x%x%s\n",m.dx,m.dy,
-                   d->right_x,d->right_y,bits,pad_mode ? " (touchpad mode)" : "");
-            if (pad_mode)
-                printf("Runtime: mouse finger at %.0f,%.0f touch=%d click=%d two=%d\n",mouse_pad.out.x,mouse_pad.out.y,
-                       mouse_pad.out.touch,mouse_pad.out.click,mouse_pad.two_fingers);
+            printf("Runtime: mouse dx=%.1f dy=%.1f -> right stick %u,%u, mouse buttons 0x%x\n",m.dx,m.dy,
+                   d->right_x,d->right_y,bits);
             last_log=now;
         }
         was_active=active;
     }
     return bits;
-}
-/* The mouse finger (sample_mouse) into the pad data: touch (and click) of the left or middle
- * button, or the two fingers of the right one, which play_two_finger makes. */
-static void apply_mouse_touch(PadData *d) {
-    if (!mouse_pad.active) return;
-    if (mouse_pad.two_fingers) { d->buttons|=CLICK_LEFT|CLICK_RIGHT; return; }
-    if (!mouse_pad.out.touch || d->touch_count>=2) return;
-    d->touches[d->touch_count]=(PadTouch){.x=mouse_touch_unit(mouse_pad.out.x,MOUSE_TOUCH_W),
-        .y=mouse_touch_unit(mouse_pad.out.y,MOUSE_TOUCH_H),.id=(uint8_t)mouse_pad.out.id};
-    ++d->touch_count;
-    if (mouse_pad.out.click) d->buttons|=BTN_TOUCHPAD;
 }
 /* Trackpad haptics (two touchpads: Steam Controller 2026, Steam Deck), as the Steam Controller
  * patch in #639 has them: a tick when a thumb lands on a trackpad, and a pulse every 2.5% of a
@@ -1071,7 +963,7 @@ static void trackpad_haptics(SDL_Gamepad *g, uint64_t now) {
 }
 /* A Steam Controller is also a mouse and a keyboard ("lizard mode", which SDL does not keep off
  * over Bluetooth): its trackpads moved the mouse and so the camera, its buttons and stick sent keys
- * (Esc let the mouse go, Ctrl turned on the mouse touchpad mode, the arrows turned the camera and
+ * (Esc let the mouse go, Ctrl pressed a game key, the arrows turned the camera and
  * the menus lost the stick). While one is the controller in use, the keyboard and the mouse are
  * not read (from the Steam Controller patch in #639); TLG_NATIVE_PAD_ONLY=1 does it for any pad. */
 static bool pad_only(SDL_Gamepad *g) {
@@ -1428,7 +1320,7 @@ static void sample_host(PadData *d) {
                 (mouse_moved && mouse_moved_at && d->timestamp-mouse_moved_at<INPUT_DEVICE_MOUSE_LINGER_US);
     uint32_t menu_buttons=0;
     const bool menu_layer=menu_keys_on();
-    const bool in_menu=!mouse_pad.active && iss_menu_mouse_scene(runtime_menu_scene());
+    const bool in_menu=iss_menu_mouse_scene(runtime_menu_scene());
     const bool menu=menu_layer && in_menu;
     /* Esc is the game's (pause in gameplay, back in menus) while a binding has it; otherwise the
      * window takes it to free the mouse. */
@@ -1487,7 +1379,6 @@ static void sample_host(PadData *d) {
     apply_interact(d,g,acts);
     d->buttons&=~(uint32_t)ACT_ALL;
     if (!interact_out.owns) apply_swipe(d,g,(keys & CLICK_LEFT)!=0,acts);
-    apply_mouse_touch(d);
     if (use_finger && !d->touch_count) { d->touches[0]=(PadTouch){.x=960,.y=471,.id=22}; d->touch_count=1; }
 }
 

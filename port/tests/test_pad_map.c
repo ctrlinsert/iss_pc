@@ -16,7 +16,6 @@ void runtime_mouse_aim_hold_follow(int on) { (void)on; }
 
 /* The GPU library (not linked here): the mouse and the input settings. */
 void tlggpu_mouse_take(TlgGpuMouse *mouse) { memset(mouse,0,sizeof(*mouse)); }
-void tlggpu_mouse_pad_hud(int a, float x, float y, int t, int c) { (void)a; (void)x; (void)y; (void)t; (void)c; }
 void tlggpu_input_settings(TlgGpuInputSettings *settings) { memset(settings,0,sizeof(*settings)); }
 uint64_t tlggpu_total_draws(void) { return 0; }
 void tlggpu_frame_counters(TlgGpuFrameCounters *out) { memset(out,0,sizeof(*out)); }

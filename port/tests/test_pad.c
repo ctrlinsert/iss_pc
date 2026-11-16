@@ -25,7 +25,6 @@ static int capture;
 static TlgGpuMouse supplied_mouse;
 static TlgGpuInputSettings supplied_settings;
 void tlggpu_mouse_take(TlgGpuMouse *mouse) { *mouse=supplied_mouse; }
-void tlggpu_mouse_pad_hud(int a, float x, float y, int t, int c) { (void)a; (void)x; (void)y; (void)t; (void)c; }
 void tlggpu_input_settings(TlgGpuInputSettings *settings) { *settings=supplied_settings; }
 uint64_t tlggpu_total_draws(void) { return 0; }
 void tlggpu_frame_counters(TlgGpuFrameCounters *out) { memset(out,0,sizeof(*out)); }

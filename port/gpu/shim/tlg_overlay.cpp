@@ -772,8 +772,8 @@ void ControlsTab() {
         else if(power_status.pending)ImGui::TextUnformatted("Switch queued for gameplay.");
     }
 #endif
-    // Mouse (src/runtime_pad.c): the camera settings apply at once. The buttons and the touchpad
-    // mode are fixed unless TLG_KEY_MAP / TLG_MOUSE_PAD_* (or tlg.ini key_map) change them.
+    // Mouse (src/runtime_pad.c): the camera settings apply at once. The buttons are fixed unless
+    // TLG_KEY_MAP (or tlg.ini key_map) changes them.
     ImGui::SeparatorText(TL("Mouse", "Mouse"));
     if (BeginRows("##mouse")) {
         CheckRow(TL("Mouse turns the camera", "Mouse gira a câmera"), s.mouse_enabled,
@@ -791,9 +791,6 @@ void ControlsTab() {
         CheckRow("One input device at a time", s.input_strict,
                  "On: the keyboard and mouse or the controller, whichever you used last; the other is ignored until you use it. "
                  "Off: both work together, and only the stick and the keys (moving) or the stick and the mouse (camera) take turns, the last one used winning.");
-        InfoRow(TL("Touchpad mode", "Modo touchpad"), "no key by default (TLG_MOUSE_PAD_KEY); being phased out");
-        InfoRow(TL("In touchpad mode", "No modo touchpad"),
-                TL("left touch/click/drag, middle touch, right two fingers", "esquerdo toca/clica/arrasta, do meio toca, direito dois dedos"));
         InfoRow(TL("Release the mouse", "Soltar o mouse"), "Esc");
         const char* env = std::getenv("TLG_KEY_MAP");
         const std::string remap = env && env[0] ? std::string(env) : s.key_map;
@@ -1870,38 +1867,6 @@ void NoticeBox() {
     ImGui::End();
 }
 
-// The mouse's touchpad (touchpad mode): the pad as the game sees it and the finger on it.
-std::atomic<bool> mouse_pad_on{false}, mouse_pad_touch{false}, mouse_pad_click{false};
-std::atomic<float> mouse_pad_x{0.5f}, mouse_pad_y{0.5f};
-
-void MousePadBox() {
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    const float w = 240.0f * base_scale, h = w * 942.0f / 1919.0f;
-    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 24.0f * base_scale,
-                                   viewport->WorkPos.y + viewport->WorkSize.y - 24.0f * base_scale),
-                            ImGuiCond_Always, ImVec2(0.0f, 1.0f));
-    ImGui::SetNextWindowBgAlpha(0.45f);
-    ImGui::SetNextWindowSize(ImVec2(w + 16.0f * base_scale, h + 16.0f * base_scale));
-    ImGui::Begin("##mousepad", nullptr,
-                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
-                     ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoSavedSettings);
-    const ImVec2 origin = ImVec2(ImGui::GetWindowPos().x + 8.0f * base_scale, ImGui::GetWindowPos().y + 8.0f * base_scale);
-    ImDrawList* list = ImGui::GetWindowDrawList();
-    const bool click = mouse_pad_click, touch = mouse_pad_touch;
-    list->AddRectFilled(origin, ImVec2(origin.x + w, origin.y + h), IM_COL32(20, 20, 20, 160), 6.0f * base_scale);
-    list->AddRect(origin, ImVec2(origin.x + w, origin.y + h), click ? IM_COL32(255, 200, 60, 255) : IM_COL32(220, 220, 220, 200),
-                  6.0f * base_scale, 0, 2.0f * base_scale);
-    const ImVec2 finger(origin.x + std::clamp(mouse_pad_x.load(), 0.0f, 1.0f) * w,
-                        origin.y + std::clamp(mouse_pad_y.load(), 0.0f, 1.0f) * h);
-    const float r = 7.0f * base_scale;
-    if (touch) {
-        list->AddCircleFilled(finger, r, click ? IM_COL32(255, 200, 60, 255) : IM_COL32(80, 200, 255, 255));
-    } else {
-        list->AddCircle(finger, r, IM_COL32(255, 255, 255, 220), 0, 2.0f * base_scale);
-    }
-    ImGui::End();
-}
-
 void BackgroundLoading() {
     const u32 done = background_done, total = std::max(background_total.load(), 1u);
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -2340,14 +2305,6 @@ static bool NoticeActive() {
     return std::chrono::steady_clock::now() < notice_until;
 }
 
-void SetMousePad(bool active, float x, float y, bool touching, bool clicking) {
-    mouse_pad_x = x;
-    mouse_pad_y = y;
-    mouse_pad_touch = touching;
-    mouse_pad_click = clicking;
-    mouse_pad_on = active;
-}
-
 bool Visible() {
     const auto& s = TlgSettings::Get();
     const auto now = std::chrono::steady_clock::now();
@@ -2359,7 +2316,7 @@ bool Visible() {
 #endif
     return initialized && (power_wheel_visible || loading || background_total || menu_open || text_entry_active || choice_active ||
                            message_active || guide_active || progress_on || now < progress_until || now < toast_until ||
-                           NoticeActive() || mouse_pad_on ||
+                           NoticeActive() ||
                            choice_retiring || s.show_fps ||
                            (s.actor_watch_supported && s.enemy_health_bar));
 }
@@ -2541,9 +2498,6 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     }
     if (NoticeActive() && !menu_open) {
         NoticeBox();
-    }
-    if (mouse_pad_on && !menu_open) {
-        MousePadBox();
     }
     ImGui::Render();
 

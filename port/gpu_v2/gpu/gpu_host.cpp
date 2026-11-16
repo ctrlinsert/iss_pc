@@ -245,9 +245,6 @@ extern "C" void tlggpu_input_settings(TlgGpuInputSettings* out) {
     std::snprintf(out->menu_key_map, sizeof(out->menu_key_map), "%s", s.menu_key_map.c_str());
     std::snprintf(out->native_key_map, sizeof(out->native_key_map), "%s", s.native_key_map.c_str());
 }
-extern "C" void tlggpu_mouse_pad_hud(int active, float x, float y, int touching, int clicking) {
-    TlgOverlay::SetMousePad(active != 0, x, y, touching != 0, clicking != 0);
-}
 // tlggpu_mouse_take: window.cpp (the game's mouse, as in this port's renderer).
 
 // The Windows save dialog (save_dialog_ui.cpp, XInput) is left out: the window and the

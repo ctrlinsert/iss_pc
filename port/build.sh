@@ -142,8 +142,6 @@ if [[ ${1:-} == --test || ${1:-} == --test-only ]]; then
     out/pad-map-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_mouse_shake.c -lm -o out/mouse-shake-test
     out/mouse-shake-test
-    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_mouse_touch.c -Isrc -lm -o out/mouse-touch-test
-    out/mouse-touch-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_interact_gesture.c -Isrc -lm -o out/interact-gesture-test
     out/interact-gesture-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_wheel_steps.c -Isrc -o out/wheel-steps-test
