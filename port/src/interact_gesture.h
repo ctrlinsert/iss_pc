@@ -192,7 +192,12 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
     if (g->state==INTERACT_HOLD && held && g->swipe_prompt && p->threshold>0 && (mdx!=0.0f || mdy!=0.0f)) {
         /* A swipe prompt came up during a hold: a flick still swipes (the finger lifts from the
          * centre, then slides). Only at a swipe prompt, so looking around during a drain stays the
-         * camera. It needs a real flick (speed and distance), not a slow drift. */
+         * camera. It needs a real flick (speed and distance), not a slow drift. The game reads
+         * the finger only once it is down, so a press made while turning toward a door could not
+         * know it was a swipe prompt: that turn was the approach, not panning, and is dropped so
+         * the flick counts as it is (a flick along the turn was swallowed, one across it read as
+         * up or down). From then on the mouse is the finger's, not the camera's. */
+        if (g->mouse_off) { g->mouse_off=0; g->bvx=g->bvy=0.0f; g->ax=g->ay=0.0f; g->peak=0.0f; }
         const float dt=g->last && now>g->last ? (float)(now-g->last)/1000.0f : 8.0f;
         /* Pressed while panning: the pan, and anything carrying on in its direction, stays camera. */
         float sx=mdx-g->bvx*dt, sy=mdy-g->bvy*dt;
@@ -235,6 +240,7 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
 
 static inline int interact_owns_mouse_state(const InteractGesture *g) {
     if (g->state==INTERACT_DECIDING) return !g->mouse_off;
+    if (g->state==INTERACT_HOLD) return g->swipe_prompt; /* the prompt is ready: the mouse is interact input */
     return g->state==INTERACT_SWIPE || g->state==INTERACT_STEER;
 }
 /* held: the key is down. mdx/mdy: mouse counts since the last sample. dir_x/dir_y: a direction

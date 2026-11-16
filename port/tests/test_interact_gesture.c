@@ -173,15 +173,18 @@ int main(void) {
     assert(g.state==INTERACT_SPENT && near(o.y,0.92f));
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
     assert(g.state==INTERACT_IDLE);
-    /* ...and a hold pressed while panning ignores more panning the same way. */
+    /* ...and a hold pressed while panning that then finds a swipe prompt (turning toward a door:
+     * the game reads the finger only once it is down) drops the pan: the mouse is the finger's,
+     * and a flick the same way as the turn counts as it is. */
     g.swipe_prompt=0;
     o=interact_update_ex(&g,&p,1,20,0,0,0,now+=MS(10),1,2.0f,0.0f);
     o=interact_update_ex(&g,&p,1,0,0,0,0,now+=MS(300),0,0,0);
     assert(g.state==INTERACT_HOLD);
     g.swipe_prompt=1;
-    for (int k=0;k<10;++k) o=interact_update_ex(&g,&p,1,160,0,0,0,now+=MS(16),0,0,0); /* 10/ms, same way */
-    assert(g.state==INTERACT_HOLD);
-    o=interact_update_ex(&g,&p,0,0,0,0,0,now+=MS(10),0,0,0);
+    for (int k=0;k<10;++k) o=interact_update_ex(&g,&p,1,160,0,0,0,now+=MS(16),0,0,0); /* the same way as the turn */
+    assert(g.state==INTERACT_SWIPE || g.state==INTERACT_SPENT);
+    assert(g.dx==1 && g.dy==0);
+    o=interact_update_ex(&g,&p,0,0,0,0,0,now+=MS(600),0,0,0);
     g.swipe_prompt=0;
 
     /* threshold 0 turns mouse swipes off; keys still swipe. */
