@@ -1245,6 +1245,7 @@ uint32_t __attribute__((sysv_abi)) runtime_native_lookup(int32_t kind);
 void __attribute__((ms_abi)) runtime_native_pad(uintptr_t ctl,uintptr_t unused);
 void runtime_pad_native_attach(void);
 /* ISS_INPUT_TRACE=1: log how the game asks for input (iss_input_trace.h). Observation only. */
+static int input_trace_lookup; /* the trace replaced the action kind lookup (native keys take it over) */
 static void install_iss_input_trace(const char *app0,Segment *segments,uint64_t count,uint64_t size){
     const char *e=getenv("ISS_INPUT_TRACE");
     if(!e || strcmp(e,"1"))return;
@@ -1272,6 +1273,7 @@ static void install_iss_input_trace(const char *app0,Segment *segments,uint64_t 
     iss_karma_jump(image+ISS_PAD_PRESSED,(uintptr_t)bridges);
     iss_karma_jump(image+ISS_PAD_HELD,(uintptr_t)(bridges+2048));
     iss_karma_jump(image+ISS_BTNK_LOOKUP,(uintptr_t)runtime_input_trace_btnk);
+    input_trace_lookup=1;
     iss_karma_jump(image+ISS_PAD_DOWN,(uintptr_t)runtime_input_trace_down);
     puts("Input trace: logging the game's action and button queries (INPUT_TRACE lines)");
 }
@@ -1294,7 +1296,8 @@ static void install_iss_native_keys(const char *app0,Segment *segments,uint64_t 
         if(segments[i].address<=ISS_PAD_READ && ISS_PAD_READ_SITE+ISS_PAD_READ_STOLEN<=segments[i].address+segments[i].size)pad=1;
     }
     if(!iss_title_107(serial,version) || !executable || !pad || !data || size<=ISS_BTNK_LOOKUP+sizeof(iss_btnk_lookup_bytes) ||
-       memcmp(image+ISS_BTNK_LOOKUP,iss_btnk_lookup_bytes,sizeof(iss_btnk_lookup_bytes)) || !iss_native_keys_signature(image,size)){
+       (!input_trace_lookup && memcmp(image+ISS_BTNK_LOOKUP,iss_btnk_lookup_bytes,sizeof(iss_btnk_lookup_bytes))) ||
+       !iss_native_keys_signature(image,size)){
         puts("Native keys: game code not recognised; the keys press PS4 buttons");return;
     }
     unsigned char *bridge=allocate(page_size);
@@ -1304,6 +1307,7 @@ static void install_iss_native_keys(const char *app0,Segment *segments,uint64_t 
     protect(bridge,page_size,5);
     runtime_native_keys_attach((uintptr_t)image);
     iss_karma_jump(image+ISS_PAD_READ_SITE,(uintptr_t)bridge);
+    /* Replaces the trace's lookup too, if it is on: this one notes each read to the trace. */
     iss_karma_jump(image+ISS_BTNK_LOOKUP,(uintptr_t)runtime_native_lookup);
     runtime_pad_native_attach();
     puts("Native keys: gameplay keys press the game's actions (TLG_NATIVE_KEYS=0: PS4 buttons)");
