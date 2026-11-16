@@ -28,13 +28,34 @@
 #define ISS_NATIVE_VBITS 0xfe000000u   /* state bits the pad read never sets */
 #define ISS_NATIVE_KINDS 50u
 
+/* Lookups whose caller needs the plain one-bit mask: the button prompt registry (0x56adb0 files
+ * a prompt under the mask's bit number; a split bit there has no glyph, so the prompt went
+ * missing and a blank one showed at the side) and a prompt check that compares masks for
+ * equality (0x56b170). They get the table's mask without split bits. Return addresses. */
+static const uint32_t iss_native_plain_callers[]={0x56adcau, 0x56b1a3u, 0x56b1b2u};
+static inline int iss_native_plain_caller(uint32_t ret) {
+    for (unsigned i=0;i<sizeof(iss_native_plain_callers)/sizeof(*iss_native_plain_callers);++i)
+        if (ret==iss_native_plain_callers[i]) return 1;
+    return 0;
+}
+
 static const unsigned char iss_pad_read_bytes[]={0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,
     0x48,0x83,0xec,0x28,0x48,0x89,0xfb,0x41,0xb6,0x7f};
 static const unsigned char iss_pad_read_site_bytes[]={0x48,0x8d,0xbb,0x20,0x04,0x00,0x00,0x48,0x8d,0x4b,0x14,
     0x4c,0x8d,0x43,0x18};
 
+/* The call before each plain caller's return address (call ISS_BTNK_LOOKUP, rel32). */
+static inline int iss_native_plain_callers_valid(const unsigned char *image, uint64_t size) {
+    for (unsigned i=0;i<sizeof(iss_native_plain_callers)/sizeof(*iss_native_plain_callers);++i) {
+        const uint32_t ret=iss_native_plain_callers[i];
+        if (ret<5 || ret>size || image[ret-5]!=0xe8) return 0;
+        int32_t rel; memcpy(&rel,image+ret-4,4);
+        if ((int64_t)ret+rel!=(int64_t)0x15dde0) return 0;
+    }
+    return 1;
+}
 static inline int iss_native_keys_signature(const unsigned char *image, uint64_t size) {
-    return size>ISS_PAD_READ_SITE+ISS_PAD_READ_STOLEN &&
+    return size>ISS_PAD_READ_SITE+ISS_PAD_READ_STOLEN && iss_native_plain_callers_valid(image,size) &&
         !memcmp(image+ISS_PAD_READ,iss_pad_read_bytes,sizeof(iss_pad_read_bytes)) &&
         !memcmp(image+ISS_PAD_READ_SITE,iss_pad_read_site_bytes,sizeof(iss_pad_read_site_bytes));
 }

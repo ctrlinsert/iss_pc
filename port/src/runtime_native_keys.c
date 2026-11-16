@@ -35,8 +35,10 @@ static void refresh(const volatile uint32_t *table) {
 uint32_t __attribute__((sysv_abi)) runtime_native_lookup(int32_t kind) {
     if (kind==-1) return 0;
     uint32_t mask=((const volatile uint32_t*)(native_image+ISS_BTNK_TABLE))[kind];
-    if ((uint32_t)kind<ISS_NATIVE_KINDS) mask|=atomic_load_explicit(&vbit[kind],memory_order_relaxed);
-    if (runtime_input_trace_active()) runtime_input_trace_note_btnk(kind,mask,(uintptr_t)__builtin_return_address(0));
+    const uintptr_t ret=(uintptr_t)__builtin_return_address(0);
+    if ((uint32_t)kind<ISS_NATIVE_KINDS && !iss_native_plain_caller((uint32_t)(ret-native_image)))
+        mask|=atomic_load_explicit(&vbit[kind],memory_order_relaxed);
+    if (runtime_input_trace_active()) runtime_input_trace_note_btnk(kind,mask,ret);
     return mask;
 }
 
