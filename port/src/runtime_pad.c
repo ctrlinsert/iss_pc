@@ -1212,10 +1212,32 @@ static const InteractParams *interact_params(void) {
  * (d->buttons): tap = touchpad click, hold = hold the touchpad, hold + a mouse flick or a
  * direction = a full swipe. Directions already held when the key went down (walking) do not count,
  * so pressing it on the move is still a tap. On a gamepad the right stick picks the direction. */
+/* A minigame has taken the input over (the hand scanner): a script reads the finger's position
+ * and the player's controls have stopped asking for input (runtime_native_keys.c counts their
+ * queries; native keys only). Then the mouse steers a finger with no key held. */
+volatile uint64_t runtime_act_player_queries;
+static bool touch_takeover(uint64_t now) {
+    static uint64_t seen, changed;
+    static bool was;
+    const uint64_t q=__atomic_load_n(&runtime_act_player_queries,__ATOMIC_RELAXED);
+    if (q!=seen) { seen=q; changed=now; }
+    const bool on=q && touch_swipe_wanted(now) && now-changed>=300000u;
+    if (on!=was) {
+        was=on;
+        printf("Runtime: touch takeover %s\n",on ? "on (gameplay controls quiet, the game reads the finger): the mouse steers a finger"
+                                                 : "off");
+    }
+    return on;
+}
 static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
     static uint32_t dirs_at_press;
     const bool pad_held=(d->buttons & ACT_INTERACT)!=0;
-    const bool held=pad_held || (acts & ACT_INTERACT);
+    const bool takeover=!pad_held && interact_params()->steer>0.0f && touch_takeover(d->timestamp);
+    if (takeover && (interact.state==INTERACT_IDLE || interact.state==INTERACT_DECIDING || interact.state==INTERACT_HOLD)) {
+        interact_begin(&interact,INTERACT_STEER,d->timestamp);
+        interact.sx=interact.sy=0.5f; interact.swiped=1; interact.ax=interact.ay=0.0f; interact.last=0;
+    }
+    const bool held=pad_held || (acts & ACT_INTERACT) || (takeover && interact.state==INTERACT_STEER);
     uint32_t dirs=acts & (ACT_LS|ACT_RS);
     if (pad_held && g) {
         const int x=SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTX), y=SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTY);
