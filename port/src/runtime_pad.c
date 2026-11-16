@@ -1199,6 +1199,8 @@ static const InteractParams *interact_params(void) {
         if (e && *e=='0') p.swipe_hold=0;
         e=getenv("TLG_INTERACT_CLICK");
         if (e && *e=='1') p.clicks=1;
+        e=getenv("TLG_INTERACT_STEER");
+        if (e && *e) p.steer=fmaxf(strtof(e,NULL),0.0f);
         e=getenv("TLG_INTERACT_SWIPE_MS");
         if (e && *e && atoi(e)>0) p.swipe_us=(uint32_t)atoi(e)*1000u;
         printf("Runtime: interact key: swipe after %.0f mouse counts at %.1f counts/ms (mouse %.0f DPI), hold after %u ms, swipe %u ms\n",
@@ -1239,6 +1241,7 @@ static void apply_interact(PadData *d, SDL_Gamepad *g, uint32_t acts) {
                                     no_swipe ? 0.0f : interact_mouse.dy,no_swipe ? 0 : dx,no_swipe ? 0 : dy,d->timestamp,
                                     no_swipe || (!pad_held && interact_mouse_moving),interact_vx,interact_vy);
     interact_mouse.dx=interact_mouse.dy=0;
+    if (interact.state!=was && interact.state==INTERACT_STEER) puts("Runtime: interact steer (the mouse moves the finger)");
     if (interact.state!=was && (interact.state==INTERACT_TAP || interact.state==INTERACT_HOLD || interact.state==INTERACT_SWIPE))
         printf("Runtime: interact %s%s\n",interact.state==INTERACT_TAP ? "tap" : interact.state==INTERACT_HOLD ? "hold" : "swipe ",
                interact.state!=INTERACT_SWIPE ? "" : interact.dx<0 ? "left" : interact.dx>0 ? "right" : interact.dy<0 ? "up" : "down");

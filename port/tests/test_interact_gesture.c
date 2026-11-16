@@ -116,19 +116,46 @@ int main(void) {
 
     /* At a swipe prompt a still press does not hold: it waits for the flick, however long, and a
      * release with no flick taps. */
+    InteractParams still=p; still.steer=0; /* steering off: the old wait */
+    g.swipe_prompt=1;
+    o=interact_update(&g,&still,1,0,0,0,0,now+=MS(10));
+    o=interact_update(&g,&still,1,0,0,0,0,now+=MS(900));
+    assert(g.state==INTERACT_DECIDING && !o.touch && o.owns_mouse);
+    o=interact_update(&g,&still,1,-300,0,0,0,now+=MS(60));
+    assert(g.state==INTERACT_SWIPE && g.dx==-1);
+    o=interact_update(&g,&still,0,0,0,0,0,now+=MS(500));
+    assert(g.state==INTERACT_IDLE);
+    o=interact_update(&g,&still,1,0,0,0,0,now+=MS(10));
+    o=interact_update(&g,&still,1,0,0,0,0,now+=MS(900));
+    o=interact_update(&g,&still,0,0,0,0,0,now+=MS(10));
+    assert(g.state==INTERACT_TAP);
+    o=interact_update(&g,&still,0,0,0,0,0,now+=MS(500));
+    g.swipe_prompt=0;
+
+    /* Steering (on by default): a still press at a swipe prompt puts a finger down at the centre
+     * after the hold time, and the mouse moves it; a release with no steering still taps. */
     g.swipe_prompt=1;
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
-    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(900));
-    assert(g.state==INTERACT_DECIDING && !o.touch && o.owns_mouse);
-    o=interact_update(&g,&p,1,-300,0,0,0,now+=MS(60));
-    assert(g.state==INTERACT_SWIPE && g.dx==-1);
-    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(500));
-    assert(g.state==INTERACT_IDLE);
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(300));
+    assert(g.state==INTERACT_STEER && o.touch && !o.click && near(o.x,0.5f) && near(o.y,0.5f) && o.owns_mouse);
+    for (int k=0;k<10;++k) o=interact_update(&g,&p,1,8,0,0,0,now+=MS(16)); /* 0.5 counts/ms: steering */
+    assert(g.state==INTERACT_STEER && near(o.x,0.5f+80.0f/400.0f) && near(o.y,0.5f));
+    for (int k=0;k<100;++k) o=interact_update(&g,&p,1,0,-8,0,0,now+=MS(16));
+    assert(g.state==INTERACT_STEER && near(o.y,0.02f)); /* clamped at the edge */
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
+    assert(g.state==INTERACT_IDLE && !o.touch);
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
-    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(900));
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(300));
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
     assert(g.state==INTERACT_TAP);
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(500));
+    /* ...and a flick while steering still swipes. */
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(300));
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(16));
+    o=interact_update(&g,&p,1,300,0,0,0,now+=MS(16));
+    assert(g.state==INTERACT_SWIPE && g.dx==1);
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(600));
     g.swipe_prompt=0;
 
     /* A swipe prompt that comes up during a hold: a flick still swipes. A slow drift does not. */
