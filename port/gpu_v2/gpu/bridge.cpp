@@ -384,8 +384,12 @@ extern "C" void IssPreciseSleepUs(unsigned us){
 }
 // The renderer's hooks in the game's code and the checked readback sites: once the image is
 // loaded and relocated, before the guest threads start.
+// The game's executable in memory (0 until iss_gpu_install_image): readback_relaxed_sites name
+// code by its offset from here.
+extern "C" uint64_t iss_gpu_image_base(){return host.image_base;}
 extern "C" void iss_gpu_install_image(uint64_t image_base){
     host.image_base=image_base;
+    std::fprintf(stderr,"GPU_IMAGE_BASE 0x%llx\n",(unsigned long long)image_base);
     // The executing image (as native/engine_draw.cpp patches it), not a backing view.
     if(iss::native_shadow::Enabled())
         iss::native_shadow::Install(host.image_base,reinterpret_cast<const unsigned char*>(host.image_base+0x43D590));

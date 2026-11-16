@@ -82,6 +82,8 @@ namespace iss::asc_stats_api {void Print(){iss::asc_stats::Print();}}
 // The command buffer segment the command processor reads (liverpool.cpp).
 u64 g_iss_dcb_lo{}, g_iss_dcb_hi{};
 
+extern "C" uint64_t iss_gpu_image_base();
+
 namespace VideoCore {
 namespace {
 // Why ranges became resident: 0 a buffer binding, 1 an image's source bytes, 2 a GPU write.
@@ -1491,7 +1493,9 @@ bool BufferCache::IsRelaxedSite(u64 guest_rip) const {
         return true;
     }
     const u32 count = tuning.num_relaxed_sites.load(std::memory_order_acquire);
-    const u64 base = MemoryPatcher::g_eboot_address;
+    // The game's image base as the bridge loaded it (MemoryPatcher::g_eboot_address stays 0 in
+    // this renderer, which made every relaxed_site a no-op).
+    const u64 base = iss_gpu_image_base();
     if (count == 0 || base == 0 || guest_rip < base) {
         return false;
     }
