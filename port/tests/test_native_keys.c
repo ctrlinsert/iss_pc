@@ -17,18 +17,21 @@ int main(void) {
     assert(iss_native_split(table,sig,vbit,bit)==0);
     assert(vbit[3]==0 && vbit[4]==0 && vbit[36]==0);
     assert(iss_native_state(table,bit,1u<<ISS_NA_MELEE)==0x40);
-    /* Different keys: one bit each, the plain button sees both, jump is left alone. */
+    /* Different keys: one bit each, the plain button sees the first (melee), jump is left alone. */
     sig[ISS_NA_EXECUTE]=3;
     assert(iss_native_split(table,sig,vbit,bit)==2);
     assert(bit[ISS_NA_MELEE] && bit[ISS_NA_EXECUTE] && bit[ISS_NA_MELEE]!=bit[ISS_NA_EXECUTE]);
     assert(((bit[ISS_NA_MELEE]|bit[ISS_NA_EXECUTE]) & ~ISS_NATIVE_VBITS)==0);
     assert(vbit[3]==bit[ISS_NA_MELEE] && vbit[4]==bit[ISS_NA_EXECUTE]);
-    assert(vbit[36]==(bit[ISS_NA_MELEE]|bit[ISS_NA_EXECUTE]) && vbit[0]==0 && vbit[35]==0);
+    assert(vbit[36]==bit[ISS_NA_MELEE] && vbit[0]==0 && vbit[35]==0);
     /* The melee key presses melee's bit only: the game's lookup for execute (0x40 | its bit) misses it. */
     const uint32_t melee=iss_native_state(table,bit,1u<<ISS_NA_MELEE);
     assert(melee==bit[ISS_NA_MELEE]);
     assert((melee & (table[3]|vbit[3])) && !(melee & (table[4]|vbit[4])) && (melee & (table[36]|vbit[36])));
     assert(iss_native_state(table,bit,1u<<ISS_NA_JUMP)==0x20);
+    /* The execute key does not press the plain button (no melee hit near a surrendering enemy). */
+    const uint32_t execute=iss_native_state(table,bit,1u<<ISS_NA_EXECUTE);
+    assert((execute & (table[4]|vbit[4])) && !(execute & (table[3]|vbit[3])) && !(execute & (table[36]|vbit[36])));
     /* An unbound action sharing the button: the bound one still gets its own bit. */
     sig[ISS_NA_EXECUTE]=0;
     assert(iss_native_split(table,sig,vbit,bit)==1 && bit[ISS_NA_MELEE] && !bit[ISS_NA_EXECUTE]);

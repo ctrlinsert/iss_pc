@@ -11,8 +11,8 @@
  * share a button but have different keys (Melee and Execute: one button on PS4) are split: each
  * gets a bit the PS4 pad never sets (ISS_NATIVE_VBITS), the lookup returns the action's mask
  * plus its bit, and its key sets only the bit. The pad's own button still matches both, as on
- * PS4, and a query for any kind no action covers (the plain buttons, menu choices) still sees
- * either key.
+ * PS4, and a query for any kind no action covers (the plain buttons, menu choices) sees the
+ * button's main key.
  *
  * This file holds the pure parts: the action list, the split and the masks. */
 #ifndef ISS_NATIVE_KEYS_H
@@ -76,8 +76,11 @@ static const IssNativeAction iss_native_actions[ISS_NA_COUNT]={
 
 /* The extra bit per kind (vbit[kind]): actions whose masks overlap another action's while
  * their keys differ (sig: a signature of each action's keys, 0 = unbound) get one bit each, in
- * order, while bits last. Kinds no action covers (the plain buttons, menu choices) get the bits
- * of every split action they overlap, so a query for the button itself still sees those keys. Returns the number of split actions. */
+ * order, while bits last. A kind no action covers (the plain buttons, menu choices) gets, for each
+ * button it shares, the bit of the first split action on that button (Melee before Execute), so
+ * a query for the plain button answers to the button's main key only: the game reads plain
+ * square near a surrendering enemy, and the Execute key must not land a hit there. Returns the
+ * number of split actions. */
 static inline int iss_native_split(const uint32_t table[ISS_NATIVE_KINDS], const uint64_t sig[ISS_NA_COUNT],
                                    uint32_t vbit[ISS_NATIVE_KINDS], uint32_t action_bit[ISS_NA_COUNT]) {
     uint32_t mask[ISS_NA_COUNT];
@@ -100,9 +103,11 @@ static inline int iss_native_split(const uint32_t table[ISS_NATIVE_KINDS], const
     unsigned char covered[ISS_NATIVE_KINDS]={0};
     for (int a=0;a<ISS_NA_COUNT;++a)
         for (int i=0;i<iss_native_actions[a].count;++i) covered[iss_native_actions[a].kinds[i]]=1;
-    for (unsigned k=0;k<ISS_NATIVE_KINDS;++k)
+    for (unsigned k=0;k<ISS_NATIVE_KINDS;++k) {
+        uint32_t seen=0;
         for (int a=0;a<ISS_NA_COUNT && !covered[k];++a)
-            if (action_bit[a] && (table[k] & mask[a])) vbit[k]|=action_bit[a];
+            if (action_bit[a] && (table[k] & mask[a] & ~seen)) { vbit[k]|=action_bit[a]; seen|=mask[a]; }
+    }
     return split;
 }
 

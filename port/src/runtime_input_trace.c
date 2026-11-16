@@ -71,4 +71,13 @@ void runtime_input_trace_flush(void) {
                 scene<6 ? scenes[scene] : "?");
     }
     atomic_store(&queue_tail,tail);
+    /* Two player state words that decide whether Execute is offered (and allowed) at a
+     * surrendering enemy: printed when they change. */
+    static int64_t last_side=-2, last_flags=-1;
+    const int32_t side=*(const volatile int32_t*)(trace_image+ISS_TRACE_KARMA_SIDE);
+    const uint32_t flags=*(const volatile uint32_t*)(trace_image+ISS_TRACE_KARMA_FLAGS);
+    if (side!=last_side || flags!=last_flags) {
+        printf("INPUT_TRACE karma side=%d flags=%#x\n",side,flags);
+        last_side=side; last_flags=flags;
+    }
 }
