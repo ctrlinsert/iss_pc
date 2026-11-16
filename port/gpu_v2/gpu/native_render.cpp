@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "native_postblend.h"
 #include "video_core/amdgpu/regs.h"
 #include "video_core/amdgpu/regs_shader.h"
 
@@ -18,12 +19,17 @@ namespace {
 // The pass implementations, by pass number. A pass without one is declined ("not implemented"),
 // so a hook can land before its pass and be checked with ISS_NATIVE_RENDER=probe.
 constexpr std::array<RunFn, kPassCount> kRun = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+// Passes that replace their span's draws one at a time (DrawFn): accepted at BEGIN when the span
+// is safe, and each draw falls back to the engine's on its own when the pass declines it.
+constexpr std::array<DrawFn, kPassCount> kDraw = {nullptr, nullptr, nullptr, nullptr,
+                                                  &PostBlendDraw, nullptr};
 
 struct PassStats {
     u64 begins{}, ran{}, declined{}, blocked{};
     std::array<u64, 4> scans{};
     u64 dropped_draws{}, dropped_dispatches{};
-    u32 logged{};
+    u64 native_draws{}, fallback_draws{};
+    u32 logged{}, draw_logged{};
 };
 
 struct State {
@@ -31,6 +37,8 @@ struct State {
     bool log{};
     std::array<PassStats, kPassCount> stats{};
     u32 current{}; ///< the pass whose span is being dropped (0: none)
+    Marker current_begin{};   ///< its BEGIN marker (the payload lives in the command buffer)
+    u32 current_draws{}, current_dispatches{};
     std::chrono::steady_clock::time_point last_report{std::chrono::steady_clock::now()};
     State() {
         switches = ParseSwitches(std::getenv("ISS_NATIVE_RENDER"));
@@ -183,8 +191,10 @@ const u32* OnBegin(const Services& services, const u32* packet, const u32* limit
         return nullptr;
     }
     const RunFn run = kRun[begin.pass];
+    const DrawFn draw = kDraw[begin.pass];
     const char* why = "not implemented";
-    if (!run || !run(services, Request{begin, span}, why)) {
+    const bool accepted = run ? run(services, Request{begin, span}, why) : draw != nullptr;
+    if (!accepted) {
         ++stats.declined;
         if (s.log && stats.logged < 8) {
             const auto name = PassName(begin.pass);
@@ -196,8 +206,33 @@ const u32* OnBegin(const Services& services, const u32* packet, const u32* limit
     }
     ++stats.ran;
     s.current = begin.pass;
+    s.current_begin = begin;
+    s.current_draws = 0;
+    s.current_dispatches = 0;
     LogSpan(stats, begin, span, "native");
     return span.end_marker;
+}
+
+bool OnDraw(const Services& services, bool dispatch) {
+    auto& s = GetState();
+    const u32 pass = s.current < kPassCount ? s.current : 0;
+    const DrawFn draw = kDraw[pass];
+    if (!draw) return true; // the pass ran for the whole span at BEGIN
+    auto& stats = s.stats[pass];
+    const u32 index = dispatch ? s.current_dispatches++ : s.current_draws++;
+    const char* why = "declined";
+    if (draw(services, DrawRequest{s.current_begin, index, dispatch}, why)) {
+        ++stats.native_draws;
+        return true;
+    }
+    ++stats.fallback_draws;
+    if (s.log && stats.draw_logged < 8) {
+        ++stats.draw_logged;
+        const auto name = PassName(pass);
+        std::fprintf(stderr, "NATIVE_RENDER fallback pass=%.*s %s=%u: %s\n", int(name.size()),
+                     name.data(), dispatch ? "dispatch" : "draw", index, why);
+    }
+    return false;
 }
 
 void NoteDropped(bool dispatch) {
@@ -219,14 +254,15 @@ void Report() {
         std::fprintf(stderr,
                      "NATIVE_RENDER report pass=%.*s begins=%llu native=%llu declined=%llu "
                      "blocked=%llu no_end=%llu unsafe=%llu dropped_draws=%llu "
-                     "dropped_dispatches=%llu\n",
+                     "dropped_dispatches=%llu native_draws=%llu fallback_draws=%llu\n",
                      int(kPassNames[p].size()), kPassNames[p].data(),
                      (unsigned long long)st.begins, (unsigned long long)st.ran,
                      (unsigned long long)st.declined, (unsigned long long)st.blocked,
                      (unsigned long long)st.scans[static_cast<u32>(Scan::NoEnd)],
                      (unsigned long long)st.scans[static_cast<u32>(Scan::Unsafe)],
                      (unsigned long long)st.dropped_draws,
-                     (unsigned long long)st.dropped_dispatches);
+                     (unsigned long long)st.dropped_dispatches,
+                     (unsigned long long)st.native_draws, (unsigned long long)st.fallback_draws);
     }
 }
 

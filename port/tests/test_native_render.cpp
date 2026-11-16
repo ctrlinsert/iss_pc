@@ -3,6 +3,7 @@
 // the ISS_NATIVE_RENDER switch, the check that a pass's span may be dropped, and the size math every
 // native pass uses so it works at any output size and aspect.
 #include "../gpu_v2/gpu/native_render_core.h"
+#include "../gpu_v2/gpu/native_postblend_core.h"
 
 #include <cmath>
 #include <cstdio>
@@ -329,6 +330,36 @@ void TestSizes() {
     CHECK(InverseSize({0, 0}).x == 0.0f);
 }
 
+// The composite's push constants: the game's values where they are values, the real target for
+// every size and shape (any resolution, any aspect).
+void TestPostBlendPush() {
+    float cb[kPostBlendConstants];
+    for (u32 i = 0; i < kPostBlendConstants; ++i) cb[i] = float(i) + 0.5f;
+    struct Case {
+        Extent target;
+    } cases[] = {{{1920, 1080}}, {{1920, 1200}}, {{3440, 1440}}, {{7680, 2160}}, {{1280, 800}}};
+    for (const auto& c : cases) {
+        const auto p = MakePostBlendPush(cb, c.target, {64, 64}, true, {2, 1, 0, 3});
+        // values passed through
+        CHECK(p.f[0] == cb[0] && p.f[1] == cb[1] && p.f[7] == cb[7]);
+        CHECK(p.f[8] == cb[8] && p.f[9] == cb[10] && p.f[10] == cb[12] && p.f[13] == cb[15]);
+        CHECK(p.f[14] == cb[18] && p.f[15] == cb[19]);
+        // vignette round in pixels: x scale / y scale = width / height, y scale = the game's
+        CHECK(p.f[17] == cb[17]);
+        CHECK(std::fabs(p.f[16] / p.f[17] - float(c.target.width) / float(c.target.height)) < 1e-4f);
+        // a pixel-sized step in uv
+        CHECK(std::fabs(p.f[18] * float(c.target.width) - 1.0f) < 1e-6f);
+        CHECK(std::fabs(p.f[19] * float(c.target.height) - 1.0f) < 1e-6f);
+        // one noise texel per pixel
+        CHECK(std::fabs(p.f[20] * 64.0f - float(c.target.width)) < 1e-3f);
+        CHECK(std::fabs(p.f[21] * 64.0f - float(c.target.height)) < 1e-3f);
+        CHECK(p.f[22] == 1.0f);
+        CHECK(p.swizzle[0] == 2 && p.swizzle[2] == 0 && p.swizzle[3] == 3);
+    }
+    const auto mono = MakePostBlendPush(cb, {1920, 1080}, {0, 0}, false, {0, 1, 2, 3});
+    CHECK(mono.f[22] == 0.0f && mono.f[20] == 1.0f && mono.f[21] == 1.0f);
+}
+
 } // namespace
 
 int main() {
@@ -344,6 +375,7 @@ int main() {
     TestSpanBroken();
     TestKeepGoing();
     TestSizes();
+    TestPostBlendPush();
     if (failures) {
         std::printf("native_render: %d failure(s)\n", failures);
         return 1;

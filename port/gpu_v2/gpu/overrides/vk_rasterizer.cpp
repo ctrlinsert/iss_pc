@@ -6629,13 +6629,27 @@ const u32* Rasterizer::NativeRenderBegin(const u32* packet, const u32* limit, bo
     // images under the cached bindings.
     DrainDrawPipe(5);
     blocked = blocked || iss::pause_guard::Blocked() || (iss_temporal && iss_temporal->UiActive());
-    const iss::native_render::Services services{instance, scheduler, runtime, texture_cache, DrawRegs()};
+    const iss::native_render::Services services{instance, scheduler, runtime, texture_cache,
+                                                pipeline_cache, DrawRegs()};
     const u32* end = iss::native_render::OnBegin(services, packet, limit, blocked);
     if (end) {
         BumpBindEpoch();
         fast_draw.valid = false;
     }
     return end;
+}
+
+bool Rasterizer::NativeRenderDraw(bool dispatch) {
+    // A pass that draws natively records outside the rasterizer's render pass and changes images
+    // under its cached bindings, as at BEGIN.
+    DrainDrawPipe(5);
+    const iss::native_render::Services services{instance,       scheduler,  runtime,
+                                                texture_cache,  pipeline_cache, DrawRegs(),
+                                                &DrawCbExtents()[0]};
+    const bool took = iss::native_render::OnDraw(services, dispatch);
+    BumpBindEpoch();
+    fast_draw.valid = false;
+    return took;
 }
 
 void Rasterizer::ScopeMarkerBegin(const std::string_view& str, bool from_guest) {

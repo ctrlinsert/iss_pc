@@ -146,8 +146,12 @@ static const u32* g_native_render_end{};
 
 // ISS_NATIVE_RENDER: a draw or dispatch of a native pass's span, dropped (its registers were
 // applied by the caller). A segment the engine thread recorded from it is released unused.
-static bool DropNativeRenderWork(const void* header, bool native_passes, bool dispatch) {
+// The pass may draw this one itself (its draw handler) or decline it: then nothing is dropped and
+// the command processor goes on with the draw as usual (the per-draw fallback).
+static bool DropNativeRenderWork(Vulkan::Rasterizer* rasterizer, const void* header,
+                                 bool native_passes, bool dispatch) {
     if (!g_native_render_end) return false;
+    if (rasterizer && !rasterizer->NativeRenderDraw(dispatch)) return false;
     if (native_passes) {
         namespace np = iss::native_passes;
         if (np::Segment* seg = np::Claim(reinterpret_cast<const u32*>(header))) np::Finish(*seg, false, 0);
@@ -2329,10 +2333,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     regs.index_base_address.base_addr_hi = d->index_base_hi;
                     regs.num_indices = d->index_count;
                     regs.draw_initiator = d->draw_initiator;
-                    DropNativeRenderWork(header, native_passes, false);
-                    BeginScoutDraw(header);
-                    EndScoutDraw();
-                    break;
+                    if (DropNativeRenderWork(rasterizer, header, native_passes, false)) {
+                        BeginScoutDraw(header);
+                        EndScoutDraw();
+                        break;
+                    }
                 }
                 // ISS_NATIVE_PASSES: a segment the engine recorded from this draw on, executed
                 // whole and jumped over, or a learn request for this draw.
@@ -2546,10 +2551,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     regs.max_index_size = d->max_size;
                     regs.num_indices = d->index_count;
                     regs.draw_initiator = d->draw_initiator;
-                    DropNativeRenderWork(header, native_passes, false);
-                    BeginScoutDraw(header);
-                    EndScoutDraw();
-                    break;
+                    if (DropNativeRenderWork(rasterizer, header, native_passes, false)) {
+                        BeginScoutDraw(header);
+                        EndScoutDraw();
+                        break;
+                    }
                 }
                 hybrid_profile.BeginDraw();
                 SCOPE_EXIT { hybrid_profile.EndDraw(regs.num_indices, 0); };
@@ -2583,10 +2589,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     const auto* d = reinterpret_cast<const PM4CmdDrawIndexAuto*>(header);
                     regs.num_indices = d->index_count;
                     regs.draw_initiator = d->draw_initiator;
-                    DropNativeRenderWork(header, native_passes, false);
-                    BeginScoutDraw(header);
-                    EndScoutDraw();
-                    break;
+                    if (DropNativeRenderWork(rasterizer, header, native_passes, false)) {
+                        BeginScoutDraw(header);
+                        EndScoutDraw();
+                        break;
+                    }
                 }
                 // ISS_NATIVE_PASSES: as DRAW_INDEX_2 (non-indexed draws record natively too).
                 if (native_passes) {
@@ -2657,10 +2664,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::DrawIndirect: {
                 if (g_native_render_end) { // ISS_NATIVE_RENDER: dropped, registers applied
-                    DropNativeRenderWork(header, native_passes, false);
-                    BeginScoutDraw(header);
-                    EndScoutDraw();
-                    break;
+                    if (DropNativeRenderWork(rasterizer, header, native_passes, false)) {
+                        BeginScoutDraw(header);
+                        EndScoutDraw();
+                        break;
+                    }
                 }
                 hybrid_profile.BeginDraw();
                 SCOPE_EXIT { hybrid_profile.EndDraw(~u32{0}, 2); };
@@ -2725,10 +2733,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::DrawIndexIndirect: {
                 if (g_native_render_end) { // ISS_NATIVE_RENDER: dropped, registers applied
-                    DropNativeRenderWork(header, native_passes, false);
-                    BeginScoutDraw(header);
-                    EndScoutDraw();
-                    break;
+                    if (DropNativeRenderWork(rasterizer, header, native_passes, false)) {
+                        BeginScoutDraw(header);
+                        EndScoutDraw();
+                        break;
+                    }
                 }
                 // ISS_NATIVE_INDIRECT: a segment recorded from this draw on, or a learn request.
                 if (native_passes && iss::native_passes::IndirectEnabled()) {
@@ -2884,8 +2893,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     cs.dim_y = d->dim_y;
                     cs.dim_z = d->dim_z;
                     cs.dispatch_initiator = d->dispatch_initiator;
-                    DropNativeRenderWork(header, native_passes, true);
-                    break;
+                    if (DropNativeRenderWork(rasterizer, header, native_passes, true)) break;
                 }
                 // ISS_NATIVE_COMPUTE: a compute segment recorded at the submission from this
                 // dispatch on, executed whole and jumped over, or a learn request for it.
@@ -2960,8 +2968,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::DispatchIndirect: {
                 if (g_native_render_end) { // ISS_NATIVE_RENDER: dropped
-                    DropNativeRenderWork(header, native_passes, true);
-                    break;
+                    if (DropNativeRenderWork(rasterizer, header, native_passes, true)) break;
                 }
                 const auto* dispatch_indirect =
                     reinterpret_cast<const PM4CmdDispatchIndirect*>(header);

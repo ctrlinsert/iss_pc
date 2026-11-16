@@ -378,6 +378,9 @@ public:
     /// the command buffer. Returns the END marker when the pass recorded natively (the command
     /// processor drops the span's draws and dispatches up to it), nullptr otherwise.
     const u32* NativeRenderBegin(const u32* packet, const u32* limit, bool blocked);
+    /// A draw or dispatch inside that span, its registers applied: true when the native pass
+    /// took it (the command processor drops the engine's), false to run the engine's as usual.
+    bool NativeRenderDraw(bool dispatch);
     void NativeGbufferVerifyFinish(bool complete);
     void NativeGbufferVerifyNative();
     RenderState NativeGbufferVerifyTargets(const RenderState& render);

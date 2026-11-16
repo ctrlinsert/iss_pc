@@ -269,6 +269,12 @@ public:
     /// the params memo. Command processor thread only.
     u64 GraphicsProgramHash(const AmdGpu::ShaderProgram& pgm);
 
+    /// The compiled program of a shader hash, or nullptr (ISS_NATIVE_RENDER: a native pass reads
+    /// the resource list the engine's shader was recompiled with, to find its descriptors).
+    Program* FindCompiledProgram(u64 hash) {
+        return FindProgram(hash);
+    }
+
 private:
     inline static thread_local const iss::g4::FallbackPacket* active_compute_snapshot{};
     inline static thread_local const AmdGpu::ComputeProgram* active_snapshot_cs{};
