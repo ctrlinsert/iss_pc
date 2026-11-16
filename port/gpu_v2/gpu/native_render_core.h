@@ -188,6 +188,12 @@ struct SpanResult {
     /// The last pixel shader address the span set (SPI_SHADER_PGM_LO/HI_PS; 0 when none): which
     /// engine shader the pass draws with, for matching a probe span to a shader dump.
     u64 ps_address{};
+    /// The pixel shader bound at each of the first kMaxDrawShaders draws (a pass with several
+    /// draws, such as SMAA's edge, weight and blend stages, uses a different shader for each).
+    static constexpr u32 kMaxDrawShaders = 8;
+    std::array<u64, kMaxDrawShaders> draw_ps{};
+    /// The compute shader bound at each of the first kMaxDrawShaders dispatches.
+    std::array<u64, kMaxDrawShaders> dispatch_cs{};
     /// Unsafe: the first unsafe packet's header (its words follow, for the log).
     const u32* bad_packet{};
     /// With keep_going (probe): how many unsafe packets the whole span has.
@@ -197,6 +203,18 @@ struct SpanResult {
 /// SPI_SHADER_PGM_LO_PS / _HI_PS, SH register offsets.
 inline constexpr u32 kPsProgramLo = 0x08;
 inline constexpr u32 kPsProgramHi = 0x09;
+/// COMPUTE_PGM_LO / _HI, SH register offsets.
+inline constexpr u32 kCsProgramLo = 0x20C;
+inline constexpr u32 kCsProgramHi = 0x20D;
+
+/// A shader address from a SET_SH_REG packet that writes `lo` (and maybe `lo + 1`), or keeps `cur`.
+inline u64 ShaderAddressFrom(const u32* p, u32 first, u32 count, u32 lo, u64 cur) {
+    if (!(first <= lo && lo < first + count)) return cur;
+    const u64 low = p[2 + lo - first];
+    u64 high = (cur >> 40) & 0xFF;
+    if (lo + 1 < first + count) high = p[2 + lo + 1 - first] & 0xFF;
+    return (low << 8) | (high << 40);
+}
 
 /// The colour target registers (CB_COLOR0_BASE .. CB_COLOR7_*), context register offsets.
 inline constexpr u32 kColorTargetFirst = 0x318;
@@ -228,6 +246,7 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin,
                            bool keep_going = false) {
     SpanResult r;
     bool unsafe_seen = false;
+    u64 cs_address = 0;
     while (p < limit) {
         const u32 header = *p;
         const u32 type = header >> 30;
@@ -283,6 +302,7 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin,
                 if (kPsProgramHi < first + count) hi = p[2 + kPsProgramHi - first] & 0xFF;
                 r.ps_address = (lo << 8) | (hi << 40);
             }
+            cs_address = ShaderAddressFrom(p, first, count, kCsProgramLo, cs_address);
             ok = true;
             break;
         }
@@ -303,11 +323,13 @@ inline SpanResult ScanSpan(const u32* p, const u32* limit, const Marker& begin,
         case 0x24: // DRAW_INDIRECT
         case 0x25: // DRAW_INDEX_INDIRECT
             ok = true;
+            if (r.draws < SpanResult::kMaxDrawShaders) r.draw_ps[r.draws] = r.ps_address;
             ++r.draws;
             break;
         case 0x15: // DISPATCH_DIRECT
         case 0x16: // DISPATCH_INDIRECT
             ok = true;
+            if (r.dispatches < SpanResult::kMaxDrawShaders) r.dispatch_cs[r.dispatches] = cs_address;
             ++r.dispatches;
             break;
         case 0x46: { // EVENT_WRITE: cache flushes and partial flushes only, no sample counts

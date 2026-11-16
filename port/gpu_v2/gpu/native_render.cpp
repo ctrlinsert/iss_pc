@@ -79,8 +79,26 @@ void LogSpan(PassStats& stats, const Marker& begin, const SpanResult& span, cons
         const auto* info = AmdGpu::FindBinaryInfo(reinterpret_cast<const u32*>(span.ps_address));
         if (info) ps_hash = info->shader_hash;
     }
-    std::fprintf(stderr, " target_writes=%u ps=%010llx ps_hash=%016llx -> %s\n", span.target_writes,
-                 (unsigned long long)span.ps_address, ps_hash, outcome);
+    std::fprintf(stderr, " target_writes=%u ps=%010llx ps_hash=%016llx", span.target_writes,
+                 (unsigned long long)span.ps_address, ps_hash);
+    // Every draw's and dispatch's shader hash, in order: a multi-stage pass (SMAA) names each stage.
+    const auto hash_of = [](u64 address) -> unsigned long long {
+        if (!address) return 0;
+        const auto* info = AmdGpu::FindBinaryInfo(reinterpret_cast<const u32*>(address));
+        return info ? info->shader_hash : 0;
+    };
+    const u32 nd = std::min(span.draws, SpanResult::kMaxDrawShaders);
+    if (nd) {
+        std::fprintf(stderr, " draw_ps=");
+        for (u32 i = 0; i < nd; ++i) std::fprintf(stderr, "%s%llx", i ? "," : "", hash_of(span.draw_ps[i]));
+    }
+    const u32 nc = std::min(span.dispatches, SpanResult::kMaxDrawShaders);
+    if (nc) {
+        std::fprintf(stderr, " dispatch_cs=");
+        for (u32 i = 0; i < nc; ++i)
+            std::fprintf(stderr, "%s%llx", i ? "," : "", hash_of(span.dispatch_cs[i]));
+    }
+    std::fprintf(stderr, " -> %s\n", outcome);
 }
 
 /// The images a pass would use: the source T#s of the payload and colour target 0 at BEGIN.

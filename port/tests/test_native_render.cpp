@@ -135,6 +135,26 @@ void TestPixelShader() {
     CHECK(ScanFrom(first, 0).ps_address == ((0x12ull << 40) | (0x123456ull << 8)));
 }
 
+void TestDrawShaders() {
+    // Three draws with two pixel shaders, then a dispatch: each draw names the shader bound then.
+    Dcb dcb;
+    dcb.Mark(kBegin, kProbe, 4);
+    dcb.Packet(0x76, {0x08, 0x00000100u, 0x01});
+    dcb.Draw();
+    dcb.Packet(0x76, {0x08, 0x00000200u});        // LO only (HI reads as 0)
+    dcb.Draw();
+    dcb.Draw();
+    dcb.Packet(0x76, {0x20C, 0x00000300u, 0x02}); // COMPUTE_PGM_LO/HI
+    dcb.Packet(0x15, {8, 4, 1, 1});               // DISPATCH_DIRECT
+    dcb.Mark(kEnd, kProbe, 4);
+    const auto r = ScanFrom(dcb, 0);
+    CHECK(r.draws == 3 && r.dispatches == 1);
+    CHECK(r.draw_ps[0] == ((0x01ull << 40) | (0x100ull << 8)));
+    CHECK(r.draw_ps[1] == (0x200ull << 8));
+    CHECK(r.draw_ps[2] == r.draw_ps[1]);
+    CHECK(r.dispatch_cs[0] == ((0x02ull << 40) | (0x300ull << 8)));
+}
+
 void TestTargetWrites() {
     // Writes below, across the start of, and past the colour target registers.
     Dcb dcb;
@@ -283,6 +303,7 @@ int main() {
     TestSpanOk();
     TestTargetWrites();
     TestPixelShader();
+    TestDrawShaders();
     TestTexture();
     TestSpanUnsafe();
     TestSpanBroken();
