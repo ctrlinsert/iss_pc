@@ -7,13 +7,19 @@
 
 int main(void) {
     InputDevice s;
+    uint64_t t=1000000;
     input_device_reset(&s,INPUT_DEVICE_KBM);
-    assert(input_device_update(&s,false,false)==INPUT_DEVICE_KBM);
-    assert(input_device_update(&s,true,false)==INPUT_DEVICE_PAD);   /* a pad button goes down */
-    assert(input_device_update(&s,false,false)==INPUT_DEVICE_PAD);  /* held or idle: no change */
-    assert(input_device_update(&s,true,true)==INPUT_DEVICE_PAD);    /* both at once: no change */
-    assert(input_device_update(&s,false,true)==INPUT_DEVICE_KBM);   /* a key goes down */
-    assert(input_device_update(&s,false,false)==INPUT_DEVICE_KBM);
+    assert(input_device_update(&s,false,false,t+=8000)==INPUT_DEVICE_KBM);
+    assert(input_device_update(&s,true,false,t+=8000)==INPUT_DEVICE_PAD);   /* the keyboard was idle: the pad */
+    assert(input_device_update(&s,true,true,t+=8000)==INPUT_DEVICE_PAD);    /* both: the one in use keeps it */
+    for (int i=0;i<20;++i) assert(input_device_update(&s,true,true,t+=8000)==INPUT_DEVICE_PAD);
+    /* The stick rests: the mouse takes over only after the pad has been idle a moment. */
+    assert(input_device_update(&s,false,true,t+=100000)==INPUT_DEVICE_PAD);
+    assert(input_device_update(&s,false,true,t+=150000)==INPUT_DEVICE_KBM);
+    /* A stick crossing its centre (one idle read) does not lose the pad. */
+    assert(input_device_update(&s,true,false,t+=300000)==INPUT_DEVICE_PAD);
+    assert(input_device_update(&s,false,true,t+=8000)==INPUT_DEVICE_PAD);
+    assert(input_device_update(&s,true,true,t+=8000)==INPUT_DEVICE_PAD);
     puts("input device tests passed");
     return 0;
 }

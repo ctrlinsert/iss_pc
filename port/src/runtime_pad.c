@@ -1282,40 +1282,12 @@ static void key_axis(uint8_t *axis, bool negative, bool positive) {
     if (negative || positive) *axis=(uint8_t)(128-(negative ? 128 : 0)+(positive ? 127 : 0));
 }
 void runtime_input_trace_flush(void); /* runtime_input_trace.c (ISS_INPUT_TRACE=1) */
-/* Input device priority (input_device.h): what started on each device in this read. The pad:
- * a button going down or a stick or trigger crossing the gamepad_input threshold. The keyboard and
- * mouse: a key going down; with the mouse sampled here (only while the pad drives the game; the
- * mouse is not used then), a click, a wheel notch or motion past INPUT_DEVICE_MOUSE_COUNTS. */
-static InputDevice input_device={INPUT_DEVICE_KBM};
+/* Input device priority (input_device.h). */
+static InputDevice input_device={INPUT_DEVICE_KBM,0};
 static bool input_priority_on(void) {
     static int on=-1;
     if (on<0) { const char *e=getenv("TLG_INPUT_PRIORITY"); on=!(e && *e=='0'); }
     return on;
-}
-static bool pad_started(SDL_Gamepad *g) {
-    static uint64_t was;
-    uint64_t now=0;
-    if (g) {
-        for (int b=0;b<SDL_GAMEPAD_BUTTON_COUNT && b<48;++b) if (SDL_GetGamepadButton(g,(SDL_GamepadButton)b)) now|=1ull<<b;
-        for (int a=0;a<SDL_GAMEPAD_AXIS_COUNT && a<8;++a) {
-            const int v=SDL_GetGamepadAxis(g,(SDL_GamepadAxis)a);
-            if (v>10000) now|=1ull<<(48+2*a);
-            if (v<-10000) now|=1ull<<(49+2*a);
-        }
-    }
-    const bool started=(now & ~was)!=0;
-    was=now;
-    return started;
-}
-static bool keys_started(const bool *k) {
-    static bool was[SDL_SCANCODE_COUNT];
-    bool started=false;
-    for (int i=0;i<SDL_SCANCODE_COUNT;++i) {
-        const bool down=k && k[i];
-        if (down && !was[i]) started=true;
-        was[i]=down;
-    }
-    return started;
 }
 /* While the pad drives the game: the mouse is taken here and not used, so it neither turns the
  * camera nor builds up motion for later. */
@@ -1377,24 +1349,25 @@ static void sample_host(PadData *d) {
         static SDL_Gamepad *told;
         if (pads>1 && told!=g) { told=g; printf("Runtime: %s: its 2 trackpads are the halves of the PS4 touchpad\n",SDL_GetGamepadName(g)); }
     }
+    static uint32_t last_mouse; /* the mouse buttons of the previous sample */
+    static bool mouse_moved; /* ...and whether it moved */
     int pad_input=g && gamepad_input(g);
     if (g && pad_only(g)) k=NULL;
     /* One device at a time (input_device.h): the one used last. */
     if (g && k && input_priority_on()) {
-        const bool pad=pad_started(g), keys=keys_started(k);
-        const bool mouse=input_device.active==INPUT_DEVICE_PAD && !keys && !pad && mouse_used_idle();
+        bool key_held=false;
+        for (int i=0;i<SDL_SCANCODE_COUNT && !key_held;++i) key_held=k[i];
+        const bool mouse=input_device.active==INPUT_DEVICE_PAD ? mouse_used_idle() : last_mouse!=0 || mouse_moved;
         const int was=input_device.active;
-        const int device=input_device_update(&input_device,pad,keys || mouse);
+        const int device=input_device_update(&input_device,pad_input!=0,key_held || mouse,d->timestamp);
         if (device!=was) printf("Runtime: input from the %s\n",device==INPUT_DEVICE_PAD ? "gamepad" : "keyboard and mouse");
         if (device==INPUT_DEVICE_PAD) k=NULL;
         else { neutral_pad(d); g=NULL; pad_input=0; }
     } else if (!g && k) {
-        keys_started(k); pad_started(NULL);
         input_device_reset(&input_device,INPUT_DEVICE_KBM);
     }
     /* Host actions bound to mouse buttons are read after sample_mouse; the motion sensor, sampled
      * first, sees the mouse buttons of the previous sample. */
-    static uint32_t last_mouse;
     const bool native=native_keys_on() && !iss_menu_mouse_scene(runtime_menu_scene());
     const uint32_t early=k ? play_keys(k,last_mouse,native) & ACT_ALL : 0;
     sample_motion(d,g,early);
@@ -1402,6 +1375,7 @@ static void sample_host(PadData *d) {
      * follows the keys only while one of them is held. */
     if (!k) {
         runtime_mouse_aim_hold_follow(0);
+        last_mouse=0; mouse_moved=false;
         atomic_store(&native_down,0);
         update_aim_assist(pad_input,0);
         apply_interact(d,g,0);
@@ -1411,6 +1385,7 @@ static void sample_host(PadData *d) {
     uint32_t mouse=sample_mouse(d,can_aiming(early),k,early); /* adds to the right stick */
     runtime_mouse_aim_hold_follow(1);
     last_mouse=mouse;
+    mouse_moved=fabsf(power_mouse_dx)+fabsf(power_mouse_dy)>=INPUT_DEVICE_MOUSE_COUNTS;
     uint32_t menu_buttons=0;
     const bool menu_layer=menu_keys_on();
     const bool in_menu=!mouse_pad.active && iss_menu_mouse_scene(runtime_menu_scene());
