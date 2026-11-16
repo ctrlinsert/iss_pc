@@ -14,6 +14,8 @@ void tlggpu_power_wheel_settings(int *enabled,int keys[4],int *instant){*enabled
 static int direct_available,motion_calls;
 static float observed_dx,observed_dy;
 int runtime_mouse_aim_motion(float dx, float dy, float sensitivity, int invert_y, int active) { (void)sensitivity; (void)invert_y; if(active){motion_calls++;observed_dx=dx;observed_dy=dy;} return direct_available; }
+void runtime_mouse_aim_hold_follow(int on);
+void runtime_mouse_aim_hold_follow(int on) { (void)on; }
 #ifdef _WIN32
 #define setenv(name, value, overwrite) _putenv_s(name, value)
 #endif

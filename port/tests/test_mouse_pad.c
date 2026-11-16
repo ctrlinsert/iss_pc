@@ -19,6 +19,8 @@ void tlggpu_power_wheel_settings(int *enabled,int keys[4],int *instant){
 int runtime_mouse_aim_installed(void) { return 0; }
 static float direct_dx, direct_dy, direct_sensitivity;
 static int direct_invert, direct_active;
+void runtime_mouse_aim_hold_follow(int on);
+void runtime_mouse_aim_hold_follow(int on) { (void)on; }
 int runtime_mouse_aim_motion(float dx, float dy, float sensitivity, int invert_y, int active) {
     direct_dx=dx;direct_dy=dy;direct_sensitivity=sensitivity;
     direct_invert=invert_y;direct_active=active;return 0;

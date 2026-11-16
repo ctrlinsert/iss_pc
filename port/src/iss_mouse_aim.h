@@ -45,6 +45,8 @@ extern "C" {
 void runtime_mouse_aim_attach(uintptr_t base);
 int runtime_mouse_aim_installed(void);
 int runtime_mouse_aim_motion(float dx,float dy,float sensitivity,int invert_y,int active);
+/* 1 while the keyboard and mouse drive the game (runtime_pad.c): the camera's follow stays off. */
+void runtime_mouse_aim_hold_follow(int on);
 void __attribute__((ms_abi)) runtime_mouse_aim_camera(float *angles,const void *data,const void *context);
 #ifdef __cplusplus
 }

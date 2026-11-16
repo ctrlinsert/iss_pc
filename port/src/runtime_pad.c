@@ -1401,6 +1401,7 @@ static void sample_host(PadData *d) {
     /* The keyboard and mouse (with a gamepad: while they are the device in use, see above): a stick
      * follows the keys only while one of them is held. */
     if (!k) {
+        runtime_mouse_aim_hold_follow(0);
         atomic_store(&native_down,0);
         update_aim_assist(pad_input,0);
         apply_interact(d,g,0);
@@ -1408,6 +1409,7 @@ static void sample_host(PadData *d) {
         return;
     }
     uint32_t mouse=sample_mouse(d,can_aiming(early),k,early); /* adds to the right stick */
+    runtime_mouse_aim_hold_follow(1);
     last_mouse=mouse;
     uint32_t menu_buttons=0;
     const bool menu_layer=menu_keys_on();

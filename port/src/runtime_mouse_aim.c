@@ -14,6 +14,8 @@ static unsigned char follow_before;
 static int follow_owned;
 static atomic_uint motion_reports;
 static unsigned camera_reports;
+static atomic_int hold_follow; /* the keyboard and mouse drive the game: the follow camera stays off */
+void runtime_mouse_aim_hold_follow(int on){atomic_store(&hold_follow,on!=0);}
 static float read_float(const void *p,unsigned offset){float v;memcpy(&v,(const char*)p+offset,4);return v;}
 static void release_follow(void){
     if(follow_owned){if(*no_follow==1)*no_follow=follow_before;follow_owned=0;}
@@ -54,7 +56,12 @@ void __attribute__((ms_abi)) runtime_mouse_aim_camera(float *angles,const void *
     uint64_t motion=atomic_load(&last_motion);
     uint64_t bits=atomic_exchange(&pending,0);
     if(!previous)fputs("Direct mouse: verified camera hook is running\n",stderr);
-    if(!motion || now-motion>5000000u)release_follow();
+    if(atomic_load(&hold_follow)){
+        /* Mouse look: the camera stays where the player put it (no drift back behind Delsin, which is
+         * meant for a stick at rest); the pad taking over gives the follow back. */
+        if(!follow_owned){follow_before=*no_follow;follow_owned=1;}
+        *no_follow=1;
+    }else if(!motion || now-motion>5000000u)release_follow();
     if(!previous || now-previous>250000u || !motion || now-motion>250000u || !bits)return;
     if(!data || !context)return;
     float delta[2];memcpy(delta,&bits,8);
