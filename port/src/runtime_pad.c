@@ -1389,8 +1389,12 @@ static void sample_host(PadData *d) {
     mouse_look_blocked=false;
     if (g && k && !strict && input_priority_on()) {
         const uint32_t keys_now=play_keys(k,last_mouse,native_keys_on() && !iss_menu_mouse_scene(runtime_menu_scene()));
+        const int move_was=move_channel.owner, look_was=look_channel.owner;
         move_owner=input_channel_update(&move_channel,d->left_x!=128 || d->left_y!=128,(keys_now & ACT_LS)!=0);
         look_owner=input_channel_update(&look_channel,d->right_x!=128 || d->right_y!=128,mouse_moved || (keys_now & ACT_RS)!=0);
+        if (move_owner!=move_was) printf("Runtime: moving with the %s (stick %u,%u keys %x)\n",move_owner==INPUT_DEVICE_PAD ? "left stick" : "keys",
+                                         d->left_x,d->left_y,(unsigned)(keys_now & ACT_LS));
+        if (look_owner!=look_was) printf("Runtime: camera with the %s\n",look_owner==INPUT_DEVICE_PAD ? "right stick" : "mouse or keys");
         /* The keys only set the axes they press, so the losing stick is centred first: holding
          * the stick forward and pressing A must turn left, not move forward and left. */
         if (move_owner==INPUT_DEVICE_KBM) d->left_x=d->left_y=128;
