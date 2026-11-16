@@ -788,7 +788,10 @@ void ControlsTab() {
         InfoRow(TL("Camera input", "Entrada da câmera"),direct_mouse?"Direct mouse":"Direct mouse unavailable - see run log");
         ImGui::EndDisabled();
         InfoRow(TL("Left / right / middle", "Esquerdo / direito / do meio"), "R2 / L2 / R3");
-        InfoRow(TL("Touchpad mode", "Modo touchpad"), TL("hold Left Ctrl or Mouse X1", "segure Ctrl esquerdo ou botão X1 do mouse"));
+        CheckRow("One input device at a time", s.input_strict,
+                 "On: the keyboard and mouse or the controller, whichever you used last; the other is ignored until you use it. "
+                 "Off: both work together, and only the stick and the keys (moving) or the stick and the mouse (camera) take turns, the last one used winning.");
+        InfoRow(TL("Touchpad mode", "Modo touchpad"), "no key by default (TLG_MOUSE_PAD_KEY); being phased out");
         InfoRow(TL("In touchpad mode", "No modo touchpad"),
                 TL("left touch/click/drag, middle touch, right two fingers", "esquerdo toca/clica/arrasta, do meio toca, direito dois dedos"));
         InfoRow(TL("Release the mouse", "Soltar o mouse"), "Esc");

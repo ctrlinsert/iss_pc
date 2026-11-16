@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* Input device priority: one device drives the game at a time, the keyboard and mouse or the
- * gamepad in use. The one in use keeps the game while it is used; the other takes over once the
- * one in use has been idle for INPUT_DEVICE_IDLE_US, so a mouse and a stick moved together do not
- * flip between them. "Used" is a key or button held, a stick or trigger past a third, the mouse
- * moved past a few counts or a mouse button held. TLG_INPUT_PRIORITY=0 restores the old mix. */
+/* Input device priority. By default both devices work together, and only controls that would
+ * fight take turns: moving (the left stick against the movement keys) and the camera (the right
+ * stick against the mouse and the camera keys). On each, the one that started being used last
+ * wins while both are in use (InputChannel). With strict priority on (tlg.ini input_strict, the
+ * Insert menu, TLG_INPUT_STRICT=1) one device drives the game at a time (InputDevice): the one
+ * in use keeps it until it has been idle a moment. TLG_INPUT_PRIORITY=0 turns both off (mixed). */
 #ifndef INPUT_DEVICE_H
 #define INPUT_DEVICE_H
 #include <stdbool.h>
@@ -28,5 +29,18 @@ static inline int input_device_update(InputDevice *s, bool pad, bool kbm, uint64
         s->busy_at=now;
     }
     return s->active;
+}
+
+/* One control two devices can drive: the one that started being used last wins while both are
+ * in use; one alone always has it. */
+typedef struct { int owner; bool pad_was, kbm_was; } InputChannel;
+static inline int input_channel_update(InputChannel *c, bool pad, bool kbm) {
+    const bool pad_start=pad && !c->pad_was, kbm_start=kbm && !c->kbm_was;
+    if (pad && !kbm) c->owner=INPUT_DEVICE_PAD;
+    else if (kbm && !pad) c->owner=INPUT_DEVICE_KBM;
+    else if (pad_start && !kbm_start) c->owner=INPUT_DEVICE_PAD;
+    else if (kbm_start && !pad_start) c->owner=INPUT_DEVICE_KBM;
+    c->pad_was=pad; c->kbm_was=kbm;
+    return c->owner;
 }
 #endif

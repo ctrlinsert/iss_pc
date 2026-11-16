@@ -854,6 +854,7 @@ static bool menu_keys_on(void) {
     if (on<0) { const char *e=getenv("TLG_MENU_KEYS"); on=!(e && *e=='0'); }
     return on;
 }
+static bool mouse_look_blocked; /* the right stick has the camera: the mouse does not turn it (input_device.h) */
 static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_t acts) {
     TlgGpuMouse m;
     tlggpu_mouse_take(&m);
@@ -1002,6 +1003,7 @@ static uint32_t sample_mouse(PadData *d, bool aiming_can, const bool *k, uint32_
          * untouched and do not silently revive old mouse settings. */
         /* In the game's menus (pause, map, title) the mouse turns no camera: the pause map's own
          * camera crept in zoom from leftover motion. Menu mouse support drives them deliberately. */
+        if (mouse_look_blocked) m.dx=m.dy=0; /* the right stick has the camera (input_device.h) */
         runtime_mouse_aim_motion(m.dx,m.dy,in.sensitivity,in.invert_y,!iss_menu_mouse_scene(runtime_menu_scene()));
     }
     if(aiming_can || pad_mode)runtime_mouse_aim_motion(0,0,in.sensitivity,in.invert_y,0);
@@ -1284,6 +1286,12 @@ static void key_axis(uint8_t *axis, bool negative, bool positive) {
 void runtime_input_trace_flush(void); /* runtime_input_trace.c (ISS_INPUT_TRACE=1) */
 /* Input device priority (input_device.h). */
 static InputDevice input_device={INPUT_DEVICE_KBM,0};
+static InputChannel move_channel={INPUT_DEVICE_KBM,false,false}, look_channel={INPUT_DEVICE_KBM,false,false};
+static bool input_strict(void) {
+    TlgGpuInputSettings in;
+    tlggpu_input_settings(&in);
+    return in.input_strict!=0;
+}
 static bool input_priority_on(void) {
     static int on=-1;
     if (on<0) { const char *e=getenv("TLG_INPUT_PRIORITY"); on=!(e && *e=='0'); }
@@ -1353,8 +1361,9 @@ static void sample_host(PadData *d) {
     static bool mouse_moved; /* ...and whether it moved */
     int pad_input=g && gamepad_input(g);
     if (g && pad_only(g)) k=NULL;
-    /* One device at a time (input_device.h): the one used last. */
-    if (g && k && input_priority_on()) {
+    /* Strict priority (input_device.h): one device at a time, the one in use. */
+    const bool strict=input_priority_on() && input_strict();
+    if (g && k && strict) {
         bool key_held=false;
         for (int i=0;i<SDL_SCANCODE_COUNT && !key_held;++i) key_held=k[i];
         const bool mouse=input_device.active==INPUT_DEVICE_PAD ? mouse_used_idle() : last_mouse!=0 || mouse_moved;
@@ -1365,6 +1374,17 @@ static void sample_host(PadData *d) {
         else { neutral_pad(d); g=NULL; pad_input=0; }
     } else if (!g && k) {
         input_device_reset(&input_device,INPUT_DEVICE_KBM);
+    }
+    /* Otherwise both work, and the controls they would fight over take turns (input_device.h):
+     * moving (left stick / movement keys) and the camera (right stick / mouse and camera keys). */
+    int move_owner=INPUT_DEVICE_KBM, look_owner=INPUT_DEVICE_KBM;
+    mouse_look_blocked=false;
+    if (g && k && !strict && input_priority_on()) {
+        const uint32_t keys_now=play_keys(k,last_mouse,native_keys_on() && !iss_menu_mouse_scene(runtime_menu_scene()));
+        move_owner=input_channel_update(&move_channel,d->left_x!=128 || d->left_y!=128,(keys_now & ACT_LS)!=0);
+        look_owner=input_channel_update(&look_channel,d->right_x!=128 || d->right_y!=128,mouse_moved || (keys_now & ACT_RS)!=0);
+        if (look_owner==INPUT_DEVICE_KBM) d->right_x=d->right_y=128;
+        else mouse_look_blocked=true;
     }
     /* Host actions bound to mouse buttons are read after sample_mouse; the motion sensor, sampled
      * first, sees the mouse buttons of the previous sample. */
@@ -1383,7 +1403,7 @@ static void sample_host(PadData *d) {
         return;
     }
     uint32_t mouse=sample_mouse(d,can_aiming(early),k,early); /* adds to the right stick */
-    runtime_mouse_aim_hold_follow(1);
+    runtime_mouse_aim_hold_follow(look_owner==INPUT_DEVICE_KBM);
     last_mouse=mouse;
     mouse_moved=fabsf(power_mouse_dx)+fabsf(power_mouse_dy)>=INPUT_DEVICE_MOUSE_COUNTS;
     uint32_t menu_buttons=0;
@@ -1435,10 +1455,14 @@ static void sample_host(PadData *d) {
     d->buttons|=keys & ~(uint32_t)ACT_ALL;
     if (d->buttons & BTN_L2) d->l2=255;
     if (d->buttons & BTN_R2) d->r2=255;
-    key_axis(&d->left_x,acts & ACT_LS_LEFT,acts & ACT_LS_RIGHT);
-    key_axis(&d->left_y,acts & ACT_LS_UP,acts & ACT_LS_DOWN);
-    key_axis(&d->right_x,acts & ACT_RS_LEFT,acts & ACT_RS_RIGHT);
-    key_axis(&d->right_y,acts & ACT_RS_UP,acts & ACT_RS_DOWN);
+    if (move_owner==INPUT_DEVICE_KBM) {
+        key_axis(&d->left_x,acts & ACT_LS_LEFT,acts & ACT_LS_RIGHT);
+        key_axis(&d->left_y,acts & ACT_LS_UP,acts & ACT_LS_DOWN);
+    }
+    if (look_owner==INPUT_DEVICE_KBM) {
+        key_axis(&d->right_x,acts & ACT_RS_LEFT,acts & ACT_RS_RIGHT);
+        key_axis(&d->right_y,acts & ACT_RS_UP,acts & ACT_RS_DOWN);
+    }
     if (can_aiming(acts) && !motion.mode) d->right_x=d->right_y=128; /* the arrows point the can */
     apply_interact(d,g,acts);
     d->buttons&=~(uint32_t)ACT_ALL;

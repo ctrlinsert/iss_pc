@@ -20,6 +20,14 @@ int main(void) {
     assert(input_device_update(&s,true,false,t+=300000)==INPUT_DEVICE_PAD);
     assert(input_device_update(&s,false,true,t+=8000)==INPUT_DEVICE_PAD);
     assert(input_device_update(&s,true,true,t+=8000)==INPUT_DEVICE_PAD);
+    InputChannel c={INPUT_DEVICE_KBM,false,false};
+    assert(input_channel_update(&c,true,false)==INPUT_DEVICE_PAD);   /* the stick alone */
+    assert(input_channel_update(&c,true,true)==INPUT_DEVICE_KBM);    /* the mouse joins: it started last */
+    assert(input_channel_update(&c,true,true)==INPUT_DEVICE_KBM);
+    assert(input_channel_update(&c,false,true)==INPUT_DEVICE_KBM);
+    assert(input_channel_update(&c,true,true)==INPUT_DEVICE_PAD);    /* the stick pushed again */
+    assert(input_channel_update(&c,false,false)==INPUT_DEVICE_PAD);  /* idle: keeps the last */
+    assert(input_channel_update(&c,true,true)==INPUT_DEVICE_PAD);    /* both start together: no change */
     puts("input device tests passed");
     return 0;
 }
