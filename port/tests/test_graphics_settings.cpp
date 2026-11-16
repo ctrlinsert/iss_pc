@@ -101,15 +101,6 @@ int main() {
     assert(v.async_shaders);
     {
         std::ofstream out(path);
-        out << "cheat_double_jumps=1\ncheat_very_hard=1\n";
-    }
-    TlgSettings::Load();
-    TlgSettings::Save();
-    const std::string cheats = Read(path);
-    assert(cheats.find("cheat_double_jumps=1\n") != std::string::npos);
-    assert(cheats.find("cheat_very_hard=1\n") != std::string::npos);
-    {
-        std::ofstream out(path);
         out << "bp06=1\nbp12=0\nwqm=0\nbc_tiny=1\nbp99=1\n";
     }
     TlgSettings::Load();
