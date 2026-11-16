@@ -85,10 +85,11 @@ with its own shader into colour target 0:
 7. the first grading table, blended toward the second by the game's amount;
 8. luma into alpha (the anti-aliasing reads it), and a 1/255 dither.
 
-The frame's values (exposure, curve, grading) come from the game. Sizes and shapes do not: the
-vignette keeps the game's vertical scale and takes its horizontal one from the target's aspect, so it
-is round in pixels at any aspect, and the dither noise tiles one texel per target pixel at any
-resolution (`native_postblend_core.h`). It declines (the engine's draw runs) for another shader, a
+The frame's values (exposure, curve, grading, the vignette's per-axis scale) come from the game.
+Sizes do not: texel steps come from the target's size, and the dither noise tiles one texel per
+target pixel at any resolution (`native_postblend_core.h`). (A first version derived the vignette's
+horizontal scale from the aspect; in game the engine already sets both axes, 1.3 and 1.3 at
+7680x2160, and the derived one darkened the sides of a 32:9 picture.) It declines (the engine's draw runs) for another shader, a
 different resource list, a write mask or blending, a target that is not 8- or 10-bit UNORM, or a
 scene that is not the target's size. Try it with `ISS_NATIVE_RENDER=postblend ISS_NATIVE_RENDER_LOG=1`:
 the log prints the first native draw's target, the game's values, the vignette scale and the noise

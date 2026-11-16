@@ -7,9 +7,9 @@
 // 7 floor, 8 distortion strength, 10 grade blend, 12/13 and 14/15 grade table scale and offset,
 // 16/17 vignette scale per axis, 18/19 vignette slope and bias.
 //
-// Sizes and shapes are not taken from the game's values, which assume its own output: the vignette
-// keeps the game's vertical scale and gets its horizontal one from the target's aspect (round in
-// pixels at 16:10, 16:9, 21:9, 32:9), and the dither noise tiles 1:1 with the target's pixels.
+// Sizes come from the real target, not from the game's values: texel steps from its size, and the
+// dither noise tiles 1:1 with its pixels. The vignette's shape is the game's own per-axis scale
+// (in uv space), which the game already sets for the camera's aspect.
 #pragma once
 
 #include <array>
@@ -52,9 +52,10 @@ inline PostBlendPush MakePostBlendPush(const float* cb, Extent target, Extent no
     f[13] = cb[15];
     f[14] = cb[18];
     f[15] = cb[19];
-    // shape: the vignette round in pixels at the target's aspect, then 1 / size
+    // shape: the game's vignette scale per axis (the camera's aspect handling sets it: in game at
+    // 7680x2160 both are 1.3), then 1 / size
     const TexelSize inv = InverseSize(target);
-    f[16] = cb[17] * Aspect(target);
+    f[16] = cb[16];
     f[17] = cb[17];
     f[18] = inv.x;
     f[19] = inv.y;

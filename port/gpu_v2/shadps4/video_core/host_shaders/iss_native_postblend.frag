@@ -2,9 +2,8 @@
 // Native renderer: the colour composite before anti-aliasing (native_postblend.cpp).
 //
 // Our own shader. The scene and bloom are combined, toned and graded with the game's per-frame
-// values (exposure, contrast curve, grading tables), but every size and shape comes from the real
-// target: the vignette is round in pixels at any aspect and the dither noise tiles 1:1 with the
-// target's pixels, whatever its resolution.
+// values (exposure, contrast curve, grading tables, vignette), and every size comes from the real
+// target: texel steps from its size, and the dither noise tiles 1:1 with its pixels.
 #version 450
 
 layout(location = 0) out vec4 out_color;
@@ -54,7 +53,7 @@ void main() {
         c *= shaped / y;
     }
 
-    // Vignette, round in pixels: the scale is set per axis from the target's aspect.
+    // Vignette, with the game's per-axis scale.
     const float r = length((uv - 0.5) * p.shape.xy);
     const float t = clamp(p.grade_vig.z * r + p.grade_vig.w, 0.0, 1.0);
     c = max(c * (t + t * t - t * t * t), vec3(0.0));

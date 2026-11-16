@@ -344,9 +344,8 @@ void TestPostBlendPush() {
         CHECK(p.f[0] == cb[0] && p.f[1] == cb[1] && p.f[7] == cb[7]);
         CHECK(p.f[8] == cb[8] && p.f[9] == cb[10] && p.f[10] == cb[12] && p.f[13] == cb[15]);
         CHECK(p.f[14] == cb[18] && p.f[15] == cb[19]);
-        // vignette round in pixels: x scale / y scale = width / height, y scale = the game's
-        CHECK(p.f[17] == cb[17]);
-        CHECK(std::fabs(p.f[16] / p.f[17] - float(c.target.width) / float(c.target.height)) < 1e-4f);
+        // vignette: the game's per-axis scale
+        CHECK(p.f[16] == cb[16] && p.f[17] == cb[17]);
         // a pixel-sized step in uv
         CHECK(std::fabs(p.f[18] * float(c.target.width) - 1.0f) < 1e-6f);
         CHECK(std::fabs(p.f[19] * float(c.target.height) - 1.0f) < 1e-6f);
