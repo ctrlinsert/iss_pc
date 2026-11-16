@@ -187,33 +187,41 @@ bool ReadbackDiagEnabled() {
     return frame >= first_frame && frame - first_frame < frame_count;
 }
 
-void LogReadbackDiag(const ReadbackDiagEvent& e) {
-    if (!ReadbackDiagEnabled()) [[likely]] {
-        return;
-    }
-    static std::mutex mutex;
-    static std::FILE* file = [] {
-        std::FILE* out = std::fopen(std::getenv("ISS_READBACK_DIAG_LOG"), "wb");
-        if (out) {
-            std::setvbuf(out, nullptr, _IOFBF, 1 << 20);
-            std::fputs("event,ns,frame,thread,rip,address,size,src,dst,window_start,window_end,"
-                       "request_gfx_tick,request_compute_tick,window_gfx_tick,window_compute_tick,"
-                       "request_state,window_state,queue,wait_tick,copies,copy_bytes,duration_ns,flags\n", out);
-        }
-        return out;
+// ISS_READBACK_DIAG_RING=1: instead of writing every event until the cap, the last
+// ISS_READBACK_DIAG_RING_ROWS events (default 300000, about 25 s at 190 events per frame and
+// 60 frames per second) are kept in memory, and F9 in game writes them to
+// <ISS_READBACK_DIAG_LOG>.<n>.csv (DumpReadbackDiagRing). The player presses it when the flicker
+// or stutter is on screen, so no start frame has to be guessed.
+struct ReadbackDiagRow {
+    ReadbackDiagEvent e;
+    u64 ns, frame, thread;
+};
+struct ReadbackDiagRing {
+    std::mutex mutex;
+    std::vector<ReadbackDiagRow> rows;
+    u64 next{};
+    u32 dumps{};
+};
+bool ReadbackDiagRingMode() {
+    static const bool ring = [] {
+        const char* v = std::getenv("ISS_READBACK_DIAG_RING");
+        return v && v[0] == '1';
     }();
-    if (!file) {
-        return;
-    }
-    static u64 bytes = 0;
-    static u64 rows = 0;
-    static bool truncated = false;
-    const u64 now = Common::Perf::NowNs();
-    const u64 frame = Common::Perf::GuestFrameCounter().load(std::memory_order_relaxed);
-    const u64 thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
-    char line[512];
-    const int result = std::snprintf(
-        line, sizeof(line),
+    return ring;
+}
+ReadbackDiagRing& GetReadbackDiagRing() {
+    static ReadbackDiagRing ring;
+    return ring;
+}
+constexpr const char* ReadbackDiagHeader =
+    "event,ns,frame,thread,rip,address,size,src,dst,window_start,window_end,"
+    "request_gfx_tick,request_compute_tick,window_gfx_tick,window_compute_tick,"
+    "request_state,window_state,queue,wait_tick,copies,copy_bytes,duration_ns,flags\n";
+
+int FormatReadbackDiag(char* line, size_t capacity, const ReadbackDiagEvent& e, u64 now, u64 frame,
+                       u64 thread) {
+    return std::snprintf(
+        line, capacity,
         "%s,%llu,%llu,%llu,0x%llx,0x%llx,%llu,0x%llx,0x%llx,0x%llx,0x%llx,"
         "%llu,%llu,%llu,%llu,%u,%u,%u,%llu,%u,%llu,%llu,%u\n",
         e.event, static_cast<unsigned long long>(now), static_cast<unsigned long long>(frame),
@@ -229,6 +237,46 @@ void LogReadbackDiag(const ReadbackDiagEvent& e) {
         e.queue, static_cast<unsigned long long>(e.wait_tick), e.copies,
         static_cast<unsigned long long>(e.copy_bytes),
         static_cast<unsigned long long>(e.duration_ns), e.flags);
+}
+
+void LogReadbackDiag(const ReadbackDiagEvent& e) {
+    if (!ReadbackDiagEnabled()) [[likely]] {
+        return;
+    }
+    if (ReadbackDiagRingMode()) {
+        auto& ring = GetReadbackDiagRing();
+        const u64 now = Common::Perf::NowNs();
+        const u64 frame = Common::Perf::GuestFrameCounter().load(std::memory_order_relaxed);
+        const u64 thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
+        std::scoped_lock lock{ring.mutex};
+        if (ring.rows.empty()) {
+            const char* v = std::getenv("ISS_READBACK_DIAG_RING_ROWS");
+            const u64 n = v ? std::strtoull(v, nullptr, 0) : 0;
+            ring.rows.resize(n >= 1000 && n <= 5'000'000 ? n : 300'000);
+        }
+        ring.rows[ring.next++ % ring.rows.size()] = {e, now, frame, thread};
+        return;
+    }
+    static std::mutex mutex;
+    static std::FILE* file = [] {
+        std::FILE* out = std::fopen(std::getenv("ISS_READBACK_DIAG_LOG"), "wb");
+        if (out) {
+            std::setvbuf(out, nullptr, _IOFBF, 1 << 20);
+            std::fputs(ReadbackDiagHeader, out);
+        }
+        return out;
+    }();
+    if (!file) {
+        return;
+    }
+    static u64 bytes = 0;
+    static u64 rows = 0;
+    static bool truncated = false;
+    const u64 now = Common::Perf::NowNs();
+    const u64 frame = Common::Perf::GuestFrameCounter().load(std::memory_order_relaxed);
+    const u64 thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
+    char line[512];
+    const int result = FormatReadbackDiag(line, sizeof(line), e, now, frame, thread);
     if (result <= 0 || static_cast<size_t>(result) >= sizeof(line)) {
         return;
     }
@@ -253,6 +301,33 @@ u32 ReadbackDiagState(bool done, bool submitted, bool current) {
     return (done ? 1U : 0U) | (submitted ? 2U : 0U) | (current ? 4U : 0U);
 }
 } // namespace
+
+bool DumpReadbackDiagRing() {
+    if (!ReadbackDiagRingMode()) return false;
+    const char* base = std::getenv("ISS_READBACK_DIAG_LOG");
+    if (!base || !base[0]) return false;
+    auto& ring = GetReadbackDiagRing();
+    std::scoped_lock lock{ring.mutex};
+    if (ring.rows.empty() || ring.next == 0) return false;
+    const std::string path = std::string(base) + "." + std::to_string(++ring.dumps) + ".csv";
+    std::FILE* out = std::fopen(path.c_str(), "wb");
+    if (!out) return false;
+    std::setvbuf(out, nullptr, _IOFBF, 1 << 20);
+    std::fputs(ReadbackDiagHeader, out);
+    const u64 size = ring.rows.size();
+    const u64 count = std::min<u64>(ring.next, size);
+    char line[512];
+    for (u64 i = ring.next - count; i < ring.next; ++i) {
+        const auto& r = ring.rows[i % size];
+        const int n = FormatReadbackDiag(line, sizeof(line), r.e, r.ns, r.frame, r.thread);
+        if (n > 0 && static_cast<size_t>(n) < sizeof(line)) std::fwrite(line, 1, n, out);
+    }
+    std::fclose(out);
+    std::fprintf(stderr, "READBACK_DIAG_DUMP rows=%llu path=%s\n",
+                 static_cast<unsigned long long>(count), path.c_str());
+    std::fflush(stderr);
+    return true;
+}
 
 thread_local BufferCache::ThreadQueueSelection BufferCache::thread_queue_selection{};
 
