@@ -1042,6 +1042,7 @@ private:
     void DumpBufferToFile(std::string_view name, const VideoCore::Buffer* buffer, u64 offset,
                           VAddr address, u64 size);
     /// ISS_LIGHT_ZERO: zero-fills light records in the GPU copies of a dispatch's read buffers.
+    void ZeroLightsInGuest(const Shader::Info& cs);
     void ZeroLightsOnGpu(const Shader::Info& cs, const CommandRecorder& cmdbuf);
     /// F9 (ISS_DISPATCH_DUMP_ON_F9): the GPU copies of a dumped dispatch's bound buffers.
     void DumpDispatchGpuCopies(const Shader::Info& cs);

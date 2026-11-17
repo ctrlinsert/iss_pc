@@ -3113,7 +3113,8 @@ const std::vector<LightZeroSpec>& LightZeroSpecs() {
     }();
     return specs;
 }
-std::atomic<u64> g_light_zero_dispatches{0}, g_light_zero_fills{0}, g_light_zero_missing{0};
+std::atomic<u64> g_light_zero_dispatches{0}, g_light_zero_fills{0}, g_light_zero_missing{0},
+    g_light_zero_guest{0};
 } // namespace
 
 static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
@@ -3274,6 +3275,33 @@ void Rasterizer::DispatchDirect() {
     dc.Done();
 }
 
+// Small CPU-written buffers are copied into the stream buffer when the dispatch binds them (and are
+// then not in bound_buffers), so for those the records are zeroed in guest memory right before the
+// bind; the copy then carries the zeros. GPU-written ranges are left to ZeroLightsOnGpu.
+void Rasterizer::ZeroLightsInGuest(const Shader::Info& cs) {
+    const u32 hash = u32(cs.pgm_hash);
+    for (const auto& spec : LightZeroSpecs()) {
+        if (spec.hash != hash || spec.buf >= cs.buffers.size()) continue;
+        const auto sharp = cs.buffers[spec.buf].GetSharp(cs);
+        const u64 address = sharp.base_address;
+        const u64 size = sharp.GetSize();
+        if (!address || size < spec.stride || buffer_cache.IsRegionGpuModified(address, size)) continue;
+        u8* base = reinterpret_cast<u8*>(uintptr_t(address));
+        for (u64 off = 0; off + spec.stride <= size; off += spec.stride) {
+            if (!spec.any_id) {
+                u32 id;
+                std::memcpy(&id, base + off + spec.id_off, 4);
+                if (id != spec.id) continue;
+            }
+            u8* z = base + off + spec.zero_off;
+            bool any = false;
+            for (u32 i = 0; i < spec.zero_bytes; ++i) any |= z[i] != 0;
+            if (any) std::memset(z, 0, spec.zero_bytes);
+            g_light_zero_guest.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+}
+
 void Rasterizer::ZeroLightsOnGpu(const Shader::Info& cs, const CommandRecorder& cmdbuf) {
     const u32 hash = u32(cs.pgm_hash);
     auto& bound = ComputeBindingsActive() ? compute_bindings.bound_buffers : this->bound_buffers;
@@ -3332,8 +3360,10 @@ void Rasterizer::ZeroLightsOnGpu(const Shader::Info& cs, const CommandRecorder& 
     }
     const u64 n = g_light_zero_dispatches.fetch_add(1, std::memory_order_relaxed) + 1;
     if ((n & (n - 1)) == 0 || n % 10000 == 0)
-        std::fprintf(stderr, "LIGHT_ZERO dispatches=%llu gpu_fills=%llu buffer_not_bound=%llu\n",
+        std::fprintf(stderr,
+                     "LIGHT_ZERO dispatches=%llu gpu_fills=%llu guest_zeroed=%llu not_bound=%llu\n",
                      (unsigned long long)n, (unsigned long long)g_light_zero_fills.load(),
+                     (unsigned long long)g_light_zero_guest.load(),
                      (unsigned long long)g_light_zero_missing.load());
 }
 
@@ -3396,6 +3426,7 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         native_compute_learn && !OnDrawWorker() && !ComputeBindingsActive() ? native_compute_learn : 0;
     std::vector<NativeImageCapture> compute_capture;
     if (compute_learn) native_image_capture = &compute_capture;
+    if (!LightZeroSpecs().empty()) ZeroLightsInGuest(cs);
     const bool bound_resources = BindResources(pipeline);
     if (compute_learn) native_image_capture = nullptr;
     if (!bound_resources) {
