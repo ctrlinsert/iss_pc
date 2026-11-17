@@ -486,6 +486,15 @@ extern "C" int iss_gpu_initialize(const IssGpuCallbacks *callbacks){
         std::fprintf(stderr,"PORT_TUNING process_priority=above_normal ok=%d\n",ok?1:0);
     }
 #endif
+    // The auto-exposure metering read (the game's code at 0x1717c0 sums one luminance per screen
+    // tile from a buffer it ping-pongs every frame, so it is designed to use last frame's values)
+    // does not wait for the GPU: in game this removed a 8-20 ms stall on every other frame.
+    // ISS_EXPOSURE_WAIT=1 restores the wait.
+    if(const char *p=std::getenv("ISS_EXPOSURE_WAIT");!(p&&p[0]=='1')){
+        auto& tuning=Common::Perf::GetTuning();const u32 n=tuning.num_relaxed_sites.load();
+        if(n<Common::Perf::Tuning::MaxRelaxedSites){tuning.relaxed_sites[n]=0x171700;tuning.num_relaxed_sites.store(n+1);}
+        std::fprintf(stderr,"PORT_TUNING relaxed_site=0x171700 (auto-exposure, default)\n");
+    }
     // ISS_TUNING="name=value,...": existing renderer toggles for A/B tests, applied last.
     if(const char *p=std::getenv("ISS_TUNING")){
         const auto set=[](auto& field,const std::string& value){field=static_cast<std::remove_reference_t<decltype(field.load())>>(std::strtoull(value.c_str(),nullptr,0));};
