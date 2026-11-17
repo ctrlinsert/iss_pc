@@ -73,6 +73,8 @@ struct QueueContext {
 /// window, at per-object offsets of 0.9 to 3.7 GB. Cut to 64 MB, those reads returned zero and the
 /// facades blended the wrong probes: over-bright gold walls in the Market District with
 /// world-fixed edges (fixed by binding whole, 2026-11-17; costs about 4 GB of arena VRAM).
+/// Those probe-lighting windows now take Rasterizer::LeanLookupBind (bound whole, only the
+/// slices a draw reads resident); other huge bindings are bound whole.
 /// So nothing is cut by default. ISS_HUGE_READ_LIMIT_MB (0 or unset: off) restores the cut to
 /// ISS_HUGE_READ_WINDOW_MB (default 64) for GPUs without the memory, at the cost of that lighting.
 inline u64 ClampHugeRead(u64 size, bool written) {
@@ -381,6 +383,11 @@ public:
     /// Frame x-ray: the arena holding the range and the range's offset in it, null when its
     /// pages are not resident. Nothing is synchronized or changed.
     [[nodiscard]] std::pair<const Buffer*, u64> PeekArena(VAddr device_addr, u32 size);
+    /// The sparse arena covering [device_addr, device_addr + size) (created if needed), without
+    /// making any of it resident: callers make the parts they use resident with ObtainBuffer.
+    [[nodiscard]] const Buffer* ArenaFor(VAddr device_addr, u64 size) {
+        return GetArena(device_addr >> block_shift, (device_addr + size - 1) >> block_shift);
+    }
 
     struct PublishedArena {
         const Buffer* arena{};

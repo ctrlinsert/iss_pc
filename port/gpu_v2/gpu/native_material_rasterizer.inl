@@ -396,9 +396,18 @@ bool Rasterizer::NativeMaterialBind(const NativeMaterialTemplate& t) {
         const u64 size =
             VideoCore::ClampHugeRead(memory->ClampRangeSize(sharp.base_address, sharp.GetSize()), desc.is_written);
         bool known_unwritten = false;
+        // Probe-lighting lookup window: only the slices this draw reads are made resident (the
+        // caller binds the index buffer at offset 0).
+        const VideoCore::Buffer* lean =
+            !desc.is_written && desc.is_formatted && sharp.GetStride() == 2 &&
+                    size > LeanLookupMinBytes
+                ? LeanLookupBind(stage, sharp.base_address, size, true, 0)
+                : nullptr;
         const auto [buffer, offset] =
-            buffer_cache.ObtainBuffer(sharp.base_address, u32(size), false, desc.is_formatted,
-                                      reuse_check ? &known_unwritten : nullptr);
+            lean ? std::pair<const VideoCore::Buffer*, u64>{lean, lean->Offset(sharp.base_address)}
+                 : buffer_cache.ObtainBuffer(sharp.base_address, u32(size), false,
+                                             desc.is_formatted,
+                                             reuse_check ? &known_unwritten : nullptr);
         const u64 offset_aligned = Common::AlignDown(offset, alignment);
         const u64 adjust = offset - offset_aligned;
         push_data.AddOffset(slot.binding, u32(adjust));

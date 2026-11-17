@@ -686,6 +686,11 @@ private:
 
     void TraceShaderResources(const Shader::Info& stage);
     void TraceBufferWriters(const Shader::Info& stage);
+    /// Probe-lighting lookup windows (16-bit, num_records to the end of the heap): bound whole,
+    /// only the slices the draw reads made resident (vk_rasterizer.cpp). nullptr: bind normally.
+    static constexpr u64 LeanLookupMinBytes = 64ull << 20;
+    const VideoCore::Buffer* LeanLookupBind(const Shader::Info& stage, VAddr base, u64 size,
+                                            bool indexed, u32 index_offset);
     void BindBuffers(const Shader::Info& stage, Shader::Backend::Bindings& binding,
                      Shader::PushData& push_data);
     void BindTextures(const Shader::Info& stage, Shader::Backend::Bindings& binding);

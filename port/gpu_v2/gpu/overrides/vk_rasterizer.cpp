@@ -1621,6 +1621,17 @@ std::size_t Rasterizer::Draw(bool is_indexed, u32 index_offset,
 #include "native_cpu_draw_run.inl"
 #include "native_instanced_run_rasterizer.inl"
 
+namespace {
+struct LeanDraw {
+    bool valid = false;
+    bool indexed = false;
+    u32 index_offset = 0;
+};
+// Per thread: draws are recorded on the command processor thread or a draw worker.
+thread_local LeanDraw g_lean_draw;
+std::atomic<u64> g_lean_lookup_binds{0};
+} // namespace
+
 void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline,bool is_indexed,u32 index_offset) {
     if (NativeVisualCaptureEnabled()) native_visual_latch = {};
     std::optional<iss::diagnostics::Scope> worker_scope;
@@ -1648,7 +1659,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline,bool is_indexed,u32
     native_pass_learn = 0;
     std::vector<NativeImageCapture> pass_capture;
     if (pass_learn_key) native_image_capture = &pass_capture;
+    // Probe-lighting lookup windows: the bound draw's index range is known here (LeanLookupBind).
+    g_lean_draw = LeanDraw{.valid = true, .indexed = is_indexed, .index_offset = index_offset};
     const bool bound_resources = BindResources(pipeline);
+    g_lean_draw.valid = false;
     if (pass_learn_key) native_image_capture = nullptr;
     if (!bound_resources) {
         return;
@@ -4831,6 +4845,124 @@ void Rasterizer::TraceShaderResources(const Shader::Info& stage) {
     }
 }
 
+// The probe-lighting vertex shaders (building facades, props, characters: 0x0d0541fb and ~50
+// others, one addressing scheme) read a 16-bit light-probe cell lookup through a window whose
+// num_records reaches the end of the heap (0.5 to 3.7 GB), at
+//     window + 2 * (instance voff + vertex index),
+// voff being the dword at +188 of the draw's 212-byte instance records. Backing the whole window
+// costs ~3.5 GB of VRAM; cutting it (the old ClampHugeRead) lost the cells and mis-lit those
+// objects. Here the window stays bound whole, as the shader indexes it, but only the cells this
+// draw reads are made resident and current: per instance, voff + [min index, max index] of the
+// draw (+ VGT index offset). nullptr when the draw does not fit the scheme (indirect draws,
+// GPU-written indices or instances, no 212-byte instance buffer): the caller binds it normally.
+const VideoCore::Buffer* Rasterizer::LeanLookupBind(const Shader::Info& stage, VAddr base,
+                                                    u64 size, bool indexed, u32 index_offset) {
+    static const bool enabled = [] {
+        const char* p = std::getenv("ISS_LEAN_PROBE_LOOKUP");
+        const bool on = !p || p[0] != '0';
+        std::fprintf(stderr, "PORT_TUNING lean_probe_lookup=%d\n", on ? 1 : 0);
+        return on;
+    }();
+    if (!enabled || stage.hw_stage != Shader::HwStage::Vertex) {
+        return nullptr;
+    }
+    constexpr u32 InstanceStride = 212, VoffOffset = 188;
+    VAddr instances = 0;
+    u64 instances_size = 0;
+    for (const auto& other : stage.buffers) {
+        if (other.IsSpecial() || other.is_written) continue;
+        const auto sharp = other.GetSharp(stage);
+        if (sharp.GetStride() == InstanceStride && sharp.base_address) {
+            instances = sharp.base_address;
+            instances_size = sharp.GetSize();
+            break;
+        }
+    }
+    const auto& regs = DrawRegs();
+    const u32 num_instances = std::max<u32>(1, regs.num_instances.NumInstances());
+    if (!instances || instances_size < u64(num_instances) * InstanceStride ||
+        buffer_cache.HasGpuData(instances, u64(num_instances) * InstanceStride)) {
+        return nullptr;
+    }
+    // The draw's vertex index range.
+    u32 min_index = 0, max_index = 0;
+    if (regs.num_indices == 0) return nullptr;
+    if (indexed) {
+        const bool is16 = regs.index_buffer_type.index_type == AmdGpu::IndexType::Index16;
+        const u32 isize = is16 ? 2 : 4;
+        const VAddr iaddr = regs.index_base_address.Address<VAddr>() +
+                            u64(index_offset) * isize;
+        if (buffer_cache.HasGpuData(iaddr, u64(regs.num_indices) * isize)) return nullptr;
+        const u8* src = reinterpret_cast<const u8*>(uintptr_t(iaddr));
+        min_index = ~0u;
+        for (u32 i = 0; i < regs.num_indices; ++i) {
+            u32 v;
+            if (is16) { u16 h; std::memcpy(&h, src + i * 2, 2); v = h; }
+            else std::memcpy(&v, src + i * 4, 4);
+            if (is16 ? v == 0xffff : v == 0xffffffffu) continue; // primitive restart
+            min_index = std::min(min_index, v);
+            max_index = std::max(max_index, v);
+        }
+        if (min_index > max_index) return nullptr;
+    } else {
+        max_index = regs.num_indices - 1;
+    }
+    const u64 first = u64(min_index) + regs.index_offset;
+    const u64 last = u64(max_index) + regs.index_offset;
+    // Slices per instance (instances often share a voff), merged.
+    std::array<std::pair<u64, u64>, 32> slices;
+    u32 count = 0;
+    const u8* records = reinterpret_cast<const u8*>(uintptr_t(instances));
+    for (u32 i = 0; i < num_instances; ++i) {
+        u32 voff;
+        std::memcpy(&voff, records + u64(i) * InstanceStride + VoffOffset, 4);
+        const u64 begin = 2 * (u64(voff) + first), end = 2 * (u64(voff) + last + 1);
+        if (begin >= size) continue;
+        // Whole 64 KB blocks, at least 32 KB: slices of 16 KB or less would be copied to the
+        // stream buffer by ObtainBuffer instead of being made resident in the arena.
+        const u64 a = begin & ~0xFFFFull;
+        const u64 b = std::max<u64>((end + 0xFFFF) & ~0xFFFFull, a + 0x10000);
+        const std::pair<u64, u64> slice{a, std::min(b, size)};
+        bool merged = false;
+        for (u32 k = 0; k < count && !merged; ++k) {
+            auto& s = slices[k];
+            if (slice.first <= s.second + 4096 && s.first <= slice.second + 4096) {
+                s = {std::min(s.first, slice.first), std::max(s.second, slice.second)};
+                merged = true;
+            }
+        }
+        if (!merged) {
+            if (count == slices.size()) return nullptr;
+            slices[count++] = slice;
+        }
+    }
+    if (count == 0) return nullptr;
+    const auto* arena = buffer_cache.ArenaFor(base, size);
+    if (!arena) return nullptr;
+    for (u32 k = 0; k < count; ++k) {
+        const auto [begin, end] = slices[k];
+        const auto [buffer, offset] =
+            buffer_cache.ObtainBuffer(base + begin, static_cast<u32>(end - begin), false, true);
+        if (buffer != arena) {
+            // Streamed or migrated: the slice is not in the window's arena (should not happen
+            // for multi-page slices); bind normally instead.
+            return nullptr;
+        }
+        needs_barrier |= Rt().IsBufferAccessed(buffer, offset, end - begin, false);
+    }
+    static std::atomic<u32> logged{};
+    if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+        std::fprintf(stderr,
+                     "LEAN_LOOKUP vs=%llx window=%llx+%llx instances=%u indices=%u..%u slices=%u "
+                     "first=+%llx..+%llx\n",
+                     (unsigned long long)stage.pgm_hash, (unsigned long long)base,
+                     (unsigned long long)size, num_instances, min_index, max_index, count,
+                     (unsigned long long)slices[0].first, (unsigned long long)slices[0].second);
+    }
+    g_lean_lookup_binds.fetch_add(1, std::memory_order_relaxed);
+    return arena;
+}
+
 void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Bindings& binding,
                              Shader::PushData& push_data) {
     auto& buffer_infos = ComputeBindingsActive() ? compute_bindings.buffer_infos : this->buffer_infos;
@@ -5064,7 +5196,19 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 }
                 bool known_unwritten = false;
                 const bool reuse_check = Common::Perf::GetTuning().reuse_buffer_checks.load(std::memory_order_relaxed);
-                const auto [buffer, offset] = [&] {
+                // Probe-lighting lookup window (see ClampHugeRead): bound whole, but only the
+                // slices this draw reads are made resident and synchronized.
+                const VideoCore::Buffer* lean_arena =
+                    !explicit_qid1 && !desc.is_written && desc.is_formatted &&
+                            vsharp.GetStride() == 2 && size > LeanLookupMinBytes &&
+                            g_lean_draw.valid
+                        ? LeanLookupBind(stage, vsharp.base_address, size, g_lean_draw.indexed,
+                                         g_lean_draw.index_offset)
+                        : nullptr;
+                const auto [buffer, offset] = [&]() -> std::pair<const VideoCore::Buffer*, u64> {
+                    if (lean_arena) {
+                        return {lean_arena, lean_arena->Offset(vsharp.base_address)};
+                    }
                     if (!explicit_qid1) {
                         return buffer_cache.ObtainBuffer(
                             vsharp.base_address, size, desc.is_written, desc.is_formatted,
