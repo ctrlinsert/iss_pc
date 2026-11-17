@@ -387,8 +387,10 @@ extern "C" void IssPreciseSleepUs(unsigned us){
 // The game's executable in memory (0 until iss_gpu_install_image): readback_relaxed_sites name
 // code by its offset from here.
 extern "C" uint64_t iss_gpu_image_base(){return host.image_base;}
+namespace iss::particle_budget {void Start(u64 image_base);}
 extern "C" void iss_gpu_install_image(uint64_t image_base){
     host.image_base=image_base;
+    iss::particle_budget::Start(image_base);
     std::fprintf(stderr,"GPU_IMAGE_BASE 0x%llx\n",(unsigned long long)image_base);
     // The executing image (as native/engine_draw.cpp patches it), not a backing view.
     if(iss::native_shadow::Enabled())
