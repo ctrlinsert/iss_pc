@@ -3072,6 +3072,55 @@ static void DumpDispatchOnRequest(const ComputePipeline* pipeline, VideoCore::Bu
     std::fprintf(stderr, "DISPATCH_DUMP_F9 cs=%08x request=%u -> %s.txt\n", hash, requests, stem.c_str());
 }
 
+// ISS_LIGHT_ZERO=<hash>:<buf>:<stride>:<id_off>:<id>:<zero_off>:<zero_bytes> (hex hash, the rest
+// decimal or 0x): a diagnostic A/B. Before each dispatch of that compute shader, every record of
+// read buffer <buf> whose u32 at <id_off> equals <id> gets <zero_bytes> bytes at <zero_off>
+// zeroed, in guest memory (as if the game had written it), so the one light is switched off.
+static void ZeroLightRecord(const ComputePipeline* pipeline) {
+    struct Cfg { u32 hash = 0, buf = 0, stride = 0, id_off = 0, id = 0, zero_off = 0, zero_bytes = 0; };
+    static const Cfg cfg = [] {
+        Cfg c;
+        const char* p = std::getenv("ISS_LIGHT_ZERO");
+        if (!p || !*p) return c;
+        u32* f[] = {&c.hash, &c.buf, &c.stride, &c.id_off, &c.id, &c.zero_off, &c.zero_bytes};
+        for (int i = 0; i < 7 && p; ++i) {
+            char* end = nullptr;
+            *f[i] = u32(std::strtoul(p, &end, i == 0 ? 16 : 0));
+            p = (end && *end == ':') ? end + 1 : nullptr;
+        }
+        if (!c.stride || c.id_off + 4 > c.stride || c.zero_off + c.zero_bytes > c.stride) c.hash = 0;
+        std::fprintf(stderr, "LIGHT_ZERO cs=%08x buf%u stride=%u id@%u=%u zero %u bytes @%u%s\n",
+                     c.hash, c.buf, c.stride, c.id_off, c.id, c.zero_bytes, c.zero_off,
+                     c.hash ? "" : " (invalid, off)");
+        return c;
+    }();
+    if (!cfg.hash || !pipeline) return;
+    const auto& info = pipeline->GetStage(Shader::SwStage::Compute);
+    if (u32(info.pgm_hash) != cfg.hash || cfg.buf >= info.buffers.size()) return;
+    const auto& res = info.buffers[cfg.buf];
+    if (res.is_written) return;
+    const auto sharp = res.GetSharp(info);
+    const u64 address = sharp.base_address;
+    const u64 size = sharp.GetSize();
+    if (!address || size < cfg.stride) return;
+    static std::atomic<u64> dispatches{0}, zeroed{0};
+    u8* base = reinterpret_cast<u8*>(uintptr_t(address));
+    for (u64 off = 0; off + cfg.stride <= size; off += cfg.stride) {
+        u32 id;
+        std::memcpy(&id, base + off + cfg.id_off, 4);
+        if (id != cfg.id) continue;
+        u8* z = base + off + cfg.zero_off;
+        bool any = false;
+        for (u32 i = 0; i < cfg.zero_bytes; ++i) any |= z[i] != 0;
+        if (any) std::memset(z, 0, cfg.zero_bytes);
+        zeroed.fetch_add(1, std::memory_order_relaxed);
+    }
+    const u64 n = dispatches.fetch_add(1, std::memory_order_relaxed) + 1;
+    if ((n & (n - 1)) == 0 || n % 10000 == 0)
+        std::fprintf(stderr, "LIGHT_ZERO dispatches=%llu records_zeroed=%llu\n",
+                     (unsigned long long)n, (unsigned long long)zeroed.load());
+}
+
 static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
     static const bool enabled = [] {
         const char* p = std::getenv("ISS_DISPATCH_TRACE");
@@ -3215,6 +3264,7 @@ void Rasterizer::DispatchDirect() {
     ShadowSetupExperiment(pipeline);
     TraceDispatchOnce(pipeline, cs_program);
     DumpDispatchOnRequest(pipeline, buffer_cache);
+    ZeroLightRecord(pipeline);
 
     // Prepare the complete SRT read set before a split packet can touch BindResources.
     // Startup still denies CP_SPLIT until reserve/seal/publish/record is wired for all kinds.
