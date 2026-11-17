@@ -4857,6 +4857,16 @@ void Rasterizer::TraceShaderResources(const Shader::Info& stage) {
 // draw reads are made resident and current: per instance, voff + [min index, max index] of the
 // draw (+ VGT index offset). nullptr when the draw does not fit the scheme (indirect draws,
 // GPU-written indices or instances, no 212-byte instance buffer): the caller binds it normally.
+bool Rasterizer::UsesProbeLookupWindow(const Shader::Info& vs) const {
+    if (vs.hw_stage != Shader::HwStage::Vertex) return false;
+    for (const auto& desc : vs.buffers) {
+        if (desc.IsSpecial() || desc.is_written || !desc.is_formatted) continue;
+        const auto sharp = desc.GetSharp(vs);
+        if (sharp.GetStride() == 2 && sharp.GetSize() > LeanLookupMinBytes) return true;
+    }
+    return false;
+}
+
 const VideoCore::Buffer* Rasterizer::LeanLookupBind(const GraphicsPipeline* pipeline,
                                                     const Shader::Info& stage, VAddr base,
                                                     u64 size, bool indexed, u32 index_offset) {

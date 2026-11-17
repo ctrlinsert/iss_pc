@@ -1164,6 +1164,11 @@ void Rasterizer::CaptureFastDraw(const GraphicsPipeline* pipeline, bool is_index
     if (!vs) {
         return reject(2);
     }
+    // Probe-lighting lookup windows: each draw makes its own slices resident (LeanLookupBind),
+    // which reusing the previous draw's bindings would skip.
+    if (UsesProbeLookupWindow(*vs)) {
+        return reject(2);
+    }
     const auto& regs = DrawRegs();
     // Descriptors fully defined by the user data and memory: no writes. Copies of the
     // flattened user data or clip planes into the stream buffer change every draw.
@@ -1592,7 +1597,7 @@ bool Rasterizer::FastSwitchDraw(bool is_indexed, u32 index_offset) {
             return fail();
         }
     }
-    if (!vs) {
+    if (!vs || UsesProbeLookupWindow(*vs)) {
         return fail();
     }
     if (!worker) {

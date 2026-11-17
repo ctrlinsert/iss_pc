@@ -689,6 +689,8 @@ private:
     /// Probe-lighting lookup windows (16-bit, num_records to the end of the heap): bound whole,
     /// only the slices the draw reads made resident (vk_rasterizer.cpp). nullptr: bind normally.
     static constexpr u64 LeanLookupMinBytes = 64ull << 20;
+    /// Whether the vertex shader binds such a window now (fast draws then take the full path).
+    bool UsesProbeLookupWindow(const Shader::Info& vs) const;
     const VideoCore::Buffer* LeanLookupBind(const GraphicsPipeline* pipeline,
                                             const Shader::Info& stage, VAddr base, u64 size,
                                             bool indexed, u32 index_offset);
