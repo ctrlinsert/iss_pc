@@ -297,9 +297,11 @@ bool TextureCache::DumpImageToFile(VAddr address, std::string_view prefix, u32 w
         return false;
     }
     Image& image = slot_images[image_id];
-    const u32 row_bytes = image.info.pitch * (image.info.num_bits / 8);
-    const u32 download_size =
-        row_bytes * image.info.size.height * image.info.size.depth * image.info.resources.layers;
+    // Block-compressed formats: num_bits is per 4x4 block, so count rows of blocks.
+    const auto blocks = image.info.BlockDim();
+    const u64 row_bytes = u64(blocks.width) * (image.info.num_bits / 8);
+    const u64 download_size =
+        row_bytes * blocks.height * image.info.size.depth * image.info.resources.layers;
     if (download_size == 0 || download_size > (256u << 20)) {
         return false;
     }
@@ -336,9 +338,19 @@ bool TextureCache::DumpImageToFile(VAddr address, std::string_view prefix, u32 w
                                   image.info.num_bits, vk::to_string(image.info.pixel_format));
     const auto file = IOFile{dir / name, FileAccessMode::Create};
     file.WriteRaw<u8>(download.mapped, download_size);
+    // The guest bytes as the game wrote them (tiled, all mips), for an offline check of our
+    // de-tiling, when the CPU copy is current.
+    if (!True(image.flags & ImageFlagBits::GpuModified) && image.info.guest_size &&
+        image.info.guest_size <= (256u << 20)) {
+        const auto guest = IOFile{dir / (name + ".guest"), FileAccessMode::Create};
+        guest.WriteRaw<u8>(reinterpret_cast<const u8*>(uintptr_t(image.info.guest_address)),
+                           image.info.guest_size);
+    }
     LOG_INFO(Render_Vulkan,
-             "DUMP image {:x} written: {} ({} bytes, {} layers, gpu modified {}, last used tick {})",
-             address, name, download_size, image.info.resources.layers,
+             "DUMP image {:x} written: {} ({} bytes, {} layers, depth {}, tile mode {}, array mode {}, "
+             "guest size {}, gpu modified {}, last used tick {})",
+             address, name, download_size, image.info.resources.layers, image.info.size.depth,
+             u32(image.info.tile_mode), u32(image.info.array_mode), image.info.guest_size,
              True(image.flags & ImageFlagBits::GpuModified), image.tick_accessed_last);
     return true;
 }
