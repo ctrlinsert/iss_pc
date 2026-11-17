@@ -3020,6 +3020,9 @@ void RequestDispatchDump() { Vulkan::g_dispatch_dump_requests.fetch_add(1); }
 }
 namespace Vulkan {
 
+/// F9: the hashes whose next dispatch also dumps every bound buffer's GPU copy (DispatchRecord).
+static std::array<std::atomic<u32>, 4> g_gpu_dump_pending{};
+
 static void DumpDispatchOnRequest(const ComputePipeline* pipeline, VideoCore::BufferCache& buffers) {
     static const std::array<u32, 4> hashes = [] {
         std::array<u32, 4> h{};
@@ -3070,56 +3073,48 @@ static void DumpDispatchOnRequest(const ComputePipeline* pipeline, VideoCore::Bu
     }
     std::fclose(index);
     std::fprintf(stderr, "DISPATCH_DUMP_F9 cs=%08x request=%u -> %s.txt\n", hash, requests, stem.c_str());
+    g_gpu_dump_pending[slot].store(hash, std::memory_order_relaxed);
 }
 
-// ISS_LIGHT_ZERO=<hash>:<buf>:<stride>:<id_off>:<id>:<zero_off>:<zero_bytes> (hex hash, the rest
-// decimal or 0x): a diagnostic A/B. Before each dispatch of that compute shader, every record of
-// read buffer <buf> whose u32 at <id_off> equals <id> gets <zero_bytes> bytes at <zero_off>
-// zeroed, in guest memory (as if the game had written it), so the one light is switched off.
-static void ZeroLightRecord(const ComputePipeline* pipeline) {
-    struct Cfg { u32 hash = 0, buf = 0, stride = 0, id_off = 0, id = 0, zero_off = 0, zero_bytes = 0; };
-    static const Cfg cfg = [] {
-        Cfg c;
+// ISS_LIGHT_ZERO=<spec>[;<spec>...] (up to 4), spec = <hash>:<buf>:<stride>:<id_off>:<id>:
+// <zero_off>:<zero_bytes> (hex hash, the rest decimal or 0x; <id> may be * for every record): a
+// diagnostic A/B. Right before each dispatch of that compute shader, the GPU copy of read
+// buffer <buf> gets <zero_bytes> at <zero_off> of each matching record filled with zeros, so those
+// lights are off for that dispatch whatever the upload path did. An id is matched against the
+// guest copy, so <id> needs a CPU-written buffer; * works on GPU-written ones too.
+namespace {
+struct LightZeroSpec { u32 hash = 0, buf = 0, stride = 0, id_off = 0, id = 0, zero_off = 0, zero_bytes = 0; bool any_id = false; };
+const std::vector<LightZeroSpec>& LightZeroSpecs() {
+    static const std::vector<LightZeroSpec> specs = [] {
+        std::vector<LightZeroSpec> out;
         const char* p = std::getenv("ISS_LIGHT_ZERO");
-        if (!p || !*p) return c;
-        u32* f[] = {&c.hash, &c.buf, &c.stride, &c.id_off, &c.id, &c.zero_off, &c.zero_bytes};
-        for (int i = 0; i < 7 && p; ++i) {
-            char* end = nullptr;
-            *f[i] = u32(std::strtoul(p, &end, i == 0 ? 16 : 0));
-            p = (end && *end == ':') ? end + 1 : nullptr;
+        while (p && *p && out.size() < 4) {
+            LightZeroSpec c;
+            u32* f[] = {&c.hash, &c.buf, &c.stride, &c.id_off, &c.id, &c.zero_off, &c.zero_bytes};
+            for (int i = 0; i < 7 && p && *p; ++i) {
+                if (i == 4 && *p == '*') { c.any_id = true; ++p; }
+                else {
+                    char* end = nullptr;
+                    *f[i] = u32(std::strtoul(p, &end, i == 0 ? 16 : 0));
+                    p = end;
+                }
+                if (i < 6) p = (p && *p == ':') ? p + 1 : nullptr;
+            }
+            const bool ok = c.hash && c.stride && c.id_off + 4 <= c.stride && c.zero_bytes &&
+                            c.zero_off % 4 == 0 && c.zero_bytes % 4 == 0 &&
+                            c.zero_off + c.zero_bytes <= c.stride;
+            std::fprintf(stderr, "LIGHT_ZERO cs=%08x buf%u stride=%u id@%u=%s%u zero %u bytes @%u%s\n",
+                         c.hash, c.buf, c.stride, c.id_off, c.any_id ? "* " : "", c.id,
+                         c.zero_bytes, c.zero_off, ok ? " (gpu fill)" : " (invalid, ignored)");
+            if (ok) out.push_back(c);
+            p = (p && *p == ';') ? p + 1 : nullptr;
         }
-        if (!c.stride || c.id_off + 4 > c.stride || c.zero_off + c.zero_bytes > c.stride) c.hash = 0;
-        std::fprintf(stderr, "LIGHT_ZERO cs=%08x buf%u stride=%u id@%u=%u zero %u bytes @%u%s\n",
-                     c.hash, c.buf, c.stride, c.id_off, c.id, c.zero_bytes, c.zero_off,
-                     c.hash ? "" : " (invalid, off)");
-        return c;
+        return out;
     }();
-    if (!cfg.hash || !pipeline) return;
-    const auto& info = pipeline->GetStage(Shader::SwStage::Compute);
-    if (u32(info.pgm_hash) != cfg.hash || cfg.buf >= info.buffers.size()) return;
-    const auto& res = info.buffers[cfg.buf];
-    if (res.is_written) return;
-    const auto sharp = res.GetSharp(info);
-    const u64 address = sharp.base_address;
-    const u64 size = sharp.GetSize();
-    if (!address || size < cfg.stride) return;
-    static std::atomic<u64> dispatches{0}, zeroed{0};
-    u8* base = reinterpret_cast<u8*>(uintptr_t(address));
-    for (u64 off = 0; off + cfg.stride <= size; off += cfg.stride) {
-        u32 id;
-        std::memcpy(&id, base + off + cfg.id_off, 4);
-        if (id != cfg.id) continue;
-        u8* z = base + off + cfg.zero_off;
-        bool any = false;
-        for (u32 i = 0; i < cfg.zero_bytes; ++i) any |= z[i] != 0;
-        if (any) std::memset(z, 0, cfg.zero_bytes);
-        zeroed.fetch_add(1, std::memory_order_relaxed);
-    }
-    const u64 n = dispatches.fetch_add(1, std::memory_order_relaxed) + 1;
-    if ((n & (n - 1)) == 0 || n % 10000 == 0)
-        std::fprintf(stderr, "LIGHT_ZERO dispatches=%llu records_zeroed=%llu\n",
-                     (unsigned long long)n, (unsigned long long)zeroed.load());
+    return specs;
 }
+std::atomic<u64> g_light_zero_dispatches{0}, g_light_zero_fills{0}, g_light_zero_missing{0};
+} // namespace
 
 static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
     static const bool enabled = [] {
@@ -3264,7 +3259,6 @@ void Rasterizer::DispatchDirect() {
     ShadowSetupExperiment(pipeline);
     TraceDispatchOnce(pipeline, cs_program);
     DumpDispatchOnRequest(pipeline, buffer_cache);
-    ZeroLightRecord(pipeline);
 
     // Prepare the complete SRT read set before a split packet can touch BindResources.
     // Startup still denies CP_SPLIT until reserve/seal/publish/record is wired for all kinds.
@@ -3278,6 +3272,89 @@ void Rasterizer::DispatchDirect() {
     if(pipelined){DrainDrawPipe(5);scheduler.PopPendingOperations();}
     DispatchRecord(pipeline);
     dc.Done();
+}
+
+void Rasterizer::ZeroLightsOnGpu(const Shader::Info& cs, const CommandRecorder& cmdbuf) {
+    const u32 hash = u32(cs.pgm_hash);
+    auto& bound = ComputeBindingsActive() ? compute_bindings.bound_buffers : this->bound_buffers;
+    bool matched = false, barrier = false;
+    for (const auto& spec : LightZeroSpecs()) {
+        if (spec.hash != hash || spec.buf >= cs.buffers.size()) continue;
+        matched = true;
+        const auto sharp = cs.buffers[spec.buf].GetSharp(cs);
+        const u64 address = sharp.base_address;
+        const u64 size = sharp.GetSize();
+        const BoundBuffer* b = nullptr;
+        for (const auto& e : bound)
+            if (e.buffer && e.address && address >= e.address && address + size <= e.address + e.size) b = &e;
+        if (!b || !address) {
+            g_light_zero_missing.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
+        const u64 gpu_base = b->offset + (address - b->address);
+        for (u64 off = 0; off + spec.stride <= size; off += spec.stride) {
+            if (!spec.any_id) {
+                u32 id;
+                std::memcpy(&id, reinterpret_cast<const u8*>(uintptr_t(address)) + off + spec.id_off, 4);
+                if (id != spec.id) continue;
+            }
+            const u64 dst = gpu_base + off + spec.zero_off;
+            if (dst % 4) continue;
+            if (!barrier) {
+                const vk::MemoryBarrier2 before{
+                    .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+                    .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
+                    .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+                    .dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+                };
+                cmdbuf.Record([before](vk::CommandBuffer c) {
+                    c.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1, .pMemoryBarriers = &before});
+                });
+                barrier = true;
+            }
+            cmdbuf.Record([h = b->buffer->Handle(), dst, n = spec.zero_bytes](vk::CommandBuffer c) {
+                c.fillBuffer(h, dst, n, 0);
+            });
+            g_light_zero_fills.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    if (!matched) return;
+    if (barrier) {
+        const vk::MemoryBarrier2 after{
+            .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+        };
+        cmdbuf.Record([after](vk::CommandBuffer c) {
+            c.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1, .pMemoryBarriers = &after});
+        });
+    }
+    const u64 n = g_light_zero_dispatches.fetch_add(1, std::memory_order_relaxed) + 1;
+    if ((n & (n - 1)) == 0 || n % 10000 == 0)
+        std::fprintf(stderr, "LIGHT_ZERO dispatches=%llu gpu_fills=%llu buffer_not_bound=%llu\n",
+                     (unsigned long long)n, (unsigned long long)g_light_zero_fills.load(),
+                     (unsigned long long)g_light_zero_missing.load());
+}
+
+void Rasterizer::DumpDispatchGpuCopies(const Shader::Info& cs) {
+    const u32 hash = u32(cs.pgm_hash);
+    int slot = -1;
+    for (int i = 0; i < 4; ++i)
+        if (g_gpu_dump_pending[i].load(std::memory_order_relaxed) == hash) slot = i;
+    if (slot < 0 || OnDrawWorker() || OnComputeRecordQueue() || ComputeBindingsActive()) return;
+    if (g_gpu_dump_pending[slot].exchange(0, std::memory_order_relaxed) != hash) return;
+    static u32 serial = 0;
+    ++serial;
+    u32 index = 0;
+    for (const auto& bound : bound_buffers) {
+        if (bound.address && bound.size)
+            DumpBufferToFile(fmt::format("dispatch_{:08x}_{}_buf{}", hash, serial, index), bound.buffer,
+                             bound.offset, bound.address, bound.size);
+        ++index;
+    }
+    std::fprintf(stderr, "DISPATCH_DUMP_F9_GPU cs=%08x serial=%u buffers=%u (log dir xray)\n", hash,
+                 serial, index);
 }
 
 void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
@@ -3382,9 +3459,11 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         MarkDispatch(Sched(), cmdbuf, cs.pgm_hash, cs_program.dim_x, cs_program.dim_y,
                      cs_program.dim_z, 0);
     }
+    if (!LightZeroSpecs().empty()) ZeroLightsOnGpu(cs, cmdbuf);
     Sched().ProfileDispatchBegin(cs.pgm_hash);
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     iss::feedback_join::Recorded();
+    DumpDispatchGpuCopies(cs);
     Sched().ProfileDispatchEnd();
     DebugState.IncDispatch();
 
