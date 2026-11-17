@@ -343,7 +343,11 @@ void Rasterizer::DumpAfter(const Pipeline* pipeline) {
             // "hash:srt": the guest buffers bound to the shaders of the draw or dispatch.
             u32 index = 0;
             for (const auto& bound : bound_buffers) {
-                if (bound.address != 0) {
+                if (bound.address != 0 && bound.size > (64ull << 20)) {
+                    // Whole-pool windows (hundreds of MB) would stall the frame for seconds.
+                    LOG_INFO(Render_Vulkan, "DUMP f{} srt{} {:x}+{:x} skipped (over 64 MB)",
+                             g_dump.frame, index, bound.address, bound.size);
+                } else if (bound.address != 0) {
                     DumpBufferToFile(
                         fmt::format("f{}_s{}_srt{}", g_dump.frame, g_dump.seq - 1, index),
                         bound.buffer, bound.offset, bound.address, bound.size);
