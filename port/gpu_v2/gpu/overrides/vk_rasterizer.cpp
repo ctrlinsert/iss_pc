@@ -3512,8 +3512,27 @@ void Rasterizer::DumpDispatchGpuCopies(const Shader::Info& cs) {
                              bound.offset, bound.address, bound.size);
         ++index;
     }
-    std::fprintf(stderr, "DISPATCH_DUMP_F9_GPU cs=%08x serial=%u buffers=%u (log dir xray)\n", hash,
-                 serial, index);
+    // ISS_DISPATCH_DUMP_IMAGES=1: every image the dispatch binds too (read and written), as raw
+    // texels; at full resolution this is large (tens of MB each).
+    static const bool with_images = [] {
+        const char* p = std::getenv("ISS_DISPATCH_DUMP_IMAGES");
+        return p && *p == '1';
+    }();
+    u32 images = 0;
+    if (with_images) {
+        for (const auto& desc : cs.images) {
+            const auto tsharp = desc.GetSharp(cs);
+            if (tsharp.Address() &&
+                texture_cache.DumpImageToFile(tsharp.Address(),
+                                              fmt::format("dispatch_{:08x}_{}_img{}{}", hash, serial,
+                                                          images, desc.is_written ? "w" : "r"),
+                                              tsharp.width + 1, tsharp.height + 1))
+                ;
+            ++images;
+        }
+    }
+    std::fprintf(stderr, "DISPATCH_DUMP_F9_GPU cs=%08x serial=%u buffers=%u images=%u\n", hash,
+                 serial, index, images);
 }
 
 void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {

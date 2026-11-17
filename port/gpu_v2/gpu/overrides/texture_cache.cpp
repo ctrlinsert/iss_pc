@@ -324,7 +324,11 @@ bool TextureCache::DumpImageToFile(VAddr address, std::string_view prefix, u32 w
     scheduler.Finish();
     download.Invalidate();
     using namespace Common::FS;
-    const auto dir = GetUserPath(PathType::LogDir) / "xray";
+    // ISS_XRAY_DIR (else ISS_DISPATCH_DUMP_DIR): the log folder can sit inside the save folder.
+    const char* xray_env = std::getenv("ISS_XRAY_DIR");
+    if (!xray_env || !*xray_env) xray_env = std::getenv("ISS_DISPATCH_DUMP_DIR");
+    const auto dir = xray_env && *xray_env ? std::filesystem::path(xray_env)
+                                           : GetUserPath(PathType::LogDir) / "xray";
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     const auto name = fmt::format("{}_{:x}_{}x{}_p{}_{}_{}.raw", prefix, image.info.guest_address,
