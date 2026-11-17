@@ -116,19 +116,48 @@ int main(void) {
 
     /* At a swipe prompt a still press does not hold: it waits for the flick, however long, and a
      * release with no flick taps. */
+    InteractParams still=p; /* (a held press never steers: only the caller's latch does) */
+    g.swipe_prompt=1;
+    o=interact_update(&g,&still,1,0,0,0,0,now+=MS(10));
+    o=interact_update(&g,&still,1,0,0,0,0,now+=MS(900));
+    assert(g.state==INTERACT_DECIDING && !o.touch && o.owns_mouse);
+    o=interact_update(&g,&still,1,-300,0,0,0,now+=MS(60));
+    assert(g.state==INTERACT_SWIPE && g.dx==-1);
+    o=interact_update(&g,&still,0,0,0,0,0,now+=MS(500));
+    assert(g.state==INTERACT_IDLE);
+    o=interact_update(&g,&still,1,0,0,0,0,now+=MS(10));
+    o=interact_update(&g,&still,1,0,0,0,0,now+=MS(900));
+    o=interact_update(&g,&still,0,0,0,0,0,now+=MS(10));
+    assert(g.state==INTERACT_TAP);
+    o=interact_update(&g,&still,0,0,0,0,0,now+=MS(500));
+    g.swipe_prompt=0;
+
+    /* Steering (started by the caller, as runtime_pad's tap latch does): a finger at the centre
+     * that the mouse moves; a release with no steering still taps. */
     g.swipe_prompt=1;
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
-    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(900));
-    assert(g.state==INTERACT_DECIDING && !o.touch && o.owns_mouse);
-    o=interact_update(&g,&p,1,-300,0,0,0,now+=MS(60));
-    assert(g.state==INTERACT_SWIPE && g.dx==-1);
-    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(500));
-    assert(g.state==INTERACT_IDLE);
+    interact_begin(&g,INTERACT_STEER,now); g.sx=g.sy=0.5f; g.swiped=0; g.ax=g.ay=0; g.last=0;
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(16));
+    assert(g.state==INTERACT_STEER && o.touch && !o.click && near(o.x,0.5f) && near(o.y,0.5f) && o.owns_mouse);
+    for (int k=0;k<10;++k) o=interact_update(&g,&p,1,8,0,0,0,now+=MS(16)); /* 0.5 counts/ms: steering */
+    assert(g.state==INTERACT_STEER && near(o.x,0.5f+80.0f/400.0f) && near(o.y,0.5f));
+    for (int k=0;k<100;++k) o=interact_update(&g,&p,1,0,-8,0,0,now+=MS(16));
+    assert(g.state==INTERACT_STEER && near(o.y,0.02f)); /* clamped at the edge */
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
+    assert(g.state==INTERACT_IDLE && !o.touch);
     o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
-    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(900));
+    interact_begin(&g,INTERACT_STEER,now); g.sx=g.sy=0.5f; g.swiped=0; g.ax=g.ay=0; g.last=0;
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(16));
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
     assert(g.state==INTERACT_TAP);
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(500));
+    /* ...and a flick while steering still swipes. */
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(10));
+    interact_begin(&g,INTERACT_STEER,now); g.sx=g.sy=0.5f; g.swiped=0; g.ax=g.ay=0; g.last=0;
+    o=interact_update(&g,&p,1,0,0,0,0,now+=MS(16));
+    o=interact_update(&g,&p,1,300,0,0,0,now+=MS(16));
+    assert(g.state==INTERACT_SWIPE && g.dx==1);
+    o=interact_update(&g,&p,0,0,0,0,0,now+=MS(600));
     g.swipe_prompt=0;
 
     /* A swipe prompt that comes up during a hold: a flick still swipes. A slow drift does not. */
@@ -144,15 +173,18 @@ int main(void) {
     assert(g.state==INTERACT_SPENT && near(o.y,0.92f));
     o=interact_update(&g,&p,0,0,0,0,0,now+=MS(10));
     assert(g.state==INTERACT_IDLE);
-    /* ...and a hold pressed while panning ignores more panning the same way. */
+    /* ...and a hold pressed while panning that then finds a swipe prompt (turning toward a door:
+     * the game reads the finger only once it is down) drops the pan: the mouse is the finger's,
+     * and a flick the same way as the turn counts as it is. */
     g.swipe_prompt=0;
     o=interact_update_ex(&g,&p,1,20,0,0,0,now+=MS(10),1,2.0f,0.0f);
     o=interact_update_ex(&g,&p,1,0,0,0,0,now+=MS(300),0,0,0);
     assert(g.state==INTERACT_HOLD);
     g.swipe_prompt=1;
-    for (int k=0;k<10;++k) o=interact_update_ex(&g,&p,1,160,0,0,0,now+=MS(16),0,0,0); /* 10/ms, same way */
-    assert(g.state==INTERACT_HOLD);
-    o=interact_update_ex(&g,&p,0,0,0,0,0,now+=MS(10),0,0,0);
+    for (int k=0;k<10;++k) o=interact_update_ex(&g,&p,1,160,0,0,0,now+=MS(16),0,0,0); /* the same way as the turn */
+    assert(g.state==INTERACT_SWIPE || g.state==INTERACT_SPENT);
+    assert(g.dx==1 && g.dy==0);
+    o=interact_update_ex(&g,&p,0,0,0,0,0,now+=MS(600),0,0,0);
     g.swipe_prompt=0;
 
     /* threshold 0 turns mouse swipes off; keys still swipe. */

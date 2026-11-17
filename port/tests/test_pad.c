@@ -14,6 +14,8 @@ void tlggpu_power_wheel_settings(int *enabled,int keys[4],int *instant){*enabled
 static int direct_available,motion_calls;
 static float observed_dx,observed_dy;
 int runtime_mouse_aim_motion(float dx, float dy, float sensitivity, int invert_y, int active) { (void)sensitivity; (void)invert_y; if(active){motion_calls++;observed_dx=dx;observed_dy=dy;} return direct_available; }
+void runtime_mouse_aim_hold_follow(int on);
+void runtime_mouse_aim_hold_follow(int on) { (void)on; }
 #ifdef _WIN32
 #define setenv(name, value, overwrite) _putenv_s(name, value)
 #endif
@@ -23,7 +25,6 @@ static int capture;
 static TlgGpuMouse supplied_mouse;
 static TlgGpuInputSettings supplied_settings;
 void tlggpu_mouse_take(TlgGpuMouse *mouse) { *mouse=supplied_mouse; }
-void tlggpu_mouse_pad_hud(int a, float x, float y, int t, int c) { (void)a; (void)x; (void)y; (void)t; (void)c; }
 void tlggpu_input_settings(TlgGpuInputSettings *settings) { *settings=supplied_settings; }
 uint64_t tlggpu_total_draws(void) { return 0; }
 void tlggpu_frame_counters(TlgGpuFrameCounters *out) { memset(out,0,sizeof(*out)); }

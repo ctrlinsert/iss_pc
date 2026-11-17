@@ -1,4 +1,4 @@
-"""Graphics and Controls screens of the Qt launcher: padsettings.py (key map, mouse, touchpad mode),
+"""Graphics and Controls screens of the Qt launcher: padsettings.py (key map, mouse),
 qt/gfxlogic.py (presets, VRAM rule and detection) and their controllers (qt/graphics.py,
 qt/controls.py). The pure parts need no PySide6; the controller tests skip without it."""
 import json
@@ -82,15 +82,12 @@ class KeyboardTableTests(unittest.TestCase):
         for key, *_ in padsettings.MOUSE_KEYS:
             self.assertIn(f'"{key}"', text)
 
-    @unittest.skipUnless('TLG_MOUSE_PAD_KEY' in RUNTIME_PAD.read_text(encoding='utf-8'), 'mouse code is on feat/mouse-camera')
-    def test_touchpad_mode_variables_exist_in_runtime_pad(self):
+    def test_key_map_variables_exist_in_runtime_pad(self):
         text = RUNTIME_PAD.read_text(encoding='utf-8')
-        for name in ('TLG_MOUSE_PAD', 'TLG_MOUSE_PAD_MODE', 'TLG_MOUSE_PAD_SENS', 'TLG_MOUSE_PAD_DRAG',
-                     'TLG_MOUSE_PAD_KEY', 'TLG_KEY_MAP'):
-            self.assertIn(f'"{name}"', text)
+        self.assertIn('"TLG_KEY_MAP"', text)
+        self.assertNotIn('"TLG_MOUSE_PAD_KEY"', text)    # touchpad mode is gone
         for name in padsettings.MOUSE_SOURCES:
             self.assertIn(f'"{name}"', text)
-        self.assertIn(padsettings.PAD_DEFAULT_KEY, text)
 
 
 class KeyMapTests(unittest.TestCase):
@@ -154,27 +151,23 @@ class MouseAndEnvironmentTests(unittest.TestCase):
 
     def test_nothing_is_exported_by_default(self):
         self.assertEqual({}, padsettings.environment({}))
-        self.assertEqual({}, padsettings.environment(dict(padsettings.PAD_DEFAULTS)))
-        self.assertEqual({}, padsettings.environment({'mouse_pad_key': padsettings.PAD_DEFAULT_KEY}))
+        # old touchpad-mode settings in a saved profile are ignored
+        self.assertEqual({}, padsettings.environment({'mouse_pad': False, 'mouse_pad_mode': 'toggle'}))
 
     def test_changes_become_iss_variables(self):
-        env = padsettings.environment({'mouse_pad': False, 'mouse_pad_key': 'Mouse X2', 'mouse_pad_mode': 'toggle',
-                                       'mouse_pad_sens': 2.0, 'mouse_pad_drag': 0, 'key_map': 'cross=Q'})
-        self.assertEqual({'ISS_MOUSE_PAD': '0', 'ISS_MOUSE_PAD_KEY': 'Mouse X2', 'ISS_MOUSE_PAD_MODE': 'toggle',
-                          'ISS_MOUSE_PAD_SENS': '2.00', 'ISS_MOUSE_PAD_DRAG': '0', 'ISS_KEY_MAP': 'cross=Q'}, env)
+        env = padsettings.environment({'key_map': 'cross=Q'})
+        self.assertEqual({'ISS_KEY_MAP': 'cross=Q'}, env)
 
     def test_an_invalid_key_map_is_not_exported(self):
         self.assertEqual({}, padsettings.environment({'key_map': 'cross'}))
 
     def test_build_env_uses_it_and_the_system_wins(self):
         run = logic.tlg_run
-        settings = dict(run.DEFAULT_SETTINGS, mouse_pad_mode='toggle', key_map='cross=Q')
+        settings = dict(run.DEFAULT_SETTINGS, key_map='cross=Q')
+        self.assertEqual('cross=Q', run.build_env(settings)['ISS_KEY_MAP'])
         with mock.patch.dict(os.environ, {'ISS_KEY_MAP': 'cross=E'}):
             env = run.build_env(settings)
-        self.assertEqual('toggle', env['ISS_MOUSE_PAD_MODE'])
         self.assertEqual('cross=E', env['ISS_KEY_MAP'])     # set outside the launcher: it wins
-        env = run.build_env(dict(run.DEFAULT_SETTINGS))
-        self.assertNotIn('ISS_MOUSE_PAD_MODE', env)
 
     def test_pad_kind(self):
         kinds = [padsettings.pad_kind(n) for n in ('DualSense', 'DualShock 4', 'Xbox', 'Switch Pro', 'Foo', None)]
@@ -427,10 +420,6 @@ class StringsTests(unittest.TestCase):
             self.assertIn('pad_btn_' + button, STRINGS)
         for action in padsettings.HOST_ACTIONS:
             self.assertIn('pad_act_' + action, STRINGS)
-        if HAVE_QT:
-            from qt.controls import PAD_KEY_LABELS
-            for label in PAD_KEY_LABELS.values():
-                self.assertIn(label, STRINGS)
         for code in ('keymap_err_format', 'keymap_err_button', 'keymap_err_empty', 'keymap_err_many',
                      'keymap_err_long', 'keymap_warn_key'):
             self.assertIn(code, STRINGS)
@@ -733,33 +722,9 @@ class ControllerTests(unittest.TestCase):
         self.assertFalse(self.controls.mouseEnabled)
         self.assertEqual('Turn the mouse on', self.controls.mouseButtonText)
         self.assertTrue(all(r['disabled'] for r in self.controls.mouse_model.rows))
-        self.assertTrue(all(r['disabled'] for r in self.controls.touch_model.rows))
         self.controls.toggleMouse()
         self.assertNotIn('mouse_enabled', self.ini_text())
         self.assertFalse(any(r['disabled'] for r in self.controls.mouse_model.rows))
-
-    def test_touchpad_mode_goes_to_the_environment(self):
-        self.controls.setValue('p:mouse_pad_mode', 'toggle')
-        self.controls.setValue('p:mouse_pad_key', 'Mouse X2')
-        self.controls.setValue('p:mouse_pad_sens', '2.5')
-        self.controls.setValue('p:mouse_pad_drag', '0')
-        saved = self.saved_settings()
-        self.assertEqual(('toggle', 'Mouse X2', 2.5, 0),
-                         (saved['mouse_pad_mode'], saved['mouse_pad_key'], saved['mouse_pad_sens'], saved['mouse_pad_drag']))
-        env = logic.tlg_run.build_env(self.backend.settings)
-        self.assertEqual(('toggle', 'Mouse X2', '2.50', '0'),
-                         (env['ISS_MOUSE_PAD_MODE'], env['ISS_MOUSE_PAD_KEY'], env['ISS_MOUSE_PAD_SENS'],
-                          env['ISS_MOUSE_PAD_DRAG']))
-        self.controls.setValue('p:mouse_pad', '0')
-        self.assertEqual('0', logic.tlg_run.build_env(self.backend.settings)['ISS_MOUSE_PAD'])
-        row = self.controls.touch_model.get('p:mouse_pad_drag')
-        self.assertEqual('never', row['valueText'])
-
-    def test_a_hand_edited_pad_key_still_shows(self):
-        self.backend.settings['mouse_pad_key'] = 'Right Alt'
-        self.controls.rebuild()
-        row = self.controls.touch_model.get('p:mouse_pad_key')
-        self.assertEqual('Custom: Right Alt', row['options'][row['index']]['label'])
 
     def test_keyboard_table_marks_remapped_buttons(self):
         rows = {r['name']: r for r in self.controls.keyRows}

@@ -16,7 +16,7 @@ static void __attribute__((ms_abi)) edit_angles(float *a,const void *data,const 
     a[0]+=0.25f;a[1]=0.5f;
 }
 int main(){
-    std::vector<unsigned char> image(0xe16c41);
+    std::vector<unsigned char> image(0xe16c42);
     memcpy(image.data()+0x14ebc5,iss_mouse_expected,sizeof(iss_mouse_expected));
     const unsigned char follow[]={0x48,0x8d,0x05,0xcb,0xd8,0xcc,0};
     memcpy(image.data()+0x14936e,follow,sizeof(follow));
@@ -58,12 +58,12 @@ int main(){
     runtime_mouse_aim_camera(angles,data,ctx);
     const float turn=5.12f*0.017453292519943295f;
     assert(fabsf(angles[0]+turn)<0.00001f && fabsf(angles[1]-turn)<0.00001f);
-    assert(angles[2]==7 && angles[3]==9 && image[0xe16c40]==1);
+    assert(angles[2]==7 && angles[3]==9 && image[0xe16c40]==1 && image[0xe16c41]==1);
     float saved[4];memcpy(saved,angles,16);clock_us+=16000;runtime_mouse_aim_camera(angles,data,ctx);
     assert(!memcmp(saved,angles,16)); // Each delta consumed once.
     runtime_mouse_aim_motion(100,100,1,0,1);runtime_mouse_aim_motion(0,0,1,0,0);
     clock_us+=16000;runtime_mouse_aim_camera(angles,data,ctx);
-    assert(!memcmp(saved,angles,16) && !image[0xe16c40]); // Capture loss clears pending/follow.
+    assert(!memcmp(saved,angles,16) && !image[0xe16c40] && !image[0xe16c41]); // Capture loss clears pending/follow.
     runtime_mouse_aim_motion(100,100,1,0,1);clock_us+=1000000;
     runtime_mouse_aim_camera(angles,data,ctx);assert(!memcmp(saved,angles,16)); // Pause: no resumed jump.
     runtime_mouse_aim_motion(0,100,1,1,1);clock_us+=16000;runtime_mouse_aim_camera(angles,data,ctx);

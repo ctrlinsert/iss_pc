@@ -796,7 +796,7 @@ def build_env(settings, extra=None):
     env['ISS_WRITE_MERGE'] = os.environ.get('ISS_WRITE_MERGE', '1' if settings.get('write_merge', True) else '0')
     env['ISS_DEFERRED_READBACK'] = os.environ.get('ISS_DEFERRED_READBACK', '1' if settings.get('deferred_readback', True) else '0')
     env['ISS_STICK_DEADZONE'] = os.environ.get('ISS_STICK_DEADZONE', f"{int(settings.get('stick_deadzone', 10)) / 100:.2f}")
-    for name, value in padsettings.environment(settings).items():   # mouse touchpad mode, TLG_KEY_MAP
+    for name, value in padsettings.environment(settings).items():   # TLG_KEY_MAP
         env.setdefault(name, value)
     env['ISS_LANGUAGE'] = os.environ.get('ISS_LANGUAGE', str(GAME_LANGUAGES[resolve_game_language(settings)]))
     if settings.get('ui_language', 'auto') != 'auto':

@@ -78,9 +78,6 @@ void SaveProgress(int kind, int active, int percent, const char* text);
 /// The graffiti guide (sensor mode without a gyro) in the middle of the screen, closed with a
 /// button; `force` false shows it only the first time (remembered in tlg.ini).
 void ShowGraffitiGuide(bool force);
-/// Touchpad mode of the mouse (src/runtime_pad.c): a small touchpad with the virtual finger in
-/// the bottom-left corner while `active` (x, y: 0..1 over the pad). Any thread.
-void SetMousePad(bool active, float x, float y, bool touching, bool clicking);
 /// "Game saved" in the bottom-right corner.
 void SaveToast(int kind);
 

@@ -37,9 +37,12 @@ typedef struct {
     int swipe_hold;   /* after a swipe, a still-held key keeps the finger at the end (default 1) */
     float flick_speed;/* a swipe needs one sample this fast, counts per ms (default 1.5; 0: off) */
     int clicks;       /* a tap clicks the pad and a hold presses it (default 0: touch only) */
+    float steer;      /* while steering (the caller starts it: a tap of the key at a prompt that
+                       * reads the finger), the finger moves this many pad widths per mouse unit
+                       * (default 1/400; 0: off). A held press never steers: it waits for a flick. */
 } InteractParams;
 
-enum { INTERACT_IDLE, INTERACT_DECIDING, INTERACT_TAP, INTERACT_HOLD, INTERACT_SWIPE, INTERACT_SPENT };
+enum { INTERACT_IDLE, INTERACT_DECIDING, INTERACT_TAP, INTERACT_HOLD, INTERACT_SWIPE, INTERACT_SPENT, INTERACT_STEER };
 
 typedef struct {
     int state;
@@ -55,6 +58,7 @@ typedef struct {
     int swipe_prompt; /* set by the caller: the game is reading where the finger is (a swipe prompt
                        * is up), so a press waits for its flick instead of holding, and a flick
                        * during a hold still swipes */
+    float sx, sy;     /* INTERACT_STEER: where the finger is, 0..1 */
 } InteractGesture;
 
 typedef struct {
@@ -66,7 +70,7 @@ typedef struct {
 } InteractOut;
 
 static inline InteractParams interact_default_params(void) {
-    return (InteractParams){60.0f,250000u,250000u,1,1.5f,0};
+    return (InteractParams){60.0f,250000u,250000u,1,1.5f,0,1.0f/400.0f};
 }
 
 /* Snaps a motion to its main axis: -1/0/+1 each, one of them 0. */
@@ -85,7 +89,7 @@ static inline int interact_decided(float x, float y, float threshold) {
 }
 static inline void interact_begin(InteractGesture *g, int state, uint64_t now) {
     g->state=state; g->since=now;
-    if (state==INTERACT_TAP || state==INTERACT_HOLD || state==INTERACT_SWIPE) g->id=g->id>=200 ? 40 : g->id+1;
+    if (state==INTERACT_TAP || state==INTERACT_HOLD || state==INTERACT_SWIPE || state==INTERACT_STEER) g->id=g->id>=200 ? 40 : g->id+1;
 }
 
 /* One sample of a gesture already under way (not IDLE). */
@@ -147,6 +151,30 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
         return o;
     }
     o.id=g->id;
+    if (g->state==INTERACT_STEER) {
+        /* Let go without steering: a tap, as a release with no flick is. */
+        if (!held) { if (!g->swiped) interact_begin(g,INTERACT_TAP,now); else g->state=INTERACT_IDLE; return o; }
+        if (mdx!=0.0f || mdy!=0.0f) {
+            g->swiped=1; /* (here: the finger was moved) */
+            /* A flick still swipes (a door after a pause): a burst at flick speed that goes
+             * past the threshold; slower steering starts the burst afresh. */
+            const float dt=g->last && now>g->last ? (float)(now-g->last)/1000.0f : 8.0f;
+            const float v=sqrtf(mdx*mdx+mdy*mdy)/dt;
+            if (p->flick_speed>0.0f && v>=2.0f*p->flick_speed) { g->ax+=mdx; g->ay+=mdy; }
+            else g->ax=g->ay=0.0f;
+            if (p->threshold>0 && interact_decided(g->ax,g->ay,2.0f*p->threshold)) {
+                interact_snap(g->ax,g->ay,&g->dx,&g->dy);
+                interact_begin(g,INTERACT_SWIPE,now);
+                return interact_step(g,p,held,0,0,0,0,now);
+            }
+        }
+        g->last=now;
+        const float lo=0.02f, hi=0.98f;
+        g->sx=fminf(fmaxf(g->sx+mdx*p->steer,lo),hi);
+        g->sy=fminf(fmaxf(g->sy+mdy*p->steer*(1920.0f/943.0f),lo),hi); /* the same distance either way */
+        o.touch=1; o.x=g->sx; o.y=g->sy; o.owns=1;
+        return o;
+    }
     const uint64_t t=now-g->since;
     if (g->state==INTERACT_TAP) {
         if (t>=INTERACT_LEAD_US+INTERACT_CLICK_US+INTERACT_TAIL_US) { g->state=held ? INTERACT_SPENT : INTERACT_IDLE; o.owns=held; return o; }
@@ -164,7 +192,12 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
     if (g->state==INTERACT_HOLD && held && g->swipe_prompt && p->threshold>0 && (mdx!=0.0f || mdy!=0.0f)) {
         /* A swipe prompt came up during a hold: a flick still swipes (the finger lifts from the
          * centre, then slides). Only at a swipe prompt, so looking around during a drain stays the
-         * camera. It needs a real flick (speed and distance), not a slow drift. */
+         * camera. It needs a real flick (speed and distance), not a slow drift. The game reads
+         * the finger only once it is down, so a press made while turning toward a door could not
+         * know it was a swipe prompt: that turn was the approach, not panning, and is dropped so
+         * the flick counts as it is (a flick along the turn was swallowed, one across it read as
+         * up or down). From then on the mouse is the finger's, not the camera's. */
+        if (g->mouse_off) { g->mouse_off=0; g->bvx=g->bvy=0.0f; g->ax=g->ay=0.0f; g->peak=0.0f; }
         const float dt=g->last && now>g->last ? (float)(now-g->last)/1000.0f : 8.0f;
         /* Pressed while panning: the pan, and anything carrying on in its direction, stays camera. */
         float sx=mdx-g->bvx*dt, sy=mdy-g->bvy*dt;
@@ -207,7 +240,8 @@ static inline InteractOut interact_step(InteractGesture *g, const InteractParams
 
 static inline int interact_owns_mouse_state(const InteractGesture *g) {
     if (g->state==INTERACT_DECIDING) return !g->mouse_off;
-    return g->state==INTERACT_SWIPE;
+    if (g->state==INTERACT_HOLD) return g->swipe_prompt; /* the prompt is ready: the mouse is interact input */
+    return g->state==INTERACT_SWIPE || g->state==INTERACT_STEER;
 }
 /* held: the key is down. mdx/mdy: mouse counts since the last sample. dir_x/dir_y: a direction
  * key or stick (-1/0/+1). mouse_moving: the mouse was turning the camera just before this sample,

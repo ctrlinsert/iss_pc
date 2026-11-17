@@ -168,6 +168,7 @@ struct Values {
     // Mouse and keyboard (src/runtime_pad.c through tlggpu_input_settings; native direct aim):
     // the mouse turns the camera (right stick). Live from the menu.
     std::atomic<bool> mouse_enabled{true}, mouse_invert_y{false};
+    std::atomic<bool> input_strict{false}; // one input device at a time (src/input_device.h)
     /// Controller vibration (src/runtime_pad.c pad_vibration). Live from the menu.
     std::atomic<bool> rumble{true};
     std::atomic<float> mouse_sensitivity{1.0f};

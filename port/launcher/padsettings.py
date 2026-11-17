@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Keyboard, mouse and touchpad-mode settings of the game, without Qt (the Controls screen uses it;
+"""Keyboard and mouse settings of the game, without Qt (the Controls screen uses it;
 infamous_run.build_env hands the environment ones to the game).
 
 Every name here was checked in the game's code:
   - port/src/runtime_pad.c       key_map (default keyboard), ps_names, apply_button_map (TLG_KEY_MAP:
                                  "<ps4 button>=<key>[|<key>...]", comma separated, "none"), the mouse
-                                 sources, load_pad_mode (TLG_MOUSE_PAD, _MODE, _SENS, _DRAG, _KEY)
+                                 sources
   - port/gpu/shim/tlg_settings.cpp  the tlg.ini keys mouse_enabled, mouse_sensitivity, mouse_invert_y,
                                  native direct-aim sensitivity range
 The mouse code is on the feat/mouse-camera branch; with a game build that does not have it the keys
@@ -144,35 +144,10 @@ def mouse_update(key, value):
     return {key: None if text == default else text}
 
 
-# ------------------------------------------------------- touchpad mode and key map (environment)
-PAD_DEFAULTS = {'mouse_pad': True, 'mouse_pad_key': '', 'mouse_pad_mode': 'hold',
-                'mouse_pad_sens': 1.0, 'mouse_pad_drag': 80}
-PAD_DEFAULT_KEY = 'Left Ctrl|Mouse X1'     # runtime_pad.c load_pad_mode
-PAD_KEY_CHOICES = ('', 'Left Ctrl', 'Mouse X1', 'Mouse X2', 'Right Ctrl|Mouse X1')   # '' = default
-PAD_MODES = ('hold', 'toggle')
-PAD_SENS_RANGE = (0.1, 10.0)
-PAD_DRAG_RANGE = (0, 200)    # 0 = a drag never releases the click
-
-
+# ------------------------------------------------------------------- key map (environment)
 def environment(settings):
     """ISS_* variables for the settings that differ from the game's defaults ({} when none does)."""
     env = {}
-    if settings.get('mouse_pad', True) is False:
-        env['ISS_MOUSE_PAD'] = '0'
-    key = str(settings.get('mouse_pad_key', '') or '').strip()
-    if key and key != PAD_DEFAULT_KEY:
-        env['ISS_MOUSE_PAD_KEY'] = key
-    if settings.get('mouse_pad_mode', 'hold') == 'toggle':
-        env['ISS_MOUSE_PAD_MODE'] = 'toggle'
-    try:
-        sens = float(settings.get('mouse_pad_sens', 1.0))
-        drag = int(settings.get('mouse_pad_drag', 80))
-    except (TypeError, ValueError):
-        sens, drag = 1.0, 80
-    if abs(sens - 1.0) > 1e-6:
-        env['ISS_MOUSE_PAD_SENS'] = f'{min(max(sens, PAD_SENS_RANGE[0]), PAD_SENS_RANGE[1]):.2f}'
-    if drag != 80:
-        env['ISS_MOUSE_PAD_DRAG'] = str(min(max(drag, PAD_DRAG_RANGE[0]), PAD_DRAG_RANGE[1]))
     key_map = str(settings.get('key_map', '') or '').strip()
     if key_map:
         _, errors, _ = parse_key_map(key_map)
