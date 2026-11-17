@@ -1623,6 +1623,7 @@ std::size_t Rasterizer::Draw(bool is_indexed, u32 index_offset,
 
 namespace {
 struct LeanDraw {
+    const GraphicsPipeline* pipeline = nullptr;
     bool valid = false;
     bool indexed = false;
     u32 index_offset = 0;
@@ -1660,7 +1661,8 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline,bool is_indexed,u32
     std::vector<NativeImageCapture> pass_capture;
     if (pass_learn_key) native_image_capture = &pass_capture;
     // Probe-lighting lookup windows: the bound draw's index range is known here (LeanLookupBind).
-    g_lean_draw = LeanDraw{.valid = true, .indexed = is_indexed, .index_offset = index_offset};
+    g_lean_draw = LeanDraw{
+        .pipeline = pipeline, .valid = true, .indexed = is_indexed, .index_offset = index_offset};
     const bool bound_resources = BindResources(pipeline);
     g_lean_draw.valid = false;
     if (pass_learn_key) native_image_capture = nullptr;
@@ -4855,7 +4857,8 @@ void Rasterizer::TraceShaderResources(const Shader::Info& stage) {
 // draw reads are made resident and current: per instance, voff + [min index, max index] of the
 // draw (+ VGT index offset). nullptr when the draw does not fit the scheme (indirect draws,
 // GPU-written indices or instances, no 212-byte instance buffer): the caller binds it normally.
-const VideoCore::Buffer* Rasterizer::LeanLookupBind(const Shader::Info& stage, VAddr base,
+const VideoCore::Buffer* Rasterizer::LeanLookupBind(const GraphicsPipeline* pipeline,
+                                                    const Shader::Info& stage, VAddr base,
                                                     u64 size, bool indexed, u32 index_offset) {
     static const bool enabled = [] {
         const char* p = std::getenv("ISS_LEAN_PROBE_LOOKUP");
@@ -4863,7 +4866,7 @@ const VideoCore::Buffer* Rasterizer::LeanLookupBind(const Shader::Info& stage, V
         std::fprintf(stderr, "PORT_TUNING lean_probe_lookup=%d\n", on ? 1 : 0);
         return on;
     }();
-    if (!enabled || stage.hw_stage != Shader::HwStage::Vertex) {
+    if (!enabled || !pipeline || stage.hw_stage != Shader::HwStage::Vertex) {
         return nullptr;
     }
     constexpr u32 InstanceStride = 212, VoffOffset = 188;
@@ -4880,8 +4883,16 @@ const VideoCore::Buffer* Rasterizer::LeanLookupBind(const Shader::Info& stage, V
     }
     const auto& regs = DrawRegs();
     const u32 num_instances = std::max<u32>(1, regs.num_instances.NumInstances());
-    if (!instances || instances_size < u64(num_instances) * InstanceStride ||
-        buffer_cache.HasGpuData(instances, u64(num_instances) * InstanceStride)) {
+    // The vertex offset (VGT or a fetch-shader user-data offset) and first instance, as the
+    // draw records them. Whether the shader's vertex id includes the vertex offset depends on
+    // its runtime info (vertex_sgpr_offset): both ranges are made resident.
+    const auto [vertex_offset, first_instance] =
+        GetDrawOffsets(regs, stage, pipeline->GetFetchShader());
+    const u64 records_begin = u64(first_instance) * InstanceStride;
+    const u64 records_bytes = u64(num_instances) * InstanceStride;
+    if (!instances || instances_size < records_begin + records_bytes ||
+        memory->ClampRangeSize(instances + records_begin, records_bytes) != records_bytes ||
+        buffer_cache.HasGpuData(instances + records_begin, records_bytes)) {
         return nullptr;
     }
     // The draw's vertex index range.
@@ -4892,7 +4903,9 @@ const VideoCore::Buffer* Rasterizer::LeanLookupBind(const Shader::Info& stage, V
         const u32 isize = is16 ? 2 : 4;
         const VAddr iaddr = regs.index_base_address.Address<VAddr>() +
                             u64(index_offset) * isize;
-        if (buffer_cache.HasGpuData(iaddr, u64(regs.num_indices) * isize)) return nullptr;
+        const u64 ibytes = u64(regs.num_indices) * isize;
+        if (memory->ClampRangeSize(iaddr, ibytes) != ibytes || buffer_cache.HasGpuData(iaddr, ibytes))
+            return nullptr;
         const u8* src = reinterpret_cast<const u8*>(uintptr_t(iaddr));
         min_index = ~0u;
         for (u32 i = 0; i < regs.num_indices; ++i) {
@@ -4907,13 +4920,18 @@ const VideoCore::Buffer* Rasterizer::LeanLookupBind(const Shader::Info& stage, V
     } else {
         max_index = regs.num_indices - 1;
     }
-    const u64 first = u64(min_index) + regs.index_offset;
-    const u64 last = u64(max_index) + regs.index_offset;
+    const std::array<std::pair<u64, u64>, 2> ranges{{
+        {min_index, max_index},
+        {u64(min_index) + vertex_offset, u64(max_index) + vertex_offset},
+    }};
     // Slices per instance (instances often share a voff), merged.
     std::array<std::pair<u64, u64>, 32> slices;
     u32 count = 0;
-    const u8* records = reinterpret_cast<const u8*>(uintptr_t(instances));
-    for (u32 i = 0; i < num_instances; ++i) {
+    const u8* records = reinterpret_cast<const u8*>(uintptr_t(instances + records_begin));
+    for (u32 r = 0; r < num_instances * 2; ++r) {
+        const u32 i = r / 2;
+        const auto [first, last] = ranges[r % 2];
+        if (r % 2 == 1 && vertex_offset == 0) continue;
         u32 voff;
         std::memcpy(&voff, records + u64(i) * InstanceStride + VoffOffset, 4);
         const u64 begin = 2 * (u64(voff) + first), end = 2 * (u64(voff) + last + 1);
@@ -5202,8 +5220,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                     !explicit_qid1 && !desc.is_written && desc.is_formatted &&
                             vsharp.GetStride() == 2 && size > LeanLookupMinBytes &&
                             g_lean_draw.valid
-                        ? LeanLookupBind(stage, vsharp.base_address, size, g_lean_draw.indexed,
-                                         g_lean_draw.index_offset)
+                        ? LeanLookupBind(g_lean_draw.pipeline, stage, vsharp.base_address, size,
+                                         g_lean_draw.indexed, g_lean_draw.index_offset)
                         : nullptr;
                 const auto [buffer, offset] = [&]() -> std::pair<const VideoCore::Buffer*, u64> {
                     if (lean_arena) {

@@ -401,7 +401,7 @@ bool Rasterizer::NativeMaterialBind(const NativeMaterialTemplate& t) {
         const VideoCore::Buffer* lean =
             !desc.is_written && desc.is_formatted && sharp.GetStride() == 2 &&
                     size > LeanLookupMinBytes
-                ? LeanLookupBind(stage, sharp.base_address, size, true, 0)
+                ? LeanLookupBind(t.pipeline, stage, sharp.base_address, size, true, 0)
                 : nullptr;
         const auto [buffer, offset] =
             lean ? std::pair<const VideoCore::Buffer*, u64>{lean, lean->Offset(sharp.base_address)}
