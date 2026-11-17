@@ -555,8 +555,14 @@ void Rasterizer::DumpCommand(std::string_view kind, const Pipeline* pipeline,
                     continue;
                 }
                 const auto vsharp = desc.GetSharp(*stage);
-                line += fmt::format(" b{:x}+{:x}{}", vsharp.base_address, vsharp.GetSize(),
-                                    desc.is_written ? "w" : "");
+                // Stride, data/number format and dst_sel matter for typed (FORMAT) loads.
+                line += fmt::format(" b{:x}+{:x}{}:s{}d{}n{}x{}{}{}{}{}", vsharp.base_address,
+                                    vsharp.GetSize(), desc.is_written ? "w" : "",
+                                    u32(vsharp.stride), u32(vsharp.data_format),
+                                    u32(vsharp.num_format), u32(vsharp.dst_sel_x),
+                                    u32(vsharp.dst_sel_y), u32(vsharp.dst_sel_z),
+                                    u32(vsharp.dst_sel_w), desc.is_formatted ? "F" : "",
+                                    vsharp.swizzle_enable ? "Z" : "");
             }
             for (const auto& desc : stage->images) {
                 const auto tsharp = desc.GetSharp(*stage);
