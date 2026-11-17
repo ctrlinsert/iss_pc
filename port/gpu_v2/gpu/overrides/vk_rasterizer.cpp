@@ -20,6 +20,8 @@
 #include "feedback_join.h"
 #include "infamous_renderer/secondary_batch_probe.h"
 #include <unordered_set>
+#include <map>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <intrin.h>
@@ -289,6 +291,28 @@ struct FrameDumpState {
 };
 FrameDumpState g_dump;
 
+/// ISS_COHERENCE_AUDIT=<seconds>: during normal play every frame audits a few bindings it has not
+/// checked yet this cycle (see AuditBindings); each cycle of <seconds> starts over. Spreading the
+/// readbacks keeps the cost to a few small waits per frame instead of one long hitch. 0 or unset
+/// = off. Diagnostic only.
+u32 AuditIntervalSeconds() {
+    static const u32 seconds = [] {
+        const char* p = std::getenv("ISS_COHERENCE_AUDIT");
+        const u32 v = p ? static_cast<u32>(std::strtoul(p, nullptr, 10)) : 0;
+        return v == 0 ? 0u : std::max<u32>(v, 2);
+    }();
+    return seconds;
+}
+bool g_audit_frame = false;
+u32 g_audit_index = 0;     ///< Audit cycle.
+u32 g_audit_frame_checks = 0; ///< Readbacks this frame.
+constexpr u32 AuditChecksPerFrame = 8;
+struct AuditStat {
+    u64 frames = 0;
+    u64 bytes = 0;
+};
+std::map<std::string, AuditStat> g_audit_stats;
+
 } // Anonymous namespace
 
 bool Rasterizer::IsDumping() const noexcept {
@@ -303,8 +327,105 @@ void Rasterizer::DumpNote(std::string_view kind, std::string_view text) {
              DrawQueue(), text);
 }
 
+// Coherence audit: after each draw or dispatch of an audited frame (every frame of a frame trace,
+// or one frame per ISS_COHERENCE_AUDIT interval during play), the GPU copy of every buffer it
+// read (and the GPU did not write) is compared with guest memory. Each mismatching (shaders,
+// address) pair is logged once ("AUDIT") and counted in a summary ("AUDIT_SUMMARY") every
+// minute, so stale or cut data is found wherever it occurs, without knowing where to look.
+void Rasterizer::AuditBindings(const Pipeline* pipeline) {
+    if (AuditIntervalSeconds() == 0) {
+        return;
+    }
+    // Within a cycle each (address, size) is checked once; a frame trace checks everything.
+    static std::unordered_set<u64> seen;
+    static u32 seen_cycle = ~0u;
+    if (seen_cycle != g_audit_index) {
+        seen.clear();
+        seen_cycle = g_audit_index;
+    }
+    const bool budgeted = g_dump.frames_left == 0;
+    std::string hashes;
+    for (const Shader::Info* stage : pipeline->GetStages()) {
+        if (stage) hashes += fmt::format("{}{:x}", hashes.empty() ? "" : "/", stage->pgm_hash);
+    }
+    const auto& bound = ComputeBindingsActive() ? compute_bindings.bound_buffers : bound_buffers;
+    std::vector<u8> host;
+    for (const auto& b : bound) {
+        if (!b.address || b.is_written || !b.buffer || b.size == 0) continue;
+        if (budgeted && g_audit_frame_checks >= AuditChecksPerFrame) return;
+        if (!seen.insert(b.address ^ (u64(b.size) << 40)).second) continue;
+        const std::string key = fmt::format("{} {:x}+{:x}", hashes, b.address, b.size);
+        if (b.size > 64_MB) {
+            auto& stat = g_audit_stats["over64MB " + key];
+            if (stat.frames++ == 0) {
+                LOG_INFO(Render_Vulkan, "AUDIT a{} {} skipped (over 64 MB)", g_audit_index, key);
+            }
+            continue;
+        }
+        if (buffer_cache.HasGpuData(b.address, b.size)) continue;
+        ++g_audit_frame_checks;
+        const auto download =
+            runtime.GetStagingPool().Request(b.size, VideoCore::MemoryType::HostCached, 16, false);
+        const vk::BufferCopy copy = {.srcOffset = b.offset, .dstOffset = download.offset, .size = b.size};
+        runtime.CopyBuffer(b.buffer, download.buffer, std::span{&copy, 1});
+        scheduler.Finish();
+        download.Invalidate();
+        host.resize(b.size);
+        memory->CopySparseMemory(b.address, host.data(), b.size);
+        const u8* gpu = static_cast<const u8*>(download.mapped);
+        u64 diff = 0, first = ~0ull;
+        for (u32 i = 0; i < b.size; ++i) {
+            if (gpu[i] != host[i]) {
+                if (first == ~0ull) first = i;
+                ++diff;
+            }
+        }
+        if (diff == 0) continue;
+        auto& stat = g_audit_stats[key];
+        stat.bytes += diff;
+        if (stat.frames++ == 0) {
+            LOG_INFO(Render_Vulkan, "AUDIT a{} {} differ={} first=+{:x} guest={:02x} gpu={:02x} [{}]",
+                     g_audit_index, key, diff, first, host[first], gpu[first],
+                     buffer_cache.DescribePages(b.address + first, 4096));
+        }
+    }
+}
+
+void Rasterizer::AuditFrameEnd() {
+    const u32 interval = AuditIntervalSeconds();
+    if (interval == 0) {
+        return;
+    }
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point last_audit = Clock::now(), last_summary = Clock::now();
+    const auto now = Clock::now();
+    g_audit_frame = true;
+    g_audit_frame_checks = 0;
+    if (now - last_audit >= std::chrono::seconds(interval)) {
+        last_audit = now;
+        ++g_audit_index;
+    }
+    if (now - last_summary >= std::chrono::seconds(60) && !g_audit_stats.empty()) {
+        last_summary = now;
+        std::vector<std::pair<const std::string*, const AuditStat*>> rows;
+        for (const auto& [k, v] : g_audit_stats) rows.emplace_back(&k, &v);
+        std::sort(rows.begin(), rows.end(),
+                  [](const auto& a, const auto& b) { return a.second->frames > b.second->frames; });
+        LOG_INFO(Render_Vulkan, "AUDIT_SUMMARY {} cycles, {} mismatching bindings",
+                 g_audit_index, rows.size());
+        for (size_t i = 0; i < rows.size() && i < 64; ++i) {
+            LOG_INFO(Render_Vulkan, "AUDIT_SUMMARY {} frames={} bytes={}", *rows[i].first,
+                     rows[i].second->frames, rows[i].second->bytes);
+        }
+    }
+}
+
 void Rasterizer::DumpAfter(const Pipeline* pipeline) {
-    if (g_dump.frames_left == 0 || !pipeline) {
+    if ((g_dump.frames_left == 0 && !g_audit_frame) || !pipeline) {
+        return;
+    }
+    AuditBindings(pipeline);
+    if (g_dump.frames_left == 0) {
         return;
     }
     const auto& tuning = Common::Perf::GetTuning();
@@ -942,7 +1063,7 @@ bool Rasterizer::PrepareCpSplit(std::string& reason) {
         reason = "feedback_early_submit_enabled";
         return false;
     }
-    if (g_dump.frames_left != 0 ||
+    if (g_dump.frames_left != 0 || g_audit_frame ||
         Common::Perf::FrameDumpActive().load(std::memory_order_relaxed) ||
         Common::Perf::GetTuning().dump_frames.load(std::memory_order_relaxed) != 0) {
         reason = "frame_dump_enabled";
@@ -1786,7 +1907,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline,bool is_indexed,u32
     iss::feedback_join::Recorded();
     DebugState.IncDrawCall();
 
-    if (g_dump.frames_left != 0) [[unlikely]] {
+    if (g_dump.frames_left != 0 || g_audit_frame) [[unlikely]] {
         DumpAfter(pipeline);
     }
     if (cycles) g_draw_cycles.Mark(11);
@@ -1823,7 +1944,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     // ISS_DRAW_PIPE_DEFER: queued to the draw pipe worker behind the draws before it (the
     // arguments are read there, in order), instead of draining the pipe.
     if (draw_pipe_state && draw_pipe_state->defer && UseDrawPipe() && FilterDrawPasses() &&
-        g_dump.frames_left == 0 &&
+        g_dump.frames_left == 0 && !g_audit_frame &&
         Common::Perf::GetTuning().trace_draw.load(std::memory_order_relaxed) == 0) {
         const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline(params);
         if (!pipeline) {
@@ -1989,7 +2110,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     }
     iss::feedback_join::Recorded();
 
-    if (g_dump.frames_left != 0) [[unlikely]] {
+    if (g_dump.frames_left != 0 || g_audit_frame) [[unlikely]] {
         DumpAfter(pipeline);
     }
     ResetBindings(false);
@@ -3822,7 +3943,7 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         }
     }
 
-    if (g_dump.frames_left != 0) [[unlikely]] {
+    if (g_dump.frames_left != 0 || g_audit_frame) [[unlikely]] {
         DumpAfter(pipeline);
     }
     // The accesses of a dispatch of the open run belong to the run.
@@ -3910,7 +4031,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     Sched().ProfileDispatchEnd();
     DebugState.IncDispatch();
 
-    if (g_dump.frames_left != 0) [[unlikely]] {
+    if (g_dump.frames_left != 0 || g_audit_frame) [[unlikely]] {
         DumpAfter(pipeline);
     }
     ResetBindings(true);
@@ -3968,6 +4089,7 @@ void Rasterizer::OnSubmit() {
                          iss::phase::g_skipped.load(), iss::phase::g_flushed.load());
         }
     }
+    AuditFrameEnd();
     // Frame x-ray: a new request dumps the next 2 guest frames.
     if (g_dump.frames_left != 0) {
         LOG_INFO(Render_Vulkan, "DUMP f{} end of frame ({} commands)", g_dump.frame, g_dump.seq);

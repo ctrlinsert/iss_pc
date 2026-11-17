@@ -1047,6 +1047,8 @@ private:
     };
     boost::container::static_vector<BoundVertexRange, 32> dump_vertex_ranges;
     /// Writes the GPU and guest copies of a range to the x-ray folder (waits for the GPU).
+    void AuditBindings(const Pipeline* pipeline);
+    void AuditFrameEnd();
     void DiffBufferToLog(std::string_view name, const VideoCore::Buffer* buffer, u64 offset,
                          VAddr address, u64 size);
     void DumpBufferToFile(std::string_view name, const VideoCore::Buffer* buffer, u64 offset,
