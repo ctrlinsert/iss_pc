@@ -3005,6 +3005,73 @@ static void ShadowSetupExperiment(const ComputePipeline* pipeline) {
                      view, (mode & 2) && view > 0.f && scale > 1.001f ? view * scale : view);
 }
 
+// ISS_DISPATCH_DUMP_ON_F9=<hash>[,<hash>...] (low 32 bits, hex, up to 4) with
+// ISS_DISPATCH_DUMP_DIR=<folder>: after F9, the next dispatch of each of those shaders writes every
+// buffer it reads (up to ISS_DISPATCH_DUMP_MAX_BYTES each, default 4 MiB) to
+// <folder>/dispatch-<hash>-<n>-buf<i>.bin, and the list of them (address, size) to
+// <folder>/dispatch-<hash>-<n>.txt. Buffers the GPU wrote last (their guest copy is stale and a
+// read would fault on this thread) are listed but not written.
+namespace {
+std::atomic<u32> g_dispatch_dump_requests{0};
+}
+} // namespace Vulkan
+namespace VideoCore {
+void RequestDispatchDump() { Vulkan::g_dispatch_dump_requests.fetch_add(1); }
+}
+namespace Vulkan {
+
+static void DumpDispatchOnRequest(const ComputePipeline* pipeline, VideoCore::BufferCache& buffers) {
+    static const std::array<u32, 4> hashes = [] {
+        std::array<u32, 4> h{};
+        const char* p = std::getenv("ISS_DISPATCH_DUMP_ON_F9");
+        for (int i = 0; p && *p && i < 4; ++i) {
+            char* end = nullptr;
+            h[i] = u32(std::strtoul(p, &end, 16));
+            p = (end && *end == ',') ? end + 1 : nullptr;
+        }
+        return h;
+    }();
+    if (!hashes[0] || !pipeline) return;
+    static const char* dir = std::getenv("ISS_DISPATCH_DUMP_DIR");
+    static const u64 max_bytes = [] {
+        const char* p = std::getenv("ISS_DISPATCH_DUMP_MAX_BYTES");
+        return p ? std::strtoull(p, nullptr, 0) : u64{4} << 20;
+    }();
+    // Per shader: the request count it has served.
+    static std::array<std::atomic<u32>, 4> served{};
+    const u32 requests = g_dispatch_dump_requests.load(std::memory_order_relaxed);
+    if (!requests || !dir) return;
+    const auto& info = pipeline->GetStage(Shader::SwStage::Compute);
+    int slot = -1;
+    for (int i = 0; i < 4; ++i)
+        if (hashes[i] && u32(info.pgm_hash) == hashes[i]) slot = i;
+    if (slot < 0) return;
+    u32 done = served[slot].load();
+    if (done >= requests || !served[slot].compare_exchange_strong(done, requests)) return;
+    const u32 hash = hashes[slot];
+    const std::string stem = fmt::format("{}/dispatch-{:08x}-{}", dir, hash, requests);
+    std::FILE* index = std::fopen((stem + ".txt").c_str(), "w");
+    if (!index) return;
+    int bi = 0;
+    for (const auto& res : info.buffers) {
+        const auto buffer = res.GetSharp(info);
+        const u64 address = buffer.base_address;
+        const u64 size = buffer.GetSize();
+        const int i = bi++;
+        const bool gpu = address && size && buffers.IsRegionGpuModified(address, size);
+        std::fprintf(index, "buf%d address=0x%llx size=%llu written=%d stride=%u gpu_modified=%d\n",
+                     i, (unsigned long long)address, (unsigned long long)size, res.is_written ? 1 : 0,
+                     buffer.GetStride(), gpu ? 1 : 0);
+        if (res.is_written || !address || !size || gpu) continue;
+        std::FILE* out = std::fopen(fmt::format("{}-buf{}.bin", stem, i).c_str(), "wb");
+        if (!out) continue;
+        std::fwrite(reinterpret_cast<const void*>(uintptr_t(address)), 1, std::min(size, max_bytes), out);
+        std::fclose(out);
+    }
+    std::fclose(index);
+    std::fprintf(stderr, "DISPATCH_DUMP_F9 cs=%08x request=%u -> %s.txt\n", hash, requests, stem.c_str());
+}
+
 static void TraceDispatchOnce(const ComputePipeline* pipeline, const auto& cs) {
     static const bool enabled = [] {
         const char* p = std::getenv("ISS_DISPATCH_TRACE");
@@ -3147,6 +3214,7 @@ void Rasterizer::DispatchDirect() {
     }
     ShadowSetupExperiment(pipeline);
     TraceDispatchOnce(pipeline, cs_program);
+    DumpDispatchOnRequest(pipeline, buffer_cache);
 
     // Prepare the complete SRT read set before a split packet can touch BindResources.
     // Startup still denies CP_SPLIT until reserve/seal/publish/record is wired for all kinds.

@@ -27,6 +27,7 @@ namespace Gdiplus { using std::min; using std::max; }
 #include <SDL3/SDL.h>
 namespace VideoCore {
 bool DumpReadbackDiagRing(); // buffer_cache.cpp: the readback recorder's last events (F9)
+void RequestDispatchDump();   // vk_rasterizer.cpp: ISS_DISPATCH_DUMP_ON_F9
 }
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -417,6 +418,7 @@ bool WindowSDL::PollEvents() {
                 std::fprintf(stderr, "PERF_MARK key=F9 tick_ms=%llu\n",
                              (unsigned long long)SDL_GetTicks());
                 VideoCore::DumpReadbackDiagRing();
+                VideoCore::RequestDispatchDump();
             }
             // F10: a stutter mark in the timeline (and a visual capture when it is on).
             if (event.key.key == SDLK_F10) {
