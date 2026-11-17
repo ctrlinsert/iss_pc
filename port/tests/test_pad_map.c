@@ -11,10 +11,11 @@ void runtime_power_wheel_request(int index){(void)index;}
 void runtime_power_wheel_visual(int open,int choice){(void)open;(void)choice;}
 void tlggpu_power_wheel_settings(int *enabled,int keys[4],int *instant){*enabled=0;*instant=0;memset(keys,0,4*sizeof(*keys));}
 int runtime_mouse_aim_motion(float dx, float dy, float sensitivity, int invert_y, int active) { (void)dx; (void)dy; (void)sensitivity; (void)invert_y; (void)active; return 0; }
+void runtime_mouse_aim_hold_follow(int on);
+void runtime_mouse_aim_hold_follow(int on) { (void)on; }
 
 /* The GPU library (not linked here): the mouse and the input settings. */
 void tlggpu_mouse_take(TlgGpuMouse *mouse) { memset(mouse,0,sizeof(*mouse)); }
-void tlggpu_mouse_pad_hud(int a, float x, float y, int t, int c) { (void)a; (void)x; (void)y; (void)t; (void)c; }
 void tlggpu_input_settings(TlgGpuInputSettings *settings) { memset(settings,0,sizeof(*settings)); }
 uint64_t tlggpu_total_draws(void) { return 0; }
 void tlggpu_frame_counters(TlgGpuFrameCounters *out) { memset(out,0,sizeof(*out)); }
@@ -118,7 +119,7 @@ int main(void) {
     const uint32_t mleft=1u<<(MOUSE_LEFT-MOUSE_SOURCE), mright=1u<<(MOUSE_RIGHT-MOUSE_SOURCE);
 #define ONLY(code) (memset(kb,0,sizeof(kb)),kb[code]=true)
     ONLY(SDL_SCANCODE_RETURN); assert(menu_keys(kb,0)==BTN_CROSS && map_keys(kb,0)==BTN_OPTIONS);
-    ONLY(SDL_SCANCODE_ESCAPE); assert(menu_keys(kb,0)==BTN_CIRCLE && map_keys(kb,0)==0);
+    ONLY(SDL_SCANCODE_ESCAPE); assert(menu_keys(kb,0)==BTN_CIRCLE && map_keys(kb,0)==BTN_OPTIONS); /* pause in gameplay */
     ONLY(SDL_SCANCODE_Q); assert(menu_keys(kb,0)==BTN_L2 && map_keys(kb,0)==BTN_TRIANGLE);
     ONLY(SDL_SCANCODE_E); assert(menu_keys(kb,0)==BTN_R2);
     ONLY(SDL_SCANCODE_TAB); assert(menu_keys(kb,0)==BTN_R2 && map_keys(kb,0)==CLICK_LEFT);
@@ -133,12 +134,47 @@ int main(void) {
     memset(kb,0,sizeof(kb));
     assert(menu_keys(kb,mleft)==BTN_CROSS && menu_keys(kb,mright)==BTN_CIRCLE && map_keys(kb,mleft)==BTN_R2);
     assert(menu_keys(kb,1u<<(WHEEL_DOWN-MOUSE_SOURCE))==BTN_DOWN);
+    /* Side to side with the mouse: the thumb buttons (X2 is not interact here). */
+    assert(menu_keys(kb,1u<<(MOUSE_X1-MOUSE_SOURCE))==BTN_LEFT && menu_keys(kb,1u<<(MOUSE_X2-MOUSE_SOURCE))==BTN_RIGHT);
     /* Remapped: Shift+names parse; cross=Space only. */
     ButtonMap saved=menu_map;
     assert(apply_button_map(&menu_map,"cross=Space,l2=Shift+Q",true)==2);
     ONLY(SDL_SCANCODE_RETURN); assert(menu_keys(kb,0)==0);
     ONLY(SDL_SCANCODE_Q); assert(menu_keys(kb,0)==0); kb[SDL_SCANCODE_LSHIFT]=true; assert(menu_keys(kb,0)==BTN_L2);
     menu_map=saved;
+    /* The native action keys: a native key leaves its PS4 button in gameplay (Space is jump, not
+     * cross; Esc is pause, not OPTIONS); other gameplay keys stay (W, 1, V). */
+    const uint32_t NJ=1u<<ISS_NA_JUMP, NM=1u<<ISS_NA_MELEE, NE=1u<<ISS_NA_EXECUTE;
+    ONLY(SDL_SCANCODE_SPACE); assert(map_bits(&native_map,kb,0)==NJ && play_keys(kb,0,true)==0 && play_keys(kb,0,false)==BTN_CROSS);
+    ONLY(SDL_SCANCODE_F); assert(map_bits(&native_map,kb,0)==NM && play_keys(kb,0,true)==0);
+    ONLY(SDL_SCANCODE_B); assert(map_bits(&native_map,kb,0)==NE);
+    ONLY(SDL_SCANCODE_LSHIFT); assert(map_bits(&native_map,kb,0)==(1u<<ISS_NA_DASH));
+    ONLY(SDL_SCANCODE_LCTRL); assert(map_bits(&native_map,kb,0)==(1u<<ISS_NA_DROP));
+    ONLY(SDL_SCANCODE_C); assert(map_bits(&native_map,kb,0)==(1u<<ISS_NA_DROP));
+    ONLY(SDL_SCANCODE_E); assert(map_bits(&native_map,kb,0)==((1u<<ISS_NA_USE)|(1u<<ISS_NA_DRAIN)));
+    ONLY(SDL_SCANCODE_ESCAPE); assert(map_bits(&native_map,kb,0)==(1u<<ISS_NA_PAUSE) && play_keys(kb,0,true)==0);
+    ONLY(SDL_SCANCODE_T); assert(map_bits(&native_map,kb,0)==(1u<<ISS_NA_INVESTIGATE) && play_keys(kb,0,true)==0);
+    ONLY(SDL_SCANCODE_W); assert(map_bits(&native_map,kb,0)==0 && play_keys(kb,0,true)==ACT_LS_UP);
+    ONLY(SDL_SCANCODE_1); assert(play_keys(kb,0,true)==BTN_L1);
+    ONLY(SDL_SCANCODE_V); assert(play_keys(kb,0,true)==ACT_INTERACT);
+    memset(kb,0,sizeof(kb));
+    assert(map_bits(&native_map,kb,mleft)==((1u<<ISS_NA_FIRE)|(1u<<ISS_NA_SPRAY)) && play_keys(kb,mleft,true)==0);
+    assert(map_bits(&native_map,kb,mright)==(1u<<ISS_NA_AIM));
+    /* Remapped by action name. */
+    ButtonMap saved_native=native_map;
+    assert(apply_native_map("execute=G,jump=Space|Mouse X1")==2);
+    ONLY(SDL_SCANCODE_G); assert(map_bits(&native_map,kb,0)==NE);
+    ONLY(SDL_SCANCODE_B); assert(map_bits(&native_map,kb,0)==0);
+    memset(kb,0,sizeof(kb)); assert(map_bits(&native_map,kb,1u<<(MOUSE_X1-MOUSE_SOURCE))==NJ);
+    assert(apply_native_map("execute=none")==1);
+    ONLY(SDL_SCANCODE_G); assert(map_bits(&native_map,kb,0)==0);
+    native_map=saved_native;
+    /* Actions the game still reads as a PS4 button press that button too. */
+    assert(native_raw_buttons(1u<<ISS_NA_PAUSE)==BTN_OPTIONS && native_raw_buttons(1u<<ISS_NA_SPRAY)==BTN_R2);
+    assert(native_raw_buttons(1u<<ISS_NA_INVESTIGATE)==BTN_UP && native_raw_buttons(NM|NE|NJ)==0);
+    /* The game hook takes the held actions and each press once. */
+    atomic_store(&native_down,0); atomic_store(&native_latched,NJ);
+    assert(runtime_pad_native_take()==NJ && runtime_pad_native_take()==0);
     /* A menu key held when the menu opens stays silent until released (the Enter that paused). */
     ONLY(SDL_SCANCODE_RETURN);
     menu_latch_update(false,kb,0); menu_latch_update(true,kb,mleft);

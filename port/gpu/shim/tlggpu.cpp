@@ -508,14 +508,12 @@ extern "C" void tlggpu_input_settings(TlgGpuInputSettings* out) {
     const auto& s = TlgSettings::Get();
     out->mouse_enabled = s.mouse_enabled ? 1 : 0;
     out->invert_y = s.mouse_invert_y ? 1 : 0;
+    out->input_strict = s.input_strict ? 1 : 0;
     out->rumble = s.rumble ? 1 : 0;
     out->sensitivity = s.mouse_sensitivity;
     std::snprintf(out->key_map, sizeof(out->key_map), "%s", s.key_map.c_str());
     std::snprintf(out->menu_key_map, sizeof(out->menu_key_map), "%s", s.menu_key_map.c_str());
-}
-
-extern "C" void tlggpu_mouse_pad_hud(int active, float x, float y, int touching, int clicking) {
-    TlgOverlay::SetMousePad(active != 0, x, y, touching != 0, clicking != 0);
+    std::snprintf(out->native_key_map, sizeof(out->native_key_map), "%s", s.native_key_map.c_str());
 }
 
 extern "C" int tlggpu_text_input_begin(const char* initial, const char* prompt) {

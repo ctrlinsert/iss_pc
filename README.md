@@ -63,7 +63,7 @@ By **HayatoG** · YouTube [@hayatog-dev](https://www.youtube.com/@hayatog-dev) �
 - **More useful logs:** every log starts with a `Config:` block (your options, no paths) and shows the `Backports:` lines; the **Support** screen builds the report without personal data. See [Logs and reports](#logs-and-reports).
 - **Controller guides:** ready-made images (Xbox, Switch Pro and 8BitDo, in Portuguese and English) of sensor mode and the touchpad, in [Motion sensor and touchpad](#motion-sensor-and-touchpad) and in the launcher's **Controller guides** screen.
 - **CPUs without F16C (Sandy Bridge, #51):** the game's 13 half-precision conversions (`VCVTPH2PS`/`VCVTPS2PH`) are now emulated at start, bit-exact with the CPU (rounding, denormals, Inf and NaN). The game used to stop with "13 sites use encodings the rewrite cannot emulate".
-- **Mouse:** the mouse turns the camera (right stick) and also plays the **touchpad**. Left = R2, right = L2, middle = R3. **Hold Left Ctrl (or the X1 side button)** and the mouse becomes a finger on the touchpad: left touches/clicks (hold = absorb a power), dragging with the left slides (the "Open Door" swipe, the scanner), right = two fingers (lift the car off Reggie). The window captures the mouse; Esc releases it and a click captures it again. See [Mouse](#mouse).
+- **Mouse:** the mouse turns the camera (right stick). Left = R2, right = L2, middle = R3. The touchpad scenes have their own keys: **E** touches and clicks (hold = absorb a power), **V** and a flick of the mouse swipes (the "Open Door" swipe; hold V for the mobile command centre), a **tap of V** at the hand scanner lets the mouse move the finger, and **V + right click** puts two fingers down (lift the car off Reggie). The window captures the mouse; Esc releases it and a click captures it again. See [Mouse](#mouse).
 - **Graffiti steps on screen:** the first time sensor mode turns on, a screen in the middle shows the steps (shake, spray, aim, leave) with your controller's buttons; "Got it" closes it. The Insert menu has a new **Controls** tab that shows it again and sets the **graffiti aiming speed** (25–200%, also `ISS_SENSOR_AIM`).
 - **Easier graffiti (sensor mode):** sensor mode is now the graffiti's spray can: turning it on (L3+R3) holds the controller on its side, as the game asks ("Hold Wireless Controller Sideways"); **cross/A shakes**, **R2 sprays** and the **left stick aims** the cursor left/right and up/down (it used to move only up and down), slower with a small push, for tracing the stencil. On the keyboard, while T or G hold the controller sideways, the **arrow keys** aim.
 - **Being tested: flickering GPU smoke and particles (#7, #50).** Shader recompiler fixes, partly from the native [Shadow of the Colossus](https://github.com/AjncSystem/ShadowOfTheColossus-PC) port:
@@ -173,7 +173,7 @@ The launcher is the program that opens when you run **inFAMOUS Second Son**. The
 |---|---|
 | **Play** | game folder, game language, detected GPU and version, fixes profile, the occlusion (lights) selector, the Continue/Play button |
 | **Graphics** | window mode, VSync, FPS limit, FSR 1 and sharpening, GPU accuracy, VRAM budget, shader cache, overlay and presets (Performance, Balanced, Quality, Faithful to PS4) |
-| **Controls** | stick dead zone, graffiti aiming speed, mouse (camera and touchpad mode), keyboard map and remapping |
+| **Controls** | stick dead zone, graffiti aiming speed, mouse (camera), keyboard map and remapping |
 | **Fixes** | BP01–BP12, diagnostic (A/B) switches and Insert menu options; Recommended profile and "Like the previous release" |
 | **Saves & data** | data folder, list of saves, backups, `.zip` export/import; see [Saves and data](#saves-and-data) |
 | **Controller guides** | Xbox, Switch Pro and 8BitDo images (Portuguese and English): save, copy, open the folder |
@@ -257,20 +257,11 @@ The port's menu opens with **Insert or F1** (F1 for keyboards without Insert), o
 | Wheel | in the game's menus, one item up or down per notch; free in gameplay (see `ISS_KEY_MAP`) |
 | Sensor on (sensor mode, T or G) | the mouse points the graffiti spray can instead of turning the camera |
 
-**Menu keys** (title and main menus, loading, pause; experimental, the game's prompts still show the PS4 buttons): **Enter**, **Space** or **left click** select (cross); **Esc**, **Backspace** or **right click** go back (circle; Esc keeps the mouse here); **Q / E** and **Shift+Tab / Tab** change tabs (L2 / R2); **F** is triangle (Options and Saves), **R** square (Abandon Mission); the **arrows** and the **wheel** move (d-pad); **P** is OPTIONS. Other keys keep their gameplay job (WASD the left stick, 1 / 3 L1 / R1). A key held when a menu opens or closes does nothing until released. `TLG_MENU_KEY_MAP` or tlg.ini `menu_key_map` remap them (the `ISS_KEY_MAP` syntax, `Shift+` names a Shift chord); `TLG_MENU_KEYS=0` turns them off (then `TLG_MENU_MOUSE` applies as before).
+**Keyboard, mouse and controller together:** both work at once. Only the controls they would fight over take turns: moving (left stick or movement keys) and the camera (right stick, or the mouse and camera keys); the one you started using last wins while both are in use. **One input device at a time** (Insert menu, Mouse; tlg.ini `input_strict=1`, `TLG_INPUT_STRICT=1`) instead lets only the device you used last drive the game, the other ignored until you use it. While the mouse has the camera, the game's follow camera stays off. `TLG_INPUT_PRIORITY=0` mixes everything as before.
 
-**Touchpad mode:** hold **Left Ctrl** or the mouse's **X1 side button**. While the mode is on the camera does not turn: mouse motion moves a virtual finger over the touchpad (a small pad in the bottom-left corner of the screen shows where it is) and the buttons become the finger:
+**Native action keys** (gameplay; experimental): the game's action input ("was melee pressed", "is aim held") answers the keys directly by action, not through PS4 buttons, so actions that share a button on PS4 (melee and execute) get keys of their own. Pause, spray and investigate are still read by the game as PS4 buttons, so their keys also press OPTIONS, R2 and d-pad up. **Space** jump, **Left Shift** dash, **Left Ctrl** or **C** drop from a ledge (circle does both on PS4; here they are apart), **F** melee, **B** execute (apart from melee, so a mispress does not execute), **R** the good choice, **E** use and drain (it touches and clicks the touchpad, as the game expects; hold to drain; `push`, two fingers, has no default key: V + right click does it), **right click** aim, **left click** fire (and spray in the graffiti), **Q** secondary power, **middle click** heavy power, **Z** karma bomb (with a full Karmic Streak), **T** investigate (spy cameras, signal and dead-drop hunts, starting a mission), **Esc** pause. WASD, the mouse camera, V (interact), 1 / 3 and G / Y (sensor mode) keep the jobs below. `TLG_NATIVE_KEY_MAP` or tlg.ini `native_key_map` remap them by action (`"execute=G,jump=Space|Mouse X1"`; the actions are `jump`, `dash`, `melee`, `execute`, `good_choice`, `use`, `drain`, `push`, `aim`, `fire`, `secondary_power`, `heavy_power`, `karma_bomb`, `ping` (no default key: the game does not seem to use it), `pause`, `investigate`, `spray`, `drop`); `TLG_NATIVE_KEYS=0` turns them off (the keys then press the PS4 buttons in the table above). The game's prompts still show the PS4 buttons.
 
-| Gesture (mouse in touchpad mode) | What the game sees | Where to use it |
-|---|---|---|
-| Just move | hovering finger (no touch): places the finger | before a gesture |
-| Left, quick tap | touch + touchpad click | "press the touchpad" interactions |
-| Left, hold still | touch + click held | absorbing/draining powers (smoke, neon...) |
-| Left, drag more than 80 units | the click is released and the finger slides | "Open Door", hand scanner |
-| Middle button (hold and move) | finger with no click | sliding without a click, if a gesture dislikes the click |
-| Right | two fingers on both ends with the touchpad pressed | lifting the car off Reggie |
-
-The finger starts in the middle of the touchpad and stays where you leave it. The keyboard shortcuts (Tab/Backspace, Tab + arrow keys) work as before.
+**Menu keys** (title and main menus, loading, pause; experimental, the game's prompts still show the PS4 buttons): **Enter**, **Space** or **left click** select (cross); **Esc**, **Backspace** or **right click** go back (circle). In gameplay **Esc** opens the pause menu (OPTIONS); the mouse stays captured, and Alt+Tab or the Insert/F1 menu free it. **Q / E** and **Shift+Tab / Tab** change tabs (L2 / R2); **F** is triangle (Options and Saves), **R** square (Abandon Mission); the **arrows** and the **wheel** move (d-pad); with the mouse alone, the **thumb buttons** (back = left, forward = right) go side to side, for option values and sliders; **P** is OPTIONS. Other keys keep their gameplay job (WASD the left stick, 1 / 3 L1 / R1). A key held when a menu opens or closes does nothing until released. `TLG_MENU_KEY_MAP` or tlg.ini `menu_key_map` remap them (the `ISS_KEY_MAP` syntax, `Shift+` names a Shift chord); `TLG_MENU_KEYS=0` turns them off (then `TLG_MENU_MOUSE` applies as before).
 
 **Environment variables** (`ISS_` and `TLG_` work the same; the `mouse_*` ones can also go in `tlg.ini`):
 
@@ -282,15 +273,10 @@ The finger starts in the middle of the touchpad and stays where you leave it. Th
 | `ISS_MOUSE_SMOOTHING` | `0.5` | smoothing (0-0.95) |
 | `ISS_MOUSE_ACCEL` | `0` | acceleration (0-2) |
 | `ISS_MOUSE_DEADZONE` | `0.1` | anti-dead zone: small movements skip the game's dead zone (0-0.5) |
-| `ISS_MOUSE_PAD` | `1` | `0` turns the mouse touchpad mode off |
-| `ISS_MOUSE_PAD_KEY` | `Left Ctrl\|Mouse X1` | touchpad-mode key(s); SDL key names or `Mouse Left/Middle/Right/X1/X2`, separated by `\|` |
-| `ISS_MOUSE_PAD_MODE` | `hold` | `toggle`: one press turns it on, another turns it off |
-| `ISS_MOUSE_PAD_SENS` | `1.0` | finger speed (0.1-10) |
-| `ISS_MOUSE_PAD_DRAG` | `80` | units (the touchpad is 1920 wide) of drag before the click becomes a swipe; `0` = never |
 | `ISS_KEY_MAP` | — | remaps keys and mouse: `"r2=Mouse Left\|F,l2=Mouse Right\|R,r1=Mouse X2,l1=Wheel Down"`; several per button with `\|`, `none` removes all |
 | `ISS_MOUSE_LOG` | `0` | `1` logs what the game gets from the mouse |
 
-The Insert menu's **Controls** tab has the mouse camera settings, and the launcher's **Controls** screen has the same ones, the touchpad mode and the keyboard map. **The mouse is new and has not been tested much in game by other players yet**: if something misbehaves, `ISS_MOUSE=0` turns it off and a report helps.
+The Insert menu's **Controls** tab has the mouse camera settings, and the launcher's **Controls** screen has the same ones and the keyboard map. **The mouse is new and has not been tested much in game by other players yet**: if something misbehaves, `ISS_MOUSE=0` turns it off and a report helps.
 
 **Keyboard (default map):** works with or without a controller (the keys add to the controller's buttons).
 
@@ -302,7 +288,7 @@ The Insert menu's **Controls** tab has the mouse camera settings, and the launch
 | 1 | L1 | 3 | R1 |
 | R | L2 | F | R2 |
 | Z | L3 | C | R3 |
-| Enter | Options | X or Tab / Backspace | touchpad click (left / right) |
+| Enter or Esc | Options (Esc: pause; in menus, back) | X or Tab / Backspace | touchpad click (left / right) |
 | I / K / J / L | d-pad (up / down / left / right) | T / G / Y | simulated sensor mode (see below) |
 | V / Mouse X2 | **interact** (touchpad: see below) | | |
 
@@ -359,7 +345,7 @@ The game asks for the motion sensor and the touchpad in many scenes: graffiti, a
 | Graffiti: turn the controller sideways | turn the controller | L3+R3 (sensor mode): it is on its side at once | press T or G (again to leave) |
 | Graffiti: shake the can | shake the controller | cross/A in sensor mode | Y |
 | Graffiti: spray | R2, aiming with the controller | R2, aiming with the left stick in sensor mode | F or left button (R2), aiming with the mouse or the arrow keys after T or G |
-| Press both ends of the touchpad (lifting the car off Reggie) | two fingers, one on each end | hold View/Select + R1 | hold Tab + Backspace; mouse: Left Ctrl (or X1) + right button |
+| Press both ends of the touchpad (lifting the car off Reggie) | two fingers, one on each end | hold View/Select + R1 | hold Tab + Backspace; V + right click |
 | Touchpad swipe ("Open Door", hand scanner) | swipe a finger | hold View/Select and flick the right stick the asked way | hold Tab + arrow keys; mouse: hold Left Ctrl (or X1), left button and drag |
 | Back to normal after the graffiti | — | L3+R3 again ("Sensor mode off") | — |
 
@@ -569,7 +555,7 @@ O launcher é o programa que abre ao executar **inFAMOUS Second Son**. O novo (Q
 |---|---|
 | **Jogar** | pasta do jogo, idioma do jogo, GPU e versão detectadas, perfil de correções, seletor de oclusão (luzes), botão Continuar/Jogar |
 | **Gráficos** | modo de janela, VSync, limite de FPS, FSR 1 e nitidez, precisão da GPU, orçamento de VRAM, cache de shaders, overlay e predefinições (Desempenho, Equilibrado, Qualidade, Fiel ao PS4) |
-| **Controles** | zona morta dos analógicos, velocidade da mira do grafite, mouse (câmera e modo touchpad), mapa do teclado e remapeamento |
+| **Controles** | zona morta dos analógicos, velocidade da mira do grafite, mouse (câmera), mapa do teclado e remapeamento |
 | **Correções** | BP01–BP12, chaves de diagnóstico (A/B) e opções do menu Insert; perfil Recomendado e "Como a release anterior" |
 | **Saves e dados** | pasta de dados, lista de saves, backups, exportar/importar `.zip`; veja [Saves e dados](#saves-e-dados) |
 | **Guias de controle** | imagens Xbox, Switch Pro e 8BitDo (português e inglês): salvar, copiar, abrir a pasta |
@@ -649,21 +635,8 @@ O mouse funciona com ou sem controle (os botões dele somam aos do controle). A 
 | Botão esquerdo | R2 (usar o poder / atirar) |
 | Botão direito | L2 (mirar) |
 | Botão do meio | R3 |
-| Botões laterais X1 / X2 e rodinha | livres (veja `ISS_KEY_MAP`); X1 também é a tecla do modo touchpad |
+| Botões laterais X1 / X2 e rodinha | livres (veja `ISS_KEY_MAP`) |
 | Sensor ligado (modo sensor, T ou G) | o mouse aponta a lata de spray do grafite em vez de girar a câmera |
-
-**Modo touchpad:** segure **Ctrl esquerdo** ou o **botão lateral X1** do mouse. Enquanto o modo está ligado a câmera não gira: o movimento do mouse leva um dedo virtual pelo touchpad (um quadradinho no canto inferior esquerdo da tela mostra onde ele está) e os botões viram o dedo:
-
-| Gesto (mouse no modo touchpad) | O que o jogo vê | Onde usar |
-|---|---|---|
-| Só mover | dedo suspenso (nenhum toque): posiciona o dedo | antes de um gesto |
-| Esquerdo, tocar rápido | toque + clique do touchpad | interações "aperte o touchpad" |
-| Esquerdo, segurar parado | toque + clique mantidos | absorver/drenar poderes (fumaça, neon...) |
-| Esquerdo, arrastar mais de 80 unidades | o clique solta e o dedo desliza | porta "Open Door", scanner de mão |
-| Botão do meio (segurar e mover) | dedo sem clique | deslizar sem clicar, se um gesto não gostar do clique |
-| Direito | dois dedos nas duas pontas com o touchpad apertado | levantar o carro de cima do Reggie |
-
-O dedo começa no meio do touchpad e fica onde você o deixou. Os atalhos do teclado (Tab/Backspace, Tab + setas) continuam como antes.
 
 **Variáveis de ambiente** (`ISS_` e `TLG_` valem igual; `mouse_*` também podem ir no `tlg.ini`):
 
@@ -675,15 +648,10 @@ O dedo começa no meio do touchpad e fica onde você o deixou. Os atalhos do tec
 | `ISS_MOUSE_SMOOTHING` | `0.5` | suavização (0–0,95) |
 | `ISS_MOUSE_ACCEL` | `0` | aceleração (0–2) |
 | `ISS_MOUSE_DEADZONE` | `0.1` | anti-zona morta: movimentos pequenos pulam a zona morta do jogo (0–0,5) |
-| `ISS_MOUSE_PAD` | `1` | `0` desliga o modo touchpad do mouse |
-| `ISS_MOUSE_PAD_KEY` | `Left Ctrl\|Mouse X1` | tecla(s) do modo touchpad; nomes do SDL ou `Mouse Left/Middle/Right/X1/X2`, separados por `\|` |
-| `ISS_MOUSE_PAD_MODE` | `hold` | `toggle`: um toque na tecla liga, outro desliga |
-| `ISS_MOUSE_PAD_SENS` | `1.0` | velocidade do dedo (0,1–10) |
-| `ISS_MOUSE_PAD_DRAG` | `80` | unidades (touchpad de 1920 de largura) de arrasto até o clique virar deslize; `0` = nunca |
 | `ISS_KEY_MAP` | — | remapeia teclas e mouse: `"r2=Mouse Left\|F,l2=Mouse Right\|R,r1=Mouse X2,l1=Wheel Down"`; vários por botão com `\|`, `none` tira todos |
 | `ISS_MOUSE_LOG` | `0` | `1` mostra no log o que o jogo recebe do mouse |
 
-O menu Insert, aba **Controle**, tem os ajustes da câmera do mouse, e a tela **Controles** do launcher tem os mesmos ajustes, o modo touchpad e o mapa do teclado. **O mouse é novo e ainda foi pouco testado em jogo por outros jogadores**: se algo se comportar mal, `ISS_MOUSE=0` o desliga e o relato ajuda.
+O menu Insert, aba **Controle**, tem os ajustes da câmera do mouse, e a tela **Controles** do launcher tem os mesmos ajustes e o mapa do teclado. **O mouse é novo e ainda foi pouco testado em jogo por outros jogadores**: se algo se comportar mal, `ISS_MOUSE=0` o desliga e o relato ajuda.
 
 **Teclado (mapa padrão):** funciona com ou sem controle (as teclas somam aos botões do controle).
 
@@ -695,7 +663,7 @@ O menu Insert, aba **Controle**, tem os ajustes da câmera do mouse, e a tela **
 | 1 | L1 | 3 | R1 |
 | R | L2 | F | R2 |
 | Z | L3 | C | R3 |
-| Enter | Options | Tab / Backspace | clique do touchpad (esquerdo / direito) |
+| Enter / Esc | Options | Tab / Backspace | clique do touchpad (esquerdo / direito) |
 | I / K / J / L | direcional (cima / baixo / esquerda / direita) | T / G / Y | modo sensor simulado (veja abaixo) |
 
 **Remapear:** `ISS_KEY_MAP` (ou o campo avançado da tela **Controles**) troca teclas e botões do mouse: `"cross=Q,r2=Mouse Left|F"`. Os botões são `cross`, `circle`, `square`, `triangle`, `l1`, `r1`, `l2`, `r2`, `l3`, `r3`, `options`, `up`, `down`, `left`, `right`, `touchpad_left`, `touchpad_right`. Estas teclas também se remapeiam: `interact`, `tilt_right`, `tilt_left`, `shake` (sensor) e as teclas dos analógicos `ls_up`, `ls_down`, `ls_left`, `ls_right`, `rs_up`, `rs_down`, `rs_left`, `rs_right` (as `rs_` também miram a lata de spray e guiam o deslizar com Tab). Uma tecla ligada a um botão deixa a ação que tinha por padrão (`r1=Mouse X2` tira o X2 do interagir).

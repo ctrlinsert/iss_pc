@@ -10,7 +10,7 @@
 #include "common/logging/log.h"
 #include "sdl_window.h"
 
-// runtime_pad.c: a game menu is up and the menu keys bind Esc (back), so Esc keeps the mouse.
+// runtime_pad.c: a key binding has Esc (pause in gameplay, back in menus), so Esc keeps the mouse.
 extern "C" int runtime_pad_menu_keys_active(void);
 #include "tlg_overlay.h"
 #include "tlg_graphics.h"
@@ -138,8 +138,9 @@ bool WindowSDL::HandleMouse(const SDL_Event& event) {
         focused = mouse_test_start != 0; // the test runs unattended
         return false;
     case SDL_EVENT_KEY_DOWN:
-        // Esc is free in the game's layout; the menu (open) and the text/save boxes take it first.
-        // In the game's own menus it is the menu keys' Back, and the mouse stays.
+        // Esc is the game's while a key binding has it (pause in gameplay, back in menus) and the
+        // mouse stays; Alt+Tab or the Insert/F1 menu free it. Unbound, Esc frees the mouse. The
+        // port menu and the text/save boxes take Esc first.
         if (event.key.key == SDLK_ESCAPE && !event.key.repeat && mouse_captured && !runtime_pad_menu_keys_active()) {
             mouse_released = true;
             return true;

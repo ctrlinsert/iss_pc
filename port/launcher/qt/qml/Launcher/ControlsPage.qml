@@ -60,7 +60,7 @@ Item {
                 }
             }
 
-            // ---- sensor / touchpad ---------------------------------------------------------------
+            // ---- sensor mode --------------------------------------------------------------------
             SectionTitle { text: Theme.tr("ctl_sec_sensor"); accent: page.accent }
             Card {
                 Text { width: parent.width; text: Theme.tr("ctl_sensor_body"); wrapMode: Text.WordWrap; color: Theme.textSoft
@@ -86,18 +86,6 @@ Item {
                 width: parent.width; spacing: 2
                 Repeater {
                     model: PadControls.mouseRows
-                    OptionRow { d: model.d; accent: page.accent; onValueSet: (id, value) => PadControls.setValue(id, value) }
-                }
-            }
-
-            // ---- mouse as touchpad ---------------------------------------------------------------------
-            SectionTitle { text: Theme.tr("ctl_sec_touch"); accent: page.accent }
-            Text { width: parent.width; text: Theme.tr("ctl_touch_intro"); wrapMode: Text.WordWrap; color: Theme.textDim
-                   font.family: Theme.fontText; font.pixelSize: 13; lineHeight: 1.35; lineHeightMode: Text.ProportionalHeight }
-            Column {
-                width: parent.width; spacing: 2
-                Repeater {
-                    model: PadControls.touchRows
                     OptionRow { d: model.d; accent: page.accent; onValueSet: (id, value) => PadControls.setValue(id, value) }
                 }
             }

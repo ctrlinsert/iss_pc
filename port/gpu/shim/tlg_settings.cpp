@@ -83,6 +83,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.key_map = value;
         return;
     }
+    if (key == "native_key_map") {
+        v.native_key_map = value;
+        return;
+    }
     if (key == "menu_key_map") {
         v.menu_key_map = value;
         return;
@@ -135,6 +139,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.mouse_enabled = i != 0;
     } else if (key == "mouse_invert_y") {
         v.mouse_invert_y = i != 0;
+    } else if (key == "input_strict") {
+        v.input_strict = i != 0;
     } else if (key == "rumble") {
         v.rumble = i != 0;
     } else if (key == "mouse_sensitivity") {
@@ -285,7 +291,7 @@ void Load() {
         {"TLG_RCAS", "rcas"},                        {"TLG_FRAMES_AHEAD", "frames_queued"},
         {"TLG_SHOW_FPS", "show_fps"},             {"TLG_SENSOR_AIM", "sensor_aim"},
         {"TLG_MOUSE", "mouse_enabled"},           {"TLG_MOUSE_SENS", "mouse_sensitivity"},
-        {"TLG_MOUSE_INVERT_Y", "mouse_invert_y"},
+        {"TLG_MOUSE_INVERT_Y", "mouse_invert_y"}, {"TLG_INPUT_STRICT", "input_strict"},
         {"TLG_RUMBLE", "rumble"},
         {"TLG_DYN_CULL", "dyn_cull"},             {"TLG_DRAW_BUDGET", "draw_budget"},   {"TLG_QUALITY_FLOOR", "quality_floor"},
         {"TLG_QUALITY_TARGET_FPS", "quality_target_fps"}, {"TLG_ISS_TEMPORAL", "iss_temporal"},
@@ -453,6 +459,8 @@ void Save() {
                  int(v.mouse_enabled.load()), v.mouse_sensitivity.load(), int(v.mouse_invert_y.load()),
                  int(v.rumble.load()), v.key_map.c_str());
     if (!v.menu_key_map.empty()) std::fprintf(file, "menu_key_map=%s\n", v.menu_key_map.c_str());
+    if (!v.native_key_map.empty()) std::fprintf(file, "native_key_map=%s\n", v.native_key_map.c_str());
+    std::fprintf(file, "input_strict=%d\n", int(v.input_strict.load()));
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");
