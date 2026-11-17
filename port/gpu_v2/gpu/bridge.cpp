@@ -533,9 +533,12 @@ extern "C" int iss_gpu_initialize(const IssGpuCallbacks *callbacks){
                     auto& e=tuning.dump_after[slot];
                     const size_t c2=value.find(':',c1+1);
                     const std::string what=value.substr(c1+1,c2==std::string::npos?std::string::npos:c2-c1-1);
-                    e.count=c2==std::string::npos?1u:u32(std::strtoul(value.c_str()+c2+1,nullptr,0));
+                    // n<indices> in place of the occurrence: every draw with that index count.
+                    if(c2!=std::string::npos&&value[c2+1]=='n'){e.count=0;e.width=u32(std::strtoul(value.c_str()+c2+2,nullptr,10));}
+                    else e.count=c2==std::string::npos?1u:u32(std::strtoul(value.c_str()+c2+1,nullptr,0));
                     if(what=="vb")e.address=1;
                     else if(what=="srt")e.address=2;
+                    else if(e.count==0)known=false;
                     else{
                         e.address=std::strtoull(what.c_str(),nullptr,16);
                         const size_t sl=what.find('/');

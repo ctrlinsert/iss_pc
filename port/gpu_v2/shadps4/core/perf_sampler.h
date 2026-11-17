@@ -128,7 +128,8 @@ void ApplyGameProfile(std::string_view serial);
  *                                 writes the vertex buffers of the draw instead (GPU copy and
  *                                 guest memory, to compare), "hash:srt" the buffers bound
  *                                 to its shaders (over 64 MB skipped). In ISS_TUNING (renderer
- *                                 v2) repeat dump_after= once per entry
+ *                                 v2) repeat dump_after= once per entry; "hash:srt:n648"
+ *                                 matches every draw with 648 indices instead of the n-th
  *   skip_redundant_binds = 0      1: pipelines, push constants, vertex inputs and descriptor
  *                                 pushes equal to the last ones of the command buffer are not
  *                                 recorded again

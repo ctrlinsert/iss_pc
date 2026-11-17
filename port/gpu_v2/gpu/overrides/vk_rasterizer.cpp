@@ -325,7 +325,13 @@ void Rasterizer::DumpAfter(const Pipeline* pipeline) {
         if (!match) {
             continue;
         }
-        if (++g_dump.after_counts[i] != entry.count.load(std::memory_order_relaxed)) {
+        if (const u32 count = entry.count.load(std::memory_order_relaxed); count == 0) {
+            // "hash:srt:n<indices>": every draw of the shader with that index count.
+            if (pipeline->IsCompute() ||
+                DrawRegs().num_indices != entry.width.load(std::memory_order_relaxed)) {
+                continue;
+            }
+        } else if (++g_dump.after_counts[i] != count) {
             continue;
         }
         const u64 address = entry.address.load(std::memory_order_relaxed);
