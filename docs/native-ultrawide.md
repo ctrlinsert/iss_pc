@@ -316,3 +316,7 @@ the width and lost its top and bottom (seen in game). `src/iss_native_movie.h` t
 contain fit with three single-use constants: 16 and 9 become the canvas size (k = 1, the whole
 picture) and the quad narrows to the centred 16:9 box. Still to confirm in game: the side bars
 are black, not stale frames.
+
+### LOD and detail distance at any aspect
+
+The game scales its distance-based LOD and detail tests by the camera's horizontal tangent (camera +0x5a0). With Hor+ that tangent grows with the aspect, so at 32:9 every LOD threshold acted at half the distance, and aim zoom no longer reached the next LOD. `src/lod_aspect_hook.h` makes four byte-verified sites (0x435baf, 0x1fe96f, 0x4ef053, 0x4ef3d4) read the 16:9-equivalent tangent, tan_y × 16/9, instead. The result is identical at 16:9, and at any other aspect it gives the same detail choices as 16:9 at the same vertical FOV, with aim zoom still narrowing it. Projection, frustum and culling keep the real tangent. `ISS_LOD_ASPECT=0` leaves the game as shipped, and the log reports `LOD aspect: …`.

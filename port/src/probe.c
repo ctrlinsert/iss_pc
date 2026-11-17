@@ -15,6 +15,7 @@
 #include "actor_hook.h"
 #include "damage_hook.h"
 #include "view_hook.h"
+#include "lod_aspect_hook.h"
 #include "iss_temporal_hook.h"
 #include "iss_camera_hook.h"
 #include "iss_mouse_aim.h"
@@ -720,6 +721,32 @@ extern uintptr_t tlg_view_fade_inverse(void);
 extern uintptr_t tlg_view_floor_address(void);
 extern void tlg_view_attach(unsigned char *guest_image);
 extern void tlg_view_start(void);
+
+/* LOD at any aspect (src/lod_aspect_hook.h): the game's distance-based detail tests read the
+ * 16:9-equivalent horizontal tangent, so ultrawide keeps the 16:9 LOD distances and aim zoom. */
+static void install_lod_aspect(Segment *segments, uint64_t count, uint64_t size) {
+    const char *env = getenv("ISS_LOD_ASPECT");
+    if (env && env[0] == '0') { puts("LOD aspect: off (ISS_LOD_ASPECT=0)"); return; }
+    for (unsigned i = 0; i < ISS_LOD_ASPECT_SITES; ++i)
+        if (!mapped(segments, count, iss_lod_aspect_site[i], iss_lod_aspect_length[i])) return;
+    if (!iss_lod_aspect_signature_match(image, size)) { puts("LOD aspect: unavailable (code differs)"); return; }
+    unsigned char *stubs = allocate(page_size);
+    float *ratio = (float *)(stubs + page_size - 16);
+    *ratio = 16.0f / 9.0f;
+    for (unsigned i = 0; i < ISS_LOD_ASPECT_SITES; ++i) {
+        const uintptr_t resume = (uintptr_t)(image + iss_lod_aspect_site[i] + iss_lod_aspect_length[i]);
+        if (!iss_lod_aspect_build_stub(stubs + i * 64, i, ratio, resume)) {
+            puts("LOD aspect: unavailable (stub out of range)");
+            return;
+        }
+        const int64_t delta = (int64_t)(uintptr_t)(stubs + i * 64) - (int64_t)(uintptr_t)(image + iss_lod_aspect_site[i] + 5);
+        if (delta < INT32_MIN || delta > INT32_MAX) { puts("LOD aspect: unavailable (hook out of jump range)"); return; }
+    }
+    protect(stubs, page_size, 5);
+    for (unsigned i = 0; i < ISS_LOD_ASPECT_SITES; ++i)
+        install_jump(iss_lod_aspect_site[i], iss_lod_aspect_length[i], stubs + i * 64);
+    puts("LOD aspect: ready (detail tests use the 16:9-equivalent tangent at any aspect)");
+}
 
 /* Draw distance, LOD and clip planes (src/view_hook.h): the menu's values reach the game's data
  * through tlg_view_attach; the regions' LOD_ADJUST and FADE_DISTANCE go through four stubs. */
@@ -1919,6 +1946,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_cheats(app0, segments, ns, size);
     if (gpu_enabled) install_actor_watch(app0, segments, ns, size);
     if (gpu_enabled) install_stat_multipliers(app0, segments, ns, size);
+    if (gpu_enabled) install_lod_aspect(segments, ns, size);
     if (gpu_enabled) install_view_tuning(segments, ns, size);
     if (gpu_enabled) install_iss_temporal(app0, segments, ns, size);
 #ifdef _WIN32
