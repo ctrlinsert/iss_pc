@@ -344,9 +344,9 @@ void Rasterizer::DumpAfter(const Pipeline* pipeline) {
             u32 index = 0;
             for (const auto& bound : bound_buffers) {
                 if (bound.address != 0 && bound.size > (64ull << 20)) {
-                    // Whole-pool windows (hundreds of MB) would stall the frame for seconds.
-                    LOG_INFO(Render_Vulkan, "DUMP f{} srt{} {:x}+{:x} skipped (over 64 MB)",
-                             g_dump.frame, index, bound.address, bound.size);
+                    // Whole-pool windows (hundreds of MB): no files, compared GPU vs guest here.
+                    DiffBufferToLog(fmt::format("f{}_s{}_srt{}", g_dump.frame, g_dump.seq - 1, index),
+                                    bound.buffer, bound.offset, bound.address, bound.size);
                 } else if (bound.address != 0) {
                     DumpBufferToFile(
                         fmt::format("f{}_s{}_srt{}", g_dump.frame, g_dump.seq - 1, index),
@@ -401,6 +401,61 @@ void Rasterizer::DumpBufferToFile(std::string_view name, const VideoCore::Buffer
     }
     LOG_INFO(Render_Vulkan, "DUMP buffer {:x}+{:x} written: {} / {} [{}]", address, size, gpu_name,
              host_name, buffer_cache.DescribePages(address, static_cast<u32>(size)));
+}
+
+// Frame x-ray: compares a large GPU copy with guest memory in 64 MB pieces and logs the
+// differing runs (16-bit granularity, up to 256 runs with their page states, then a total).
+void Rasterizer::DiffBufferToLog(std::string_view name, const VideoCore::Buffer* buffer,
+                                 u64 offset, VAddr address, u64 size) {
+    if (!buffer || size == 0) {
+        return;
+    }
+    constexpr u64 Piece = 64_MB;
+    u64 diff_bytes = 0, runs = 0;
+    u64 run_start = ~0ull, run_end = 0;
+    u16 run_guest = 0, run_gpu = 0;
+    const auto flush = [&] {
+        if (run_start == ~0ull) return;
+        if (++runs <= 256) {
+            LOG_INFO(Render_Vulkan,
+                     "DIFF {} {:x}: +{:x}..+{:x} ({} u16) first guest={} gpu={} [{}]", name,
+                     address, run_start, run_end, (run_end - run_start) / 2, run_guest, run_gpu,
+                     buffer_cache.DescribePages(address + run_start,
+                                                static_cast<u32>(run_end - run_start)));
+        }
+        run_start = ~0ull;
+    };
+    std::vector<u8> host(Piece);
+    for (u64 at = 0; at < size; at += Piece) {
+        const u64 n = std::min(Piece, size - at);
+        const auto download =
+            runtime.GetStagingPool().Request(n, VideoCore::MemoryType::HostCached, 16, false);
+        const vk::BufferCopy copy = {.srcOffset = offset + at, .dstOffset = download.offset, .size = n};
+        runtime.CopyBuffer(buffer, download.buffer, std::span{&copy, 1});
+        scheduler.Finish();
+        download.Invalidate();
+        memory->CopySparseMemory(address + at, host.data(), n);
+        const u8* gpu = static_cast<const u8*>(download.mapped);
+        for (u64 i = 0; i + 1 < n; i += 2) {
+            u16 a, b;
+            std::memcpy(&a, host.data() + i, 2);
+            std::memcpy(&b, gpu + i, 2);
+            if (a == b) {
+                flush();
+                continue;
+            }
+            diff_bytes += 2;
+            if (run_start == ~0ull) {
+                run_start = at + i;
+                run_guest = a;
+                run_gpu = b;
+            }
+            run_end = at + i + 2;
+        }
+        flush();
+    }
+    LOG_INFO(Render_Vulkan, "DIFF {} {:x}+{:x}: {} bytes differ in {} runs [{}]", name, address,
+             size, diff_bytes, runs, buffer_cache.DescribePages(address, 4096));
 }
 
 void Rasterizer::ProbeBuffer(std::string_view what, const VideoCore::Buffer* buffer, u64 offset,
