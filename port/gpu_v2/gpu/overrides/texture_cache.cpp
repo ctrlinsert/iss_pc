@@ -259,6 +259,50 @@ void TextureCache::ProcessDownloadImages() {
     download_images.clear();
 }
 
+u32 TextureCache::ReadImageRegion(VAddr address, u32 width, u32 height, u32 x, u32 y, u32 w, u32 h,
+                                  std::vector<u8>& out) {
+    ImageId image_id{};
+    {
+        std::scoped_lock lock{mutex};
+        u64 best_tick = 0;
+        if (const auto it = image_address_index.find(address); it != image_address_index.end()) {
+            for (const ImageId id : it->second) {
+                Image& image = slot_images[id];
+                if (image.info.size.width != width || image.info.size.height != height) continue;
+                if (!image_id || image.tick_accessed_last > best_tick) {
+                    image_id = id;
+                    best_tick = image.tick_accessed_last;
+                }
+            }
+        }
+    }
+    if (!image_id) return 0;
+    Image& image = slot_images[image_id];
+    if (image.info.props.is_block || image.info.props.is_depth || x >= width || y >= height) return 0;
+    w = std::min(w, width - x);
+    h = std::min(h, height - y);
+    const u32 texel = image.info.num_bits / 8;
+    const u32 size = w * h * texel;
+    if (!size) return 0;
+    const auto download = runtime.GetStagingPool().Request(size, MemoryType::HostCached, 16, false);
+    const vk::BufferImageCopy copy = {
+        .bufferOffset = download.offset,
+        .bufferRowLength = w,
+        .bufferImageHeight = h,
+        .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                             .mipLevel = 0,
+                             .baseArrayLayer = 0,
+                             .layerCount = 1},
+        .imageOffset = {s32(x), s32(y), 0},
+        .imageExtent = {w, h, 1},
+    };
+    runtime.DownloadImage(&image, download.buffer, std::span{&copy, 1});
+    scheduler.Finish();
+    download.Invalidate();
+    out.assign(download.mapped, download.mapped + size);
+    return texel;
+}
+
 bool TextureCache::DumpImageToFile(VAddr address, std::string_view prefix, u32 width,
                                    u32 height) {
     ImageId image_id{};

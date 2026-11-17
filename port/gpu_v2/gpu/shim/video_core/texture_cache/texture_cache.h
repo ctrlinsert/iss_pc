@@ -176,6 +176,12 @@ public:
     /// recently among those there, or the one of the given size when width is not 0).
     bool DumpImageToFile(VAddr address, std::string_view prefix, u32 width = 0, u32 height = 0);
 
+    /// Diagnostics (ISS_PIXEL_WATCH): copies a w x h texel box at (x, y) of mip 0, layer 0 of the
+    /// image at the address (of the given size) into `out`, waiting for the GPU. Returns the bytes
+    /// per texel, 0 when there is no such image or it is block-compressed.
+    u32 ReadImageRegion(VAddr address, u32 width, u32 height, u32 x, u32 y, u32 w, u32 h,
+                        std::vector<u8>& out);
+
     /// Generation of the cache: grows whenever an image is registered, unregistered or replaced
     /// (rebind needed), so that a binding found for a descriptor can be reused while the cache
     /// does not change (Rasterizer texture binding memo). Lock free.

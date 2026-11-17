@@ -1043,6 +1043,7 @@ private:
                           VAddr address, u64 size);
     /// ISS_LIGHT_ZERO: zero-fills light records in the GPU copies of a dispatch's read buffers.
     void ZeroLightsInGuest(const Shader::Info& cs);
+    void PixelWatch(std::string_view kind);
     bool ClampLightsOnGpu(const struct LightZeroSpec& spec, vk::Buffer buffer, u64 offset, u64 size,
                           const CommandRecorder& cmdbuf);
     void ZeroLightsOnGpu(const Shader::Info& cs, const CommandRecorder& cmdbuf);

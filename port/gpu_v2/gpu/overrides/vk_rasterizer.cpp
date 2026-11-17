@@ -479,12 +479,69 @@ void Rasterizer::FinishProbes() {
     probe_used = 0;
 }
 
+// ISS_PIXEL_WATCH=<addr hex>:<width>x<height>:<x>:<y>:<w>:<h> (frame x-ray only): before each
+// logged command, the mean of a texel box of that render target, logged when it changed since the
+// previous command. The command logged just before a change wrote it.
+void Rasterizer::PixelWatch(std::string_view kind) {
+    struct Cfg { u64 addr = 0; u32 width = 0, height = 0, x = 0, y = 0, w = 0, h = 0; };
+    static const Cfg cfg = [] {
+        Cfg c;
+        const char* p = std::getenv("ISS_PIXEL_WATCH");
+        if (!p || std::sscanf(p, "%llx:%ux%u:%u:%u:%u:%u", reinterpret_cast<unsigned long long*>(&c.addr),
+                              &c.width, &c.height, &c.x, &c.y, &c.w, &c.h) != 7)
+            c.addr = 0;
+        if (c.addr)
+            std::fprintf(stderr, "PIXEL_WATCH %llx %ux%u box %u,%u %ux%u\n",
+                         (unsigned long long)c.addr, c.width, c.height, c.x, c.y, c.w, c.h);
+        return c;
+    }();
+    if (!cfg.addr) return;
+    static std::array<double, 4> last{-1, -1, -1, -1};
+    static u32 last_frame = ~0u;
+    if (g_dump.frame != last_frame) {
+        last_frame = g_dump.frame;
+        last = {-1, -1, -1, -1};
+    }
+    if (!OnComputeRecordQueue()) scheduler.EndRendering();
+    std::vector<u8> bytes;
+    const u32 texel =
+        texture_cache.ReadImageRegion(cfg.addr, cfg.width, cfg.height, cfg.x, cfg.y, cfg.w, cfg.h, bytes);
+    if (!texel || (texel != 8 && texel != 4)) return;
+    const auto half = [](u16 v) {
+        const u32 sign = (v >> 15) & 1, exp = (v >> 10) & 31, man = v & 1023;
+        float f = exp == 0 ? std::ldexp(float(man), -24)
+                           : exp == 31 ? (man ? NAN : INFINITY)
+                                       : std::ldexp(float(man | 1024), int(exp) - 25);
+        return sign ? -f : f;
+    };
+    std::array<double, 4> sum{};
+    const size_t n = bytes.size() / texel;
+    for (size_t i = 0; i < n; ++i)
+        for (int c = 0; c < 4; ++c) {
+            if (texel == 8) {
+                u16 v;
+                std::memcpy(&v, bytes.data() + i * 8 + c * 2, 2);
+                sum[c] += half(v);
+            } else {
+                sum[c] += bytes[i * 4 + c] / 255.0;
+            }
+        }
+    for (auto& v : sum) v /= double(n ? n : 1);
+    bool changed = false;
+    for (int c = 0; c < 4; ++c) changed |= std::abs(sum[c] - last[c]) > 1e-4;
+    if (!changed) return;
+    last = sum;
+    LOG_INFO(Render_Vulkan, "PIXEL_WATCH f{} before #{} {}: {:.4f} {:.4f} {:.4f} {:.4f}", g_dump.frame,
+             g_dump.seq, kind, sum[0], sum[1], sum[2], sum[3]);
+}
+
 void Rasterizer::DumpCommand(std::string_view kind, const Pipeline* pipeline,
                              std::string_view params) {
     if (g_dump.frames_left == 0) {
         return;
     }
     const auto& regs = DrawRegs();
+    PixelWatch(kind);
     std::string line = fmt::format("DUMP f{} #{} {} q{} {}", g_dump.frame, g_dump.seq++, kind,
                                    DrawQueue(), params);
     if (pipeline) {
