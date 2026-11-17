@@ -4914,19 +4914,32 @@ const VideoCore::Buffer* Rasterizer::LeanLookupBind(const GraphicsPipeline* pipe
         const VAddr iaddr = regs.index_base_address.Address<VAddr>() +
                             u64(index_offset) * isize;
         const u64 ibytes = u64(regs.num_indices) * isize;
-        if (memory->ClampRangeSize(iaddr, ibytes) != ibytes || buffer_cache.HasGpuData(iaddr, ibytes))
-            return nullptr;
-        const u8* src = reinterpret_cast<const u8*>(uintptr_t(iaddr));
-        min_index = ~0u;
-        for (u32 i = 0; i < regs.num_indices; ++i) {
-            u32 v;
-            if (is16) { u16 h; std::memcpy(&h, src + i * 2, 2); v = h; }
-            else std::memcpy(&v, src + i * 4, 4);
-            if (is16 ? v == 0xffff : v == 0xffffffffu) continue; // primitive restart
-            min_index = std::min(min_index, v);
-            max_index = std::max(max_index, v);
+        if (memory->ClampRangeSize(iaddr, ibytes) == ibytes && !buffer_cache.HasGpuData(iaddr, ibytes)) {
+            const u8* src = reinterpret_cast<const u8*>(uintptr_t(iaddr));
+            min_index = ~0u;
+            for (u32 i = 0; i < regs.num_indices; ++i) {
+                u32 v;
+                if (is16) { u16 h; std::memcpy(&h, src + i * 2, 2); v = h; }
+                else std::memcpy(&v, src + i * 4, 4);
+                if (is16 ? v == 0xffff : v == 0xffffffffu) continue; // primitive restart
+                min_index = std::min(min_index, v);
+                max_index = std::max(max_index, v);
+            }
+            if (min_index > max_index) return nullptr;
+        } else {
+            // Indices the GPU wrote (or not readable here): every index the draw can fetch
+            // vertices with is below the record count of its per-vertex attribute buffers.
+            u32 vertices = ~0u;
+            for (const auto& attrib : pipeline->GetFetchShader().attributes) {
+                if (attrib.GetStepRate() != Shader::Gcn::VertexAttribute::None) continue;
+                const auto sharp = attrib.GetSharp(stage);
+                if (sharp.base_address && sharp.num_records)
+                    vertices = std::min<u32>(vertices, sharp.num_records);
+            }
+            if (vertices == ~0u || vertices == 0) return nullptr;
+            min_index = 0;
+            max_index = vertices - 1;
         }
-        if (min_index > max_index) return nullptr;
     } else {
         max_index = regs.num_indices - 1;
     }
@@ -4946,6 +4959,7 @@ const VideoCore::Buffer* Rasterizer::LeanLookupBind(const GraphicsPipeline* pipe
         std::memcpy(&voff, records + u64(i) * InstanceStride + VoffOffset, 4);
         const u64 begin = 2 * (u64(voff) + first), end = 2 * (u64(voff) + last + 1);
         if (begin >= size) continue;
+        if (end - begin > LeanLookupMinBytes) return nullptr; // not a per-draw slice
         // Whole 64 KB blocks, at least 32 KB: slices of 16 KB or less would be copied to the
         // stream buffer by ObtainBuffer instead of being made resident in the arena.
         const u64 a = begin & ~0xFFFFull;
