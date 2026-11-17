@@ -373,7 +373,12 @@ void Rasterizer::DumpBufferToFile(std::string_view name, const VideoCore::Buffer
     scheduler.Finish();
     download.Invalidate();
     using namespace Common::FS;
-    const auto dir = GetUserPath(PathType::LogDir) / "xray";
+    // ISS_XRAY_DIR (else ISS_DISPATCH_DUMP_DIR) moves the dumps out of the log folder, which can
+    // sit inside the save folder.
+    const char* xray_env = std::getenv("ISS_XRAY_DIR");
+    if (!xray_env || !*xray_env) xray_env = std::getenv("ISS_DISPATCH_DUMP_DIR");
+    const auto dir = xray_env && *xray_env ? std::filesystem::path(xray_env)
+                                           : GetUserPath(PathType::LogDir) / "xray";
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     const auto gpu_name = fmt::format("{}_{:x}_{}.gpu.raw", name, address, size);
