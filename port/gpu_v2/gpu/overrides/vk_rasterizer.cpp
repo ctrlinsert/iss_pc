@@ -26,6 +26,8 @@
 #include <span>
 #include <unordered_map>
 #include "draw_pipe.h"
+#include "video_core/host_shaders/iss_light_clamp_comp.h"
+#include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "g4_qid1_owner.h"
 #include "g4_copy_hle_plan.h"
 #include "hazard_probe.h"
@@ -3087,8 +3089,14 @@ static void DumpDispatchOnRequest(const ComputePipeline* pipeline, VideoCore::Bu
 // buffer <buf> gets <zero_bytes> at <zero_off> of each matching record filled with zeros, so those
 // lights are off for that dispatch whatever the upload path did. An id is matched against the
 // guest copy, so <id> needs a CPU-written buffer; * works on GPU-written ones too.
+struct LightZeroSpec {
+    u32 hash = 0, buf = 0, stride = 0, id_off = 0, id = 0, zero_off = 0, zero_bytes = 0;
+    bool any_id = false;
+    bool threshold = false; ///< g<value>: any of the 3 floats at id_off above `above`
+    float above = 0.f;
+};
 namespace {
-struct LightZeroSpec { u32 hash = 0, buf = 0, stride = 0, id_off = 0, id = 0, zero_off = 0, zero_bytes = 0; bool any_id = false; };
+
 const std::vector<LightZeroSpec>& LightZeroSpecs() {
     static const std::vector<LightZeroSpec> specs = [] {
         std::vector<LightZeroSpec> out;
@@ -3098,6 +3106,12 @@ const std::vector<LightZeroSpec>& LightZeroSpecs() {
             u32* f[] = {&c.hash, &c.buf, &c.stride, &c.id_off, &c.id, &c.zero_off, &c.zero_bytes};
             for (int i = 0; i < 7 && p && *p; ++i) {
                 if (i == 4 && *p == '*') { c.any_id = true; ++p; }
+                else if (i == 4 && *p == 'g') {
+                    char* end = nullptr;
+                    c.threshold = true;
+                    c.above = std::strtof(p + 1, &end);
+                    p = end;
+                }
                 else {
                     char* end = nullptr;
                     *f[i] = u32(std::strtoul(p, &end, i == 0 ? 16 : 0));
@@ -3105,12 +3119,14 @@ const std::vector<LightZeroSpec>& LightZeroSpecs() {
                 }
                 if (i < 6) p = (p && *p == ':') ? p + 1 : nullptr;
             }
-            const bool ok = c.hash && c.stride && c.id_off + 4 <= c.stride && c.zero_bytes &&
+            const bool ok = c.hash && c.stride && c.stride % 4 == 0 && c.id_off % 4 == 0 &&
+                            c.id_off + (c.threshold ? 12u : 4u) <= c.stride && c.zero_bytes &&
                             c.zero_off % 4 == 0 && c.zero_bytes % 4 == 0 &&
                             c.zero_off + c.zero_bytes <= c.stride;
-            std::fprintf(stderr, "LIGHT_ZERO cs=%08x buf%u stride=%u id@%u=%s%u zero %u bytes @%u%s\n",
+            std::fprintf(stderr, "LIGHT_ZERO cs=%08x buf%u stride=%u id@%u=%s%u%s%g zero %u bytes @%u%s\n",
                          c.hash, c.buf, c.stride, c.id_off, c.any_id ? "* " : "", c.id,
-                         c.zero_bytes, c.zero_off, ok ? " (gpu fill)" : " (invalid, ignored)");
+                         c.threshold ? " any float above " : "", c.threshold ? c.above : 0.0,
+                         c.zero_bytes, c.zero_off, ok ? "" : " (invalid, ignored)");
             if (ok) out.push_back(c);
             p = (p && *p == ';') ? p + 1 : nullptr;
         }
@@ -3118,6 +3134,18 @@ const std::vector<LightZeroSpec>& LightZeroSpecs() {
     }();
     return specs;
 }
+bool LightZeroMatches(const LightZeroSpec& spec, const u8* record) {
+    if (spec.any_id) return true;
+    if (spec.threshold) {
+        float v[3];
+        std::memcpy(v, record + spec.id_off, 12);
+        return v[0] > spec.above || v[1] > spec.above || v[2] > spec.above;
+    }
+    u32 id;
+    std::memcpy(&id, record + spec.id_off, 4);
+    return id == spec.id;
+}
+std::atomic<u64> g_light_zero_shader_runs{0};
 std::atomic<u64> g_light_zero_dispatches{0}, g_light_zero_fills{0}, g_light_zero_missing{0},
     g_light_zero_guest{0};
 } // namespace
@@ -3293,11 +3321,7 @@ void Rasterizer::ZeroLightsInGuest(const Shader::Info& cs) {
         if (!address || size < spec.stride || buffer_cache.IsRegionGpuModified(address, size)) continue;
         u8* base = reinterpret_cast<u8*>(uintptr_t(address));
         for (u64 off = 0; off + spec.stride <= size; off += spec.stride) {
-            if (!spec.any_id) {
-                u32 id;
-                std::memcpy(&id, base + off + spec.id_off, 4);
-                if (id != spec.id) continue;
-            }
+            if (!LightZeroMatches(spec, base + off)) continue;
             u8* z = base + off + spec.zero_off;
             bool any = false;
             for (u32 i = 0; i < spec.zero_bytes; ++i) any |= z[i] != 0;
@@ -3305,6 +3329,98 @@ void Rasterizer::ZeroLightsInGuest(const Shader::Info& cs) {
             g_light_zero_guest.fetch_add(1, std::memory_order_relaxed);
         }
     }
+}
+
+// The ISS_LIGHT_ZERO threshold specs: iss_light_clamp.comp over the bound GPU copy.
+bool Rasterizer::ClampLightsOnGpu(const LightZeroSpec& spec, vk::Buffer buffer, u64 offset, u64 size,
+                                  const CommandRecorder& cmdbuf) {
+    struct Program {
+        bool tried = false, ok = false;
+        vk::DescriptorSetLayout set;
+        vk::PipelineLayout layout;
+        vk::Pipeline pipeline;
+        u64 align = 256;
+    };
+    static Program prog;
+    if (!prog.tried) {
+        prog.tried = true;
+        const vk::Device device = instance.GetDevice();
+        prog.align = std::max<u64>(4, instance.StorageMinAlignment());
+        const vk::DescriptorSetLayoutBinding binding{.binding = 0,
+                                                     .descriptorType = vk::DescriptorType::eStorageBuffer,
+                                                     .descriptorCount = 1,
+                                                     .stageFlags = vk::ShaderStageFlagBits::eCompute};
+        auto set = device.createDescriptorSetLayout({
+            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptor,
+            .bindingCount = 1,
+            .pBindings = &binding,
+        });
+        const vk::PushConstantRange push{
+            .stageFlags = vk::ShaderStageFlagBits::eCompute, .offset = 0, .size = 28};
+        if (set.result == vk::Result::eSuccess) {
+            prog.set = set.value;
+            auto layout = device.createPipelineLayout({.setLayoutCount = 1,
+                                                       .pSetLayouts = &prog.set,
+                                                       .pushConstantRangeCount = 1,
+                                                       .pPushConstantRanges = &push});
+            if (layout.result == vk::Result::eSuccess) {
+                prog.layout = layout.value;
+                const auto module = CompileSPV(ISS_LIGHT_CLAMP_COMP, device);
+                const vk::ComputePipelineCreateInfo info{
+                    .stage = {.stage = vk::ShaderStageFlagBits::eCompute,
+                              .module = module,
+                              .pName = "main"},
+                    .layout = prog.layout,
+                };
+                auto pipe = device.createComputePipeline({}, info);
+                device.destroyShaderModule(module);
+                if (pipe.result == vk::Result::eSuccess) {
+                    prog.pipeline = pipe.value;
+                    prog.ok = true;
+                }
+            }
+        }
+        std::fprintf(stderr, "LIGHT_ZERO clamp shader %s\n", prog.ok ? "ready" : "FAILED");
+    }
+    if (!prog.ok || offset % 4 || size < spec.stride) return false;
+    const u64 aligned = offset - offset % prog.align;
+    struct Push {
+        u32 base, stride, count, match;
+        float above;
+        u32 zero, zero_n;
+    };
+    const Push push{u32((offset - aligned) / 4), spec.stride / 4, u32(size / spec.stride),
+                    spec.id_off / 4, spec.above, spec.zero_off / 4, spec.zero_bytes / 4};
+    const u64 range = (offset - aligned) + size;
+    const vk::MemoryBarrier2 before{
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
+        .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+    };
+    const vk::MemoryBarrier2 after{
+        .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+    };
+    // Through the recorder, so its bind cache binds the game's pipeline again afterwards.
+    cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, prog.pipeline);
+    const vk::PipelineLayout layout = prog.layout;
+    cmdbuf.Record([before, after, push, buffer, aligned, range, layout](vk::CommandBuffer c) {
+        c.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1, .pMemoryBarriers = &before});
+        const vk::DescriptorBufferInfo info{buffer, aligned, range};
+        const vk::WriteDescriptorSet write{.dstBinding = 0,
+                                           .descriptorCount = 1,
+                                           .descriptorType = vk::DescriptorType::eStorageBuffer,
+                                           .pBufferInfo = &info};
+        c.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, layout, 0, write);
+        c.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push), &push);
+        c.dispatch((push.count + 63) / 64, 1, 1);
+        c.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1, .pMemoryBarriers = &after});
+    });
+    cmdbuf.NoteBind();
+    return true;
 }
 
 void Rasterizer::ZeroLightsOnGpu(const Shader::Info& cs, const CommandRecorder& cmdbuf) {
@@ -3325,12 +3441,18 @@ void Rasterizer::ZeroLightsOnGpu(const Shader::Info& cs, const CommandRecorder& 
             continue;
         }
         const u64 gpu_base = b->offset + (address - b->address);
+        if (spec.threshold) {
+            // The values live on the GPU (the guest copy can be stale): test them there.
+            if (ClampLightsOnGpu(spec, b->buffer->Handle(), gpu_base, size, cmdbuf))
+                g_light_zero_shader_runs.fetch_add(1, std::memory_order_relaxed);
+            else
+                g_light_zero_missing.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
         for (u64 off = 0; off + spec.stride <= size; off += spec.stride) {
-            if (!spec.any_id) {
-                u32 id;
-                std::memcpy(&id, reinterpret_cast<const u8*>(uintptr_t(address)) + off + spec.id_off, 4);
-                if (id != spec.id) continue;
-            }
+            if (!spec.any_id &&
+                !LightZeroMatches(spec, reinterpret_cast<const u8*>(uintptr_t(address)) + off))
+                continue;
             const u64 dst = gpu_base + off + spec.zero_off;
             if (dst % 4) continue;
             if (!barrier) {
@@ -3366,8 +3488,10 @@ void Rasterizer::ZeroLightsOnGpu(const Shader::Info& cs, const CommandRecorder& 
     const u64 n = g_light_zero_dispatches.fetch_add(1, std::memory_order_relaxed) + 1;
     if ((n & (n - 1)) == 0 || n % 10000 == 0)
         std::fprintf(stderr,
-                     "LIGHT_ZERO dispatches=%llu gpu_fills=%llu guest_zeroed=%llu not_bound=%llu\n",
+                     "LIGHT_ZERO dispatches=%llu gpu_fills=%llu gpu_shader_runs=%llu guest_zeroed=%llu "
+                     "not_bound=%llu\n",
                      (unsigned long long)n, (unsigned long long)g_light_zero_fills.load(),
+                     (unsigned long long)g_light_zero_shader_runs.load(),
                      (unsigned long long)g_light_zero_guest.load(),
                      (unsigned long long)g_light_zero_missing.load());
 }
@@ -3487,6 +3611,8 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     if (!OnComputeRecordQueue()) {
         scheduler.EndRendering();
     }
+    // ISS_LIGHT_ZERO: before the game's own pipeline, descriptors and constants are recorded.
+    if (!LightZeroSpecs().empty()) ZeroLightsOnGpu(cs, Sched().Recorder());
     pipeline->BindResources(Sched(), set_writes, push_data);
 
     const auto cmdbuf = Sched().Recorder();
@@ -3495,7 +3621,6 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
         MarkDispatch(Sched(), cmdbuf, cs.pgm_hash, cs_program.dim_x, cs_program.dim_y,
                      cs_program.dim_z, 0);
     }
-    if (!LightZeroSpecs().empty()) ZeroLightsOnGpu(cs, cmdbuf);
     Sched().ProfileDispatchBegin(cs.pgm_hash);
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     iss::feedback_join::Recorded();
