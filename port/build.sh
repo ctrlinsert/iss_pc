@@ -154,6 +154,8 @@ if [[ ${1:-} == --test || ${1:-} == --test-only ]]; then
     out/native-cone-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_camera_aspect.c -Isrc -lm -o out/camera-aspect-test
     out/camera-aspect-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_lod_aspect.c -Isrc -lm -o out/lod-aspect-test
+    out/lod-aspect-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_light_tiles.c -Isrc -o out/light-tiles-test
     out/light-tiles-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -UNDEBUG tests/test_touch_reads.c -Isrc -o out/touch-reads-test
