@@ -3643,7 +3643,12 @@ PipelineCache::Result PipelineCache::GetProgram(iss::g4::CpOwner owner, HwStage 
         // Frame x-ray: the GCN code of the shaders used (once per shader).
         if (xray_dumped.insert(params.hash).second) {
             using namespace Common::FS;
-            const auto dir = GetUserPath(PathType::ShaderDir) / "xray";
+            // ISS_XRAY_DIR (else ISS_DISPATCH_DUMP_DIR): the shader folder can sit inside the
+            // save folder.
+            const char* xray_env = std::getenv("ISS_XRAY_DIR");
+            if (!xray_env || !*xray_env) xray_env = std::getenv("ISS_DISPATCH_DUMP_DIR");
+            const auto dir = xray_env && *xray_env ? std::filesystem::path(xray_env)
+                                                   : GetUserPath(PathType::ShaderDir) / "xray";
             std::error_code ec;
             std::filesystem::create_directories(dir, ec);
             const auto file = IOFile{dir / fmt::format("{}_{:#018x}.bin", hw_stage, params.hash),

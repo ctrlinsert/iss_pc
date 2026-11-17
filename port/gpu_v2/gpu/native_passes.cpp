@@ -485,8 +485,10 @@ void Apply(Lane& l, const u32* p, const u32* end) {
         case 0x10: {
             // The NOPs the command processor acts on: engine/native markers and the flip.
             const u32 word = count > 0 ? p[1] : 0;
+            // 'ISN' (native_render_core.h): a native pass starts or ends there.
             if ((word & 0xFFFFFF00u) == 0x49535300u || (word & 0xFFFFFF00u) == 0x49534700u ||
-                (word & 0xFFFFFF00u) == 0x49534800u || word == 0x68750776u)
+                (word & 0xFFFFFF00u) == 0x49534800u || (word & 0xFFFFFF00u) == 0x49534E00u ||
+                word == 0x68750776u)
                 boundary(0x10);
             break;
         }

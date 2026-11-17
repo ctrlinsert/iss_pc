@@ -259,6 +259,50 @@ void TextureCache::ProcessDownloadImages() {
     download_images.clear();
 }
 
+u32 TextureCache::ReadImageRegion(VAddr address, u32 width, u32 height, u32 x, u32 y, u32 w, u32 h,
+                                  std::vector<u8>& out) {
+    ImageId image_id{};
+    {
+        std::scoped_lock lock{mutex};
+        u64 best_tick = 0;
+        if (const auto it = image_address_index.find(address); it != image_address_index.end()) {
+            for (const ImageId id : it->second) {
+                Image& image = slot_images[id];
+                if (image.info.size.width != width || image.info.size.height != height) continue;
+                if (!image_id || image.tick_accessed_last > best_tick) {
+                    image_id = id;
+                    best_tick = image.tick_accessed_last;
+                }
+            }
+        }
+    }
+    if (!image_id) return 0;
+    Image& image = slot_images[image_id];
+    if (image.info.props.is_block || image.info.props.is_depth || x >= width || y >= height) return 0;
+    w = std::min(w, width - x);
+    h = std::min(h, height - y);
+    const u32 texel = image.info.num_bits / 8;
+    const u32 size = w * h * texel;
+    if (!size) return 0;
+    const auto download = runtime.GetStagingPool().Request(size, MemoryType::HostCached, 16, false);
+    const vk::BufferImageCopy copy = {
+        .bufferOffset = download.offset,
+        .bufferRowLength = w,
+        .bufferImageHeight = h,
+        .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                             .mipLevel = 0,
+                             .baseArrayLayer = 0,
+                             .layerCount = 1},
+        .imageOffset = {s32(x), s32(y), 0},
+        .imageExtent = {w, h, 1},
+    };
+    runtime.DownloadImage(&image, download.buffer, std::span{&copy, 1});
+    scheduler.Finish();
+    download.Invalidate();
+    out.assign(download.mapped, download.mapped + size);
+    return texel;
+}
+
 bool TextureCache::DumpImageToFile(VAddr address, std::string_view prefix, u32 width,
                                    u32 height) {
     ImageId image_id{};
@@ -297,9 +341,11 @@ bool TextureCache::DumpImageToFile(VAddr address, std::string_view prefix, u32 w
         return false;
     }
     Image& image = slot_images[image_id];
-    const u32 row_bytes = image.info.pitch * (image.info.num_bits / 8);
-    const u32 download_size =
-        row_bytes * image.info.size.height * image.info.size.depth * image.info.resources.layers;
+    // Block-compressed formats: num_bits is per 4x4 block, so count rows of blocks.
+    const auto blocks = image.info.BlockDim();
+    const u64 row_bytes = u64(blocks.width) * (image.info.num_bits / 8);
+    const u64 download_size =
+        row_bytes * blocks.height * image.info.size.depth * image.info.resources.layers;
     if (download_size == 0 || download_size > (256u << 20)) {
         return false;
     }
@@ -324,7 +370,11 @@ bool TextureCache::DumpImageToFile(VAddr address, std::string_view prefix, u32 w
     scheduler.Finish();
     download.Invalidate();
     using namespace Common::FS;
-    const auto dir = GetUserPath(PathType::LogDir) / "xray";
+    // ISS_XRAY_DIR (else ISS_DISPATCH_DUMP_DIR): the log folder can sit inside the save folder.
+    const char* xray_env = std::getenv("ISS_XRAY_DIR");
+    if (!xray_env || !*xray_env) xray_env = std::getenv("ISS_DISPATCH_DUMP_DIR");
+    const auto dir = xray_env && *xray_env ? std::filesystem::path(xray_env)
+                                           : GetUserPath(PathType::LogDir) / "xray";
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     const auto name = fmt::format("{}_{:x}_{}x{}_p{}_{}_{}.raw", prefix, image.info.guest_address,
@@ -332,9 +382,19 @@ bool TextureCache::DumpImageToFile(VAddr address, std::string_view prefix, u32 w
                                   image.info.num_bits, vk::to_string(image.info.pixel_format));
     const auto file = IOFile{dir / name, FileAccessMode::Create};
     file.WriteRaw<u8>(download.mapped, download_size);
+    // The guest bytes as the game wrote them (tiled, all mips), for an offline check of our
+    // de-tiling, when the CPU copy is current.
+    if (!True(image.flags & ImageFlagBits::GpuModified) && image.info.guest_size &&
+        image.info.guest_size <= (256u << 20)) {
+        const auto guest = IOFile{dir / (name + ".guest"), FileAccessMode::Create};
+        guest.WriteRaw<u8>(reinterpret_cast<const u8*>(uintptr_t(image.info.guest_address)),
+                           image.info.guest_size);
+    }
     LOG_INFO(Render_Vulkan,
-             "DUMP image {:x} written: {} ({} bytes, {} layers, gpu modified {}, last used tick {})",
-             address, name, download_size, image.info.resources.layers,
+             "DUMP image {:x} written: {} ({} bytes, {} layers, depth {}, tile mode {}, array mode {}, "
+             "guest size {}, gpu modified {}, last used tick {})",
+             address, name, download_size, image.info.resources.layers, image.info.size.depth,
+             u32(image.info.tile_mode), u32(image.info.array_mode), image.info.guest_size,
              True(image.flags & ImageFlagBits::GpuModified), image.tick_accessed_last);
     return true;
 }

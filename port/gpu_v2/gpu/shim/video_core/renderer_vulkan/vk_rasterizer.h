@@ -374,6 +374,13 @@ public:
     void NativeGbufferRangeEnd(const iss::native_gbuffer::Batch* batch);
     /// The game hook's temporal upscaler marker (gpu/iss_temporal_upscaler.h): `payload` is the NOP body.
     void IssTemporalMarker(const u32* payload, u32 dwords);
+    /// A native pass's BEGIN marker (native_render.h): `packet` its header, `limit` the end of
+    /// the command buffer. Returns the END marker when the pass recorded natively (the command
+    /// processor drops the span's draws and dispatches up to it), nullptr otherwise.
+    const u32* NativeRenderBegin(const u32* packet, const u32* limit, bool blocked);
+    /// A draw or dispatch inside that span, its registers applied: true when the native pass
+    /// took it (the command processor drops the engine's), false to run the engine's as usual.
+    bool NativeRenderDraw(bool dispatch);
     void NativeGbufferVerifyFinish(bool complete);
     void NativeGbufferVerifyNative();
     RenderState NativeGbufferVerifyTargets(const RenderState& render);
@@ -679,6 +686,14 @@ private:
 
     void TraceShaderResources(const Shader::Info& stage);
     void TraceBufferWriters(const Shader::Info& stage);
+    /// Probe-lighting lookup windows (16-bit, num_records to the end of the heap): bound whole,
+    /// only the slices the draw reads made resident (vk_rasterizer.cpp). nullptr: bind normally.
+    static constexpr u64 LeanLookupMinBytes = 64ull << 20;
+    /// Whether the vertex shader binds such a window now (fast draws then take the full path).
+    bool UsesProbeLookupWindow(const Shader::Info& vs) const;
+    const VideoCore::Buffer* LeanLookupBind(const GraphicsPipeline* pipeline,
+                                            const Shader::Info& stage, VAddr base, u64 size,
+                                            bool indexed, u32 index_offset);
     void BindBuffers(const Shader::Info& stage, Shader::Backend::Bindings& binding,
                      Shader::PushData& push_data);
     void BindTextures(const Shader::Info& stage, Shader::Backend::Bindings& binding);
@@ -1032,8 +1047,20 @@ private:
     };
     boost::container::static_vector<BoundVertexRange, 32> dump_vertex_ranges;
     /// Writes the GPU and guest copies of a range to the x-ray folder (waits for the GPU).
+    void AuditBindings(const Pipeline* pipeline);
+    void AuditFrameEnd();
+    void DiffBufferToLog(std::string_view name, const VideoCore::Buffer* buffer, u64 offset,
+                         VAddr address, u64 size);
     void DumpBufferToFile(std::string_view name, const VideoCore::Buffer* buffer, u64 offset,
                           VAddr address, u64 size);
+    /// ISS_LIGHT_ZERO: zero-fills light records in the GPU copies of a dispatch's read buffers.
+    void ZeroLightsInGuest(const Shader::Info& cs);
+    void PixelWatch(std::string_view kind);
+    bool ClampLightsOnGpu(const struct LightZeroSpec& spec, vk::Buffer buffer, u64 offset, u64 size,
+                          const CommandRecorder& cmdbuf);
+    void ZeroLightsOnGpu(const Shader::Info& cs, const CommandRecorder& cmdbuf);
+    /// F9 (ISS_DISPATCH_DUMP_ON_F9): the GPU copies of a dumped dispatch's bound buffers.
+    void DumpDispatchGpuCopies(const Shader::Info& cs);
 
     using RenderTargetInfo = std::pair<VideoCore::ImageId, VideoCore::TextureCache::ImageDesc>;
     std::array<RenderTargetInfo, AmdGpu::NUM_COLOR_BUFFERS> cb_descs;

@@ -19,11 +19,16 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <objidl.h>
+
 namespace Gdiplus { using std::min; using std::max; }
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus.lib")
 #endif
 #include <SDL3/SDL.h>
+namespace VideoCore {
+bool DumpReadbackDiagRing(); // buffer_cache.cpp: the readback recorder's last events (F9)
+void RequestDispatchDump();   // vk_rasterizer.cpp: ISS_DISPATCH_DUMP_ON_F9
+}
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "runtime_timeline.h"
@@ -424,6 +429,13 @@ bool WindowSDL::PollEvents() {
             if (event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT)) {
                 auto& mode = TlgSettings::Get().display_mode;
                 mode = mode == TlgGraphics::Windowed ? TlgGraphics::Borderless : TlgGraphics::Windowed;
+            }
+            // F9: write the readback recorder's last events (ISS_READBACK_DIAG_RING=1).
+            if (event.key.key == SDLK_F9) {
+                std::fprintf(stderr, "PERF_MARK key=F9 tick_ms=%llu\n",
+                             (unsigned long long)SDL_GetTicks());
+                VideoCore::DumpReadbackDiagRing();
+                VideoCore::RequestDispatchDump();
             }
             // F10: a stutter mark in the timeline (and a visual capture when it is on).
             if (event.key.key == SDLK_F10) {

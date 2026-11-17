@@ -384,8 +384,14 @@ extern "C" void IssPreciseSleepUs(unsigned us){
 }
 // The renderer's hooks in the game's code and the checked readback sites: once the image is
 // loaded and relocated, before the guest threads start.
+// The game's executable in memory (0 until iss_gpu_install_image): readback_relaxed_sites name
+// code by its offset from here.
+extern "C" uint64_t iss_gpu_image_base(){return host.image_base;}
+namespace iss::particle_budget {void Start(u64 image_base);}
 extern "C" void iss_gpu_install_image(uint64_t image_base){
     host.image_base=image_base;
+    iss::particle_budget::Start(image_base);
+    std::fprintf(stderr,"GPU_IMAGE_BASE 0x%llx\n",(unsigned long long)image_base);
     // The executing image (as native/engine_draw.cpp patches it), not a backing view.
     if(iss::native_shadow::Enabled())
         iss::native_shadow::Install(host.image_base,reinterpret_cast<const unsigned char*>(host.image_base+0x43D590));
@@ -482,6 +488,15 @@ extern "C" int iss_gpu_initialize(const IssGpuCallbacks *callbacks){
         std::fprintf(stderr,"PORT_TUNING process_priority=above_normal ok=%d\n",ok?1:0);
     }
 #endif
+    // The auto-exposure metering read (the game's code at 0x1717c0 sums one luminance per screen
+    // tile from a buffer it ping-pongs every frame, so it is designed to use last frame's values)
+    // does not wait for the GPU: in game this removed a 8-20 ms stall on every other frame.
+    // ISS_EXPOSURE_WAIT=1 restores the wait.
+    if(const char *p=std::getenv("ISS_EXPOSURE_WAIT");!(p&&p[0]=='1')){
+        auto& tuning=Common::Perf::GetTuning();const u32 n=tuning.num_relaxed_sites.load();
+        if(n<Common::Perf::Tuning::MaxRelaxedSites){tuning.relaxed_sites[n]=0x171700;tuning.num_relaxed_sites.store(n+1);}
+        std::fprintf(stderr,"PORT_TUNING relaxed_site=0x171700 (auto-exposure, default)\n");
+    }
     // ISS_TUNING="name=value,...": existing renderer toggles for A/B tests, applied last.
     if(const char *p=std::getenv("ISS_TUNING")){
         const auto set=[](auto& field,const std::string& value){field=static_cast<std::remove_reference_t<decltype(field.load())>>(std::strtoull(value.c_str(),nullptr,0));};
@@ -508,6 +523,34 @@ extern "C" int iss_gpu_initialize(const IssGpuCallbacks *callbacks){
             // relaxed_site=<eboot offset> (repeatable, up to 8): reads of GPU written memory from
             // that 256 byte block of the game's code do not wait for the GPU (readback_relaxed_sites).
             else if(name=="relaxed_site"){const u32 n=tuning.num_relaxed_sites.load();if(n<Common::Perf::Tuning::MaxRelaxedSites){tuning.relaxed_sites[n]=std::strtoull(value.c_str(),nullptr,0)&~0xFFull;tuning.num_relaxed_sites.store(n+1);}}
+            // dump_after=<ps/cs hash>:<srt|vb|addr[/WxH]>[:n] (repeatable, up to 8): frame x-ray
+            // dumps after the n-th draw or dispatch of each traced frame using that shader.
+            else if(name=="dump_after"){
+                size_t slot=0;while(slot<tuning.dump_after.size()&&tuning.dump_after[slot].shader.load())++slot;
+                const size_t c1=value.find(':');
+                if(slot>=tuning.dump_after.size()||c1==std::string::npos)known=false;
+                else{
+                    auto& e=tuning.dump_after[slot];
+                    const size_t c2=value.find(':',c1+1);
+                    const std::string what=value.substr(c1+1,c2==std::string::npos?std::string::npos:c2-c1-1);
+                    // n<indices> in place of the occurrence: every draw with that index count.
+                    if(c2!=std::string::npos&&value[c2+1]=='n'){e.count=0;e.width=u32(std::strtoul(value.c_str()+c2+2,nullptr,10));}
+                    else e.count=c2==std::string::npos?1u:u32(std::strtoul(value.c_str()+c2+1,nullptr,0));
+                    if(what=="vb")e.address=1;
+                    else if(what=="srt")e.address=2;
+                    else if(e.count==0)known=false;
+                    else{
+                        e.address=std::strtoull(what.c_str(),nullptr,16);
+                        const size_t sl=what.find('/');
+                        if(sl!=std::string::npos){
+                            e.width=u32(std::strtoul(what.c_str()+sl+1,nullptr,10));
+                            const size_t x=what.find('x',sl);
+                            if(x!=std::string::npos)e.height=u32(std::strtoul(what.c_str()+x+1,nullptr,10));
+                        }
+                    }
+                    e.shader=std::strtoull(value.substr(0,c1).c_str(),nullptr,16);
+                }
+            }
             else if(name=="relaxed_all")tuning.relaxed_all=std::strtoull(value.c_str(),nullptr,0)!=0;
             else known=false;
             std::fprintf(stderr,"PORT_TUNING %s=%s%s\n",name.c_str(),value.c_str(),known?"":" (unknown, ignored)");

@@ -67,10 +67,16 @@ struct QueueContext {
 /// (0x6042bbde, 0x1201d207: descriptor 2, 16-bit texel buffer, indexed by a vertex attribute)
 /// describe a small global table with num_records reaching the end of the GPU heap: 2.5 GB in
 /// garlic and 540 MB in onion. Bound whole, the arena made all of it resident: 3 GB of VRAM
-/// (RTX 2060, 2026-10-22). Bindings above ISS_HUGE_READ_LIMIT_MB (default 1024) are cut to
-/// ISS_HUGE_READ_WINDOW_MB (default 64: 32M 16-bit entries); reads past it return zero (robust
-/// buffer access). The onion one stays whole: its residency is what lets the native paths find
-/// the per-frame buffers there (cut too, they missed 93% of their draws: 48 -> 33 fps).
+/// (RTX 2060, 2026-10-22).
+/// Cutting such bindings is NOT safe in general: the building facade vertex shader 0x0d0541fb
+/// reads its light-probe cell lookup (16-bit, num_records about 3.7 GB) near the END of the
+/// window, at per-object offsets of 0.9 to 3.7 GB. Cut to 64 MB, those reads returned zero and the
+/// facades blended the wrong probes: over-bright gold walls in the Market District with
+/// world-fixed edges (fixed by binding whole, 2026-11-17; costs about 4 GB of arena VRAM).
+/// Those probe-lighting windows now take Rasterizer::LeanLookupBind (bound whole, only the
+/// slices a draw reads resident); other huge bindings are bound whole.
+/// So nothing is cut by default. ISS_HUGE_READ_LIMIT_MB (0 or unset: off) restores the cut to
+/// ISS_HUGE_READ_WINDOW_MB (default 64) for GPUs without the memory, at the cost of that lighting.
 inline u64 ClampHugeRead(u64 size, bool written) {
     static const u64 window = [] {
         const char* p = std::getenv("ISS_HUGE_READ_WINDOW_MB");
@@ -78,9 +84,9 @@ inline u64 ClampHugeRead(u64 size, bool written) {
     }();
     static const u64 limit = [] {
         const char* p = std::getenv("ISS_HUGE_READ_LIMIT_MB");
-        return u64(p ? std::strtoull(p, nullptr, 10) : 1024) << 20;
+        return u64(p ? std::strtoull(p, nullptr, 10) : 0) << 20;
     }();
-    return !written && window != 0 && size > limit && size > window ? window : size;
+    return !written && limit != 0 && window != 0 && size > limit && size > window ? window : size;
 }
 
 class BufferCache {
@@ -377,6 +383,11 @@ public:
     /// Frame x-ray: the arena holding the range and the range's offset in it, null when its
     /// pages are not resident. Nothing is synchronized or changed.
     [[nodiscard]] std::pair<const Buffer*, u64> PeekArena(VAddr device_addr, u32 size);
+    /// The sparse arena covering [device_addr, device_addr + size) (created if needed), without
+    /// making any of it resident: callers make the parts they use resident with ObtainBuffer.
+    [[nodiscard]] const Buffer* ArenaFor(VAddr device_addr, u64 size) {
+        return GetArena(device_addr >> block_shift, (device_addr + size - 1) >> block_shift);
+    }
 
     struct PublishedArena {
         const Buffer* arena{};
